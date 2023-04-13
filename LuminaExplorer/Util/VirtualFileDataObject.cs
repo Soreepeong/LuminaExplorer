@@ -2,11 +2,13 @@
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 
-namespace LuminaExplorer;
+namespace LuminaExplorer.Util;
 
 /// <summary>
 /// Class implementing drag/drop and clipboard support for virtual files.
 /// Also offers an alternate interface to the IDataObject interface.
+///
+/// FROM: https://dlaa.me/blog/post/9913083
 /// </summary>
 public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTypes.IDataObject, IAsyncOperation {
     /// <summary>

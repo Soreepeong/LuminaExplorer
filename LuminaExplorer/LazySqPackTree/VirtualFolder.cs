@@ -5,7 +5,7 @@ using Lumina.Data;
 
 namespace LuminaExplorer.LazySqPackTree;
 
-public class VirtualFolder : ILazySqPackTreeNode {
+public class VirtualFolder {
     public HashDatabase.FolderEntry? KnownEntry;
     public readonly VirtualFolder? Parent;
     public readonly Dictionary<string, VirtualFolder> Folders = new();
@@ -164,10 +164,8 @@ public class VirtualFolder : ILazySqPackTreeNode {
         public uint ConflictIndex;
         public fixed byte Name[0xF0];
 
-        public bool IsSynonym => (Data & 0b1) == 0b1;
-
         public byte DataFileId => (byte) ((Data & 0b1110) >> 1);
 
-        public long Offset => ((uint) Data & ~0xF) * 0x08;
+        public long Offset => (Data & ~0xF) * 0x08;
     }
 }

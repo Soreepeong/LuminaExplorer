@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Lumina;
 using Lumina.Data;
 using LuminaExplorer.LazySqPackTree;
+using LuminaExplorer.Util;
 
 namespace LuminaExplorer;
 
@@ -73,7 +74,11 @@ public partial class Explorer : Form {
                     break;
             }
         }
-
+        
+        // TODO: export using IStorage, and maybe offer concrete file contents so that it's possible to drag into external hex editors?
+        // https://devblogs.microsoft.com/oldnewthing/20080320-00/?p=23063
+        // https://learn.microsoft.com/en-us/windows/win32/api/objidl/nn-objidl-istorage
+        
         if (files.Any()) {
             var virtualFileDataObject = new VirtualFileDataObject();
 
