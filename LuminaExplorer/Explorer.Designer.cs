@@ -28,15 +28,19 @@ partial class Explorer {
         menuStrip1 = new MenuStrip();
         fileToolStripMenuItem = new ToolStripMenuItem();
         quitToolStripMenuItem = new ToolStripMenuItem();
-        splMainSplitter = new SplitContainer();
+        splMain = new SplitContainer();
         txtFileFilter = new TextBox();
         tvwFiles = new TreeView();
+        splSub = new SplitContainer();
         lvwFiles = new ListView();
         menuStrip1.SuspendLayout();
-        ((System.ComponentModel.ISupportInitialize)splMainSplitter).BeginInit();
-        splMainSplitter.Panel1.SuspendLayout();
-        splMainSplitter.Panel2.SuspendLayout();
-        splMainSplitter.SuspendLayout();
+        ((System.ComponentModel.ISupportInitialize)splMain).BeginInit();
+        splMain.Panel1.SuspendLayout();
+        splMain.Panel2.SuspendLayout();
+        splMain.SuspendLayout();
+        ((System.ComponentModel.ISupportInitialize)splSub).BeginInit();
+        splSub.Panel1.SuspendLayout();
+        splSub.SuspendLayout();
         SuspendLayout();
         // 
         // menuStrip1
@@ -44,7 +48,7 @@ partial class Explorer {
         menuStrip1.Items.AddRange(new ToolStripItem[] { fileToolStripMenuItem });
         menuStrip1.Location = new Point(0, 0);
         menuStrip1.Name = "menuStrip1";
-        menuStrip1.Size = new Size(800, 24);
+        menuStrip1.Size = new Size(1264, 24);
         menuStrip1.TabIndex = 0;
         menuStrip1.Text = "menuStrip1";
         // 
@@ -61,28 +65,29 @@ partial class Explorer {
         quitToolStripMenuItem.Size = new Size(97, 22);
         quitToolStripMenuItem.Text = "&Quit";
         // 
-        // splMainSplitter
+        // splMain
         // 
-        splMainSplitter.Dock = DockStyle.Fill;
-        splMainSplitter.Location = new Point(0, 24);
-        splMainSplitter.Name = "splMainSplitter";
+        splMain.Dock = DockStyle.Fill;
+        splMain.FixedPanel = FixedPanel.Panel1;
+        splMain.Location = new Point(0, 24);
+        splMain.Name = "splMain";
         // 
-        // splMainSplitter.Panel1
+        // splMain.Panel1
         // 
-        splMainSplitter.Panel1.Controls.Add(txtFileFilter);
-        splMainSplitter.Panel1.Controls.Add(tvwFiles);
+        splMain.Panel1.Controls.Add(txtFileFilter);
+        splMain.Panel1.Controls.Add(tvwFiles);
         // 
-        // splMainSplitter.Panel2
+        // splMain.Panel2
         // 
-        splMainSplitter.Panel2.Controls.Add(lvwFiles);
-        splMainSplitter.Size = new Size(800, 426);
-        splMainSplitter.SplitterDistance = 266;
-        splMainSplitter.TabIndex = 1;
+        splMain.Panel2.Controls.Add(splSub);
+        splMain.Size = new Size(1264, 737);
+        splMain.SplitterDistance = 266;
+        splMain.TabIndex = 1;
         // 
         // txtFileFilter
         // 
         txtFileFilter.Dock = DockStyle.Bottom;
-        txtFileFilter.Location = new Point(0, 403);
+        txtFileFilter.Location = new Point(0, 714);
         txtFileFilter.Name = "txtFileFilter";
         txtFileFilter.PlaceholderText = "filter...";
         txtFileFilter.Size = new Size(266, 23);
@@ -95,29 +100,43 @@ partial class Explorer {
         tvwFiles.Location = new Point(3, 3);
         tvwFiles.Name = "tvwFiles";
         tvwFiles.PathSeparator = "/";
-        tvwFiles.Size = new Size(260, 397);
+        tvwFiles.Size = new Size(260, 708);
         tvwFiles.TabIndex = 0;
         tvwFiles.BeforeExpand += tvwFiles_BeforeExpand;
         tvwFiles.AfterSelect += tvwFiles_AfterSelect;
+        // 
+        // splSub
+        // 
+        splSub.Dock = DockStyle.Fill;
+        splSub.FixedPanel = FixedPanel.Panel2;
+        splSub.Location = new Point(0, 0);
+        splSub.Name = "splSub";
+        // 
+        // splSub.Panel1
+        // 
+        splSub.Panel1.Controls.Add(lvwFiles);
+        splSub.Size = new Size(994, 737);
+        splSub.SplitterDistance = 670;
+        splSub.TabIndex = 0;
         // 
         // lvwFiles
         // 
         lvwFiles.Dock = DockStyle.Fill;
         lvwFiles.Location = new Point(0, 0);
         lvwFiles.Name = "lvwFiles";
-        lvwFiles.Size = new Size(530, 426);
-        lvwFiles.TabIndex = 0;
+        lvwFiles.Size = new Size(670, 737);
+        lvwFiles.TabIndex = 1;
         lvwFiles.UseCompatibleStateImageBehavior = false;
         lvwFiles.ItemDrag += lvwFiles_ItemDrag;
-        lvwFiles.DragDrop += lvwFiles_DragDrop;
+        lvwFiles.SelectedIndexChanged += lvwFiles_SelectedIndexChanged;
         lvwFiles.DoubleClick += lvwFiles_DoubleClick;
         // 
         // Explorer
         // 
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(800, 450);
-        Controls.Add(splMainSplitter);
+        ClientSize = new Size(1264, 761);
+        Controls.Add(splMain);
         Controls.Add(menuStrip1);
         MainMenuStrip = menuStrip1;
         Name = "Explorer";
@@ -125,11 +144,14 @@ partial class Explorer {
         FormClosed += Explorer_FormClosed;
         menuStrip1.ResumeLayout(false);
         menuStrip1.PerformLayout();
-        splMainSplitter.Panel1.ResumeLayout(false);
-        splMainSplitter.Panel1.PerformLayout();
-        splMainSplitter.Panel2.ResumeLayout(false);
-        ((System.ComponentModel.ISupportInitialize)splMainSplitter).EndInit();
-        splMainSplitter.ResumeLayout(false);
+        splMain.Panel1.ResumeLayout(false);
+        splMain.Panel1.PerformLayout();
+        splMain.Panel2.ResumeLayout(false);
+        ((System.ComponentModel.ISupportInitialize)splMain).EndInit();
+        splMain.ResumeLayout(false);
+        splSub.Panel1.ResumeLayout(false);
+        ((System.ComponentModel.ISupportInitialize)splSub).EndInit();
+        splSub.ResumeLayout(false);
         ResumeLayout(false);
         PerformLayout();
     }
@@ -139,8 +161,9 @@ partial class Explorer {
     private MenuStrip menuStrip1;
     private ToolStripMenuItem fileToolStripMenuItem;
     private ToolStripMenuItem quitToolStripMenuItem;
-    private SplitContainer splMainSplitter;
+    private SplitContainer splMain;
     private TextBox txtFileFilter;
     private TreeView tvwFiles;
+    private SplitContainer splSub;
     private ListView lvwFiles;
 }

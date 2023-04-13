@@ -7,14 +7,15 @@ public class VirtualFile {
     private string? _name;
     private Func<string?>? _nameResolver;
     private SqPackFileInfo? _metadata;
-    
+
     public readonly Category Owner;
     public readonly uint IndexId;
     public readonly uint FileHash;
     public readonly byte DataFileId;
     public readonly long Offset;
 
-    public VirtualFile(Func<string?> nameResolver, uint indexId, uint fileHash, Category owner, byte dataFileId, long offset) {
+    public VirtualFile(Func<string?> nameResolver, uint indexId, uint fileHash, Category owner, byte dataFileId,
+        long offset) {
         _nameResolver = nameResolver;
         Owner = owner;
         IndexId = indexId;
@@ -44,6 +45,10 @@ public class VirtualFile {
     public string Name => _name ?? $"{FileHash:X08}";
 
     public SqPackFileInfo Metadata => _metadata ??= Owner.DatFiles[DataFileId].GetFileMetadata(Offset);
+
+    public T GetFile<T>() where T : FileResource => Owner.DatFiles[DataFileId].ReadFile<T>(Offset);
+    
+    public FileResource GetFile() => Owner.DatFiles[DataFileId].ReadFile<FileResource>(Offset);
 
     public bool NameResolved => _nameResolver is null;
 }

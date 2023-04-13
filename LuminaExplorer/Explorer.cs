@@ -1,5 +1,7 @@
+using System.ComponentModel.Design;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Be.Windows.Forms;
 using Lumina;
 using Lumina.Data;
 using LuminaExplorer.LazySqPackTree;
@@ -94,8 +96,35 @@ public partial class Explorer : Form {
         }
     }
 
-    private void lvwFiles_DragDrop(object sender, DragEventArgs e) {
-        Debugger.Break();
+    private void lvwFiles_SelectedIndexChanged(object sender, EventArgs e) {
+        if (lvwFiles.SelectedItems.Count != 1 || lvwFiles.SelectedItems[0] is not FileListViewItem item) {
+            splSub.Panel2.Controls.Clear();
+            return;
+        }
+
+        byte[] data;
+
+        try {
+            data = item.File.GetFile().Data;
+        } catch (FileNotFoundException) {
+            splSub.Panel2.Controls.Clear();
+            return;
+        }
+
+        var hexbox = new HexBox {
+            Anchor = AnchorStyles.Left | AnchorStyles.Top,
+            Dock = DockStyle.Fill,
+            Font = new(FontFamily.GenericMonospace, 12),
+            VScrollBarVisible = true,
+            ColumnInfoVisible = true,
+            GroupSeparatorVisible = true,
+            LineInfoVisible = true,
+            StringViewVisible = true,
+            ByteProvider = new DynamicByteProvider(data),
+            ReadOnly = true,
+        };
+        splSub.Panel2.Controls.Add(hexbox);
+        lvwFiles.Focus();
     }
 
     private void SetActiveExplorerFolder(VirtualFolder newFolder) {
