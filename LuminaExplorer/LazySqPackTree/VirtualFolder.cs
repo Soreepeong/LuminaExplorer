@@ -6,7 +6,6 @@ using Lumina.Data;
 namespace LuminaExplorer.LazySqPackTree;
 
 public class VirtualFolder {
-    public HashDatabase.FolderEntry? KnownEntry;
     public readonly VirtualFolder? Parent;
     public readonly Dictionary<string, VirtualFolder> Folders = new();
     public readonly List<VirtualFile> Files = new();
@@ -100,15 +99,16 @@ public class VirtualFolder {
                                 virtualFolder = new(category.Chunk, folderHash, currentFolder));
                         }
                     } else {
-                        virtualFolder = folderEntry.Text == expectedPathPrefix
+                        var folderName = hashDatabase.GetString(folderEntry.Value.NameOffset);
+                        virtualFolder = folderName == expectedPathPrefix
                             ? currentFolder
-                            : currentFolder.GetOrCreateSubfolder(folderEntry.Text[(expectedPathPrefix.Length + 1)..]);                        
+                            : currentFolder.GetOrCreateSubfolder(folderName[(expectedPathPrefix.Length + 1)..]);                        
                     }
 
                     var fileHash = unchecked((uint) hashes.hash);
-                    var fileEntry = folderEntry?.Files.FirstOrDefault(x => x.Hash == fileHash);
+                    var fileName = folderEntry is null ? null : hashDatabase.GetFileName(folderEntry.Value, fileHash);
                     var virtualFile = new VirtualFile(
-                        fileEntry?.Text ?? $"~{fileHash:X08}",
+                        fileName ?? $"~{fileHash:X08}",
                         category,
                         hashes.DataFileId,
                         hashes.Offset);

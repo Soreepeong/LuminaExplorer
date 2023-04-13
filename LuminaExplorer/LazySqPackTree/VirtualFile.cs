@@ -3,7 +3,6 @@ using Lumina.Data;
 namespace LuminaExplorer.LazySqPackTree;
 
 public class VirtualFile {
-    public HashDatabase.FileEntry? KnownEntry;
     public readonly string Name;
     public readonly Category Owner;
     public readonly byte DataFileId;

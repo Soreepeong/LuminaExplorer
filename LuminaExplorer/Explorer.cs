@@ -43,7 +43,7 @@ public partial class Explorer : Form {
             if (ln.ShouldExpandRecursively()) {
                 BeginInvoke(() => {
                     foreach (var n in e.Node.Nodes)
-                        ((TreeNode) n).Expand();
+                        ((TreeNode)n).Expand();
                 });
             }
         }
@@ -74,22 +74,22 @@ public partial class Explorer : Form {
                     break;
             }
         }
-        
+
         // TODO: export using IStorage, and maybe offer concrete file contents so that it's possible to drag into external hex editors?
         // https://devblogs.microsoft.com/oldnewthing/20080320-00/?p=23063
         // https://learn.microsoft.com/en-us/windows/win32/api/objidl/nn-objidl-istorage
-        
+
         if (files.Any()) {
             var virtualFileDataObject = new VirtualFileDataObject();
 
             // Provide a virtual file (generated on demand) containing the letters 'a'-'z'
             virtualFileDataObject.SetData(files.Select(x => new VirtualFileDataObject.FileDescriptor {
-                    Name = x.Name,
-                    Length = x.Owner.DatFiles[x.DataFileId].GetFileMetadata(x.Offset).RawFileSize,
-                    ChangeTimeUtc = x.Owner.DatFiles[x.DataFileId].File.LastWriteTimeUtc,
-                    StreamContents = stream => stream.Write(x.Owner.GetFile<FileResource>(x.DataFileId, x.Offset).Data)
+                Name = x.Name,
+                Length = x.Owner.DatFiles[x.DataFileId].GetFileMetadata(x.Offset).RawFileSize,
+                ChangeTimeUtc = x.Owner.DatFiles[x.DataFileId].File.LastWriteTimeUtc,
+                StreamContents = stream => stream.Write(x.Owner.GetFile<FileResource>(x.DataFileId, x.Offset).Data)
             }).ToArray());
-            
+
             DoDragDrop(virtualFileDataObject, DragDropEffects.Copy);
         }
     }
@@ -115,10 +115,10 @@ public partial class Explorer : Form {
             lvwFiles.Items.Clear();
             lvwFiles.Items.AddRange(_explorerFolder.Folders.Values
                 .OrderBy(x => x.Name.ToLowerInvariant())
-                .Select(x => (ListViewItem) new FolderListViewItem(x))
+                .Select(x => (ListViewItem)new FolderListViewItem(x))
                 .Concat(_explorerFolder.Files
                     .OrderBy(x => x.Name.ToLowerInvariant())
-                    .Select(x => (ListViewItem) new FileListViewItem(x)))
+                    .Select(x => (ListViewItem)new FileListViewItem(x)))
                 .ToArray());
         }));
     }
@@ -155,7 +155,7 @@ public partial class Explorer : Form {
 
                 if (ShouldExpandRecursively()) {
                     foreach (var n in Nodes)
-                        ((TreeNode) n).Expand();
+                        ((TreeNode)n).Expand();
                 }
             }));
         }

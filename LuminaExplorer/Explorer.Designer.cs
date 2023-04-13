@@ -91,9 +91,7 @@ partial class Explorer {
         // tvwFiles
         // 
         tvwFiles.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-        tvwFiles.FullRowSelect = true;
         tvwFiles.HideSelection = false;
-        tvwFiles.HotTracking = true;
         tvwFiles.Location = new Point(3, 3);
         tvwFiles.Name = "tvwFiles";
         tvwFiles.PathSeparator = "/";
