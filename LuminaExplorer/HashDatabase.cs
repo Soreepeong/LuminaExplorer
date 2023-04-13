@@ -176,6 +176,28 @@ public class HashDatabase {
         return i < 0 ? null : GetString(_files[i].NameOffset);
     }
 
+    public string? FindFileName(uint indexId, uint hash) {
+        var folderFrom = Array.BinarySearch(_folders, new() {IndexId = indexId, Hash = uint.MinValue});
+        var folderTo = Array.BinarySearch(_folders, new() {IndexId = indexId, Hash = uint.MaxValue});
+        if (folderFrom < 0)
+            folderFrom = ~folderFrom;
+        if (folderTo < 0)
+            folderTo = ~folderTo;
+
+        var compareFile = new FileStruct {Hash = hash};
+        for (var folderIndex = folderFrom; folderIndex <= folderTo; folderIndex++) {
+            var i = Array.BinarySearch(
+                _files,
+                _folders[folderIndex].FileIndex,
+                _folders[folderIndex].FileCount,
+                compareFile);
+            if (i >= 0)
+                return GetString(_files[i].NameOffset);
+        }
+
+        return null;
+    }
+
     public struct FolderStruct : IComparable<FolderStruct> {
         public int NameOffset;
         public uint IndexId;

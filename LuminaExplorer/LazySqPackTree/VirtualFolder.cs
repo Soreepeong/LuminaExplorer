@@ -107,6 +107,7 @@ public class VirtualFolder {
 
                     var fileHash = unchecked((uint) hashes.hash);
                     var fileName = folderEntry is null ? null : hashDatabase.GetFileName(folderEntry.Value, fileHash);
+                    fileName ??= hashDatabase.FindFileName(indexId, fileHash);
                     var virtualFile = new VirtualFile(
                         fileName ?? $"~{fileHash:X08}",
                         category,
