@@ -85,7 +85,7 @@ public partial class Explorer : Form {
             // Provide a virtual file (generated on demand) containing the letters 'a'-'z'
             virtualFileDataObject.SetData(files.Select(x => new VirtualFileDataObject.FileDescriptor {
                 Name = x.Name,
-                Length = x.Owner.DatFiles[x.DataFileId].GetFileMetadata(x.Offset).RawFileSize,
+                Length = x.Metadata.RawFileSize,
                 ChangeTimeUtc = x.Owner.DatFiles[x.DataFileId].File.LastWriteTimeUtc,
                 StreamContents = stream => stream.Write(x.Owner.GetFile<FileResource>(x.DataFileId, x.Offset).Data)
             }).ToArray());
@@ -105,10 +105,10 @@ public partial class Explorer : Form {
         _explorerFolder = newFolder;
 
         lvwFiles.Items.Clear();
-        if (!_explorerFolder.IsResolved())
+        if (!_explorerFolder.IsFolderResolved())
             lvwFiles.Items.Add("Expanding...");
 
-        _explorerFolder.Resolve(folder => BeginInvoke(() => {
+        _explorerFolder.ResolveFiles(folder => BeginInvoke(() => {
             if (_explorerFolder != folder)
                 return;
 
@@ -138,7 +138,7 @@ public partial class Explorer : Form {
             Text = folder.Name;
             Folder = folder;
             SelectedImageIndex = ImageIndex = 1;
-            if (folder.Folders.Any() || !Folder.IsResolved())
+            if (folder.Folders.Any() || !Folder.IsFolderResolved())
                 Nodes.Add(new TreeNode(@"Expanding..."));
         }
 
@@ -147,7 +147,7 @@ public partial class Explorer : Form {
                 return;
 
             _populateTriggered = true;
-            Folder.Resolve(_ => context.BeginInvoke(() => {
+            Folder.ResolveFolders(_ => context.BeginInvoke(() => {
                 Nodes.Clear();
                 Nodes.AddRange(Folder.Folders.Values.OrderBy(x => x.Name.ToLowerInvariant())
                     .Select(x => (TreeNode)new LazyNode(x))
@@ -161,9 +161,9 @@ public partial class Explorer : Form {
         }
 
         public bool ShouldExpandRecursively() {
-            if (Nodes.Count == 1)
+            if (Folder.Folders.Count == 1)
                 return true;
-            if (Nodes.Count == 2 && Folder.Folders.Count == 2 && Folder.Folders.Any(x => x.Value.NameUnknown))
+            if (Folder.Folders.Count == 2 && Folder.Folders.Any(x => x.Value.NameUnknown))
                 return true;
             return false;
         }

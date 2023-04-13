@@ -12,16 +12,18 @@ public class VirtualFolder {
     public readonly string Name;
     public readonly bool NameUnknown;
 
-    private Action<VirtualFolder>? _resolver;
-    private Task _resolverTask = Task.CompletedTask;
+    private Action<VirtualFolder>? _folderResolver;
+    private Action<VirtualFolder>? _fileResolver = sf => sf.Files.Where(f => !f.NameResolved).AsParallel().ForAll(f => f.TryResolve());
+    private Task _folderResolverTask = Task.CompletedTask;
+    private Task _fileResolverTask = Task.CompletedTask;
 
-    public VirtualFolder(string name, VirtualFolder? parent) {
+    internal VirtualFolder(string name, VirtualFolder? parent) {
         Name = name;
         NameUnknown = false;
         Parent = parent;
     }
 
-    public VirtualFolder(int chunk, uint hash, VirtualFolder? parent) {
+    internal VirtualFolder(int chunk, uint hash, VirtualFolder? parent) {
         Name = $"~{chunk:X02}~{hash:X08}";
         NameUnknown = true;
         Parent = parent;
@@ -37,34 +39,58 @@ public class VirtualFolder {
         return subfolder;
     }
 
-    public bool IsResolved() => _resolver == null && _resolverTask.IsCompleted;
+    public bool IsFolderResolved() => _folderResolver == null && _folderResolverTask.IsCompleted;
 
-    public void Resolve(Action<VirtualFolder> onCompleteCallback) {
-        if (_resolver is not null) {
-            var r = _resolver;
-            _resolverTask = Task.Run(() => r(this));
-            _resolver = null;
+    public bool IsFileResolved() => IsFolderResolved() && _fileResolver == null && _fileResolverTask.IsCompleted;
+
+    public void ResolveFolders(Action<VirtualFolder> onCompleteCallback) {
+        if (IsFolderResolved()) {
+            onCompleteCallback(this);
+            return;
         }
-        
-        _resolverTask.ContinueWith(_ => onCompleteCallback(this));
+
+        if (_folderResolver is not null) {
+            var r = _folderResolver;
+            _folderResolverTask = Task.Run(() => r(this));
+            _folderResolver = null;
+        }
+
+        _folderResolverTask.ContinueWith(_ => onCompleteCallback(this));
+    }
+
+    public void ResolveFiles(Action<VirtualFolder> onCompleteCallback) {
+        if (IsFileResolved()) {
+            onCompleteCallback(this);
+            return;
+        }
+
+        ResolveFolders(_ => {
+            if (_fileResolver is not null) {
+                var r = _fileResolver;
+                _fileResolverTask = Task.Run(() => r(this));
+                _fileResolver = null;
+            }
+
+            _fileResolverTask.ContinueWith(_ => onCompleteCallback(this));
+        });
     }
 
     public static VirtualFolder CreateRoot(HashDatabase hashDatabase, GameData gameData) {
         var folder = new VirtualFolder("", null);
-        folder._resolver = _ => {
+        folder._folderResolver = _ => {
             foreach (var (categoryId, categoryName) in Repository.CategoryIdToNameMap) {
                 var repos = gameData.Repositories
                     .Where(x => x.Value.Categories.GetValueOrDefault(categoryId)?.Count is > 0)
                     .ToDictionary(x => x.Key, x => x.Value.Categories[categoryId]);
                 switch (repos.Count) {
                     case 1:
-                        folder.GetOrCreateSubfolder(categoryName)._resolver =
+                        folder.GetOrCreateSubfolder(categoryName)._folderResolver =
                             ResolverFrom(hashDatabase, categoryName, repos.First().Value);
                         break;
                     case > 1: {
                         var categoryNode = folder.GetOrCreateSubfolder(categoryName);
                         foreach (var (repoName, chunks) in repos) {
-                            categoryNode.GetOrCreateSubfolder(repoName)._resolver =
+                            categoryNode.GetOrCreateSubfolder(repoName)._folderResolver =
                                 ResolverFrom(hashDatabase, $"{categoryName}/{repoName}", chunks);
                         }
 
@@ -81,6 +107,7 @@ public class VirtualFolder {
         List<Category> chunks) {
         return currentFolder => {
             var unknownFolders = new Dictionary<Tuple<int, uint>, VirtualFolder>();
+
             foreach (var category in chunks) {
                 var indexId = (uint) ((category.CategoryId << 16) | (category.Expansion << 8) | category.Chunk);
 
@@ -95,21 +122,24 @@ public class VirtualFolder {
 
                     if (folderEntry is null) {
                         if (!unknownFolders.TryGetValue(Tuple.Create(category.Chunk, folderHash), out virtualFolder!)) {
-                            unknownFolders.Add(Tuple.Create(category.Chunk, folderHash),
+                            unknownFolders.Add(
+                                Tuple.Create(category.Chunk, folderHash),
                                 virtualFolder = new(category.Chunk, folderHash, currentFolder));
                         }
                     } else {
                         var folderName = hashDatabase.GetString(folderEntry.Value.NameOffset);
                         virtualFolder = folderName == expectedPathPrefix
                             ? currentFolder
-                            : currentFolder.GetOrCreateSubfolder(folderName[(expectedPathPrefix.Length + 1)..]);                        
+                            : currentFolder.GetOrCreateSubfolder(folderName[(expectedPathPrefix.Length + 1)..]);
                     }
 
                     var fileHash = unchecked((uint) hashes.hash);
-                    var fileName = folderEntry is null ? null : hashDatabase.GetFileName(folderEntry.Value, fileHash);
-                    fileName ??= hashDatabase.FindFileName(indexId, fileHash);
                     var virtualFile = new VirtualFile(
-                        fileName ?? $"~{fileHash:X08}",
+                        folderEntry is null
+                            ? () => hashDatabase.FindFileName(indexId, fileHash)
+                            : () => hashDatabase.GetFileName(folderEntry.Value, fileHash),
+                        indexId,
+                        fileHash,
                         category,
                         hashes.DataFileId,
                         hashes.Offset);
@@ -141,14 +171,14 @@ public class VirtualFolder {
                     var virtualFolder = folderName == expectedPathPrefix
                         ? currentFolder
                         : currentFolder.GetOrCreateSubfolder(folderName[(expectedPathPrefix.Length + 1)..]);
-                    var virtualFile = new VirtualFile(fileName, category, e.DataFileId, e.Offset);
+                    var virtualFile = new VirtualFile(fileName, indexId, e.NameHash, category, e.DataFileId, e.Offset);
                     virtualFolder.Files.Add(virtualFile);
                 }
             }
 
             if (unknownFolders.Any()) {
                 currentFolder.Folders.Add("<unknown>", new("<unknown>", currentFolder) {
-                    _resolver = vf => {
+                    _folderResolver = vf => {
                         foreach (var v in unknownFolders.Values)
                             vf.Folders.Add(v.Name, v);
                     }

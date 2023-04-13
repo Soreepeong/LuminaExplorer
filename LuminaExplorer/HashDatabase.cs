@@ -152,6 +152,8 @@ public class HashDatabase {
                 fixed (void* b = _files)
                     reader.BaseStream.Read(new(b, endOffset - fileOffset));
             }
+
+            _strings = _strings[..folderOffset];
         }
     }
 
