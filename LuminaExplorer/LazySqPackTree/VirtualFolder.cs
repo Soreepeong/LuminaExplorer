@@ -25,4 +25,10 @@ public class VirtualFolder {
             subfolder = subfolder.GetOrCreateSubfolder(path[(sepOffset + 1)..]);
         return subfolder;
     }
+
+    public string FullPath => Folders.TryGetValue("..", out var parent) && parent.Name != ""
+        ? $"{parent.FullPath}/{Name}"
+        : Name;
+
+    public override string ToString() => Name;
 }

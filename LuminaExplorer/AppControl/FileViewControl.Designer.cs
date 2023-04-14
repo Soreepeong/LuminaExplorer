@@ -61,6 +61,7 @@
             propertyGrid.PropertySort = PropertySort.Categorized;
             propertyGrid.Size = new Size(503, 444);
             propertyGrid.TabIndex = 0;
+            propertyGrid.ToolbarVisible = false;
             // 
             // tabRaw
             // 

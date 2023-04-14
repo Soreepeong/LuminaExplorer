@@ -174,7 +174,8 @@ public class VirtualSqPackTree {
                             : () => hashDatabase.GetFileName(folderEntry.Value, fileHash),
                         indexId,
                         fileHash,
-                        hashes.data);
+                        hashes.data,
+                        virtualFolder);
                     virtualFolder.Files.Add(virtualFile);
                 }
 
@@ -203,7 +204,7 @@ public class VirtualSqPackTree {
                     var virtualFolder = folderName == expectedPathPrefix
                         ? currentFolder
                         : currentFolder.GetOrCreateSubfolder(folderName[(expectedPathPrefix.Length + 1)..]);
-                    var virtualFile = new VirtualFile(fileName, indexId, e.NameHash, e.Data);
+                    var virtualFile = new VirtualFile(fileName, indexId, e.NameHash, e.Data, virtualFolder);
                     virtualFolder.Files.Add(virtualFile);
                 }
             }

@@ -53,7 +53,7 @@ public partial class Explorer : Form {
             if (ln.ShouldExpandRecursively()) {
                 BeginInvoke(() => {
                     foreach (var n in e.Node.Nodes)
-                        ((TreeNode) n).Expand();
+                        ((TreeNode)n).Expand();
                 });
             }
         }
@@ -69,13 +69,13 @@ public partial class Explorer : Form {
                             .Where(x => x.Key != "..")
                             .OrderBy(x => x.Key.ToLowerInvariant())
                             .Select(x =>
-                                (TreeNode) new FolderTreeNode(x.Value, x.Key,
+                                (TreeNode)new FolderTreeNode(x.Value, x.Key,
                                     !_vspTree.WillFolderNeverHaveSubfolders(x.Value)))
                             .ToArray());
 
                         if (ln.ShouldExpandRecursively()) {
                             foreach (var n in ln.Nodes)
-                                ((TreeNode) n).Expand();
+                                ((TreeNode)n).Expand();
                         }
                     }, TaskScheduler.FromCurrentSynchronizationContext());
             }
@@ -133,6 +133,15 @@ public partial class Explorer : Form {
             _ = _explorerObjects[i].ListViewItem;
     }
 
+    private void lvwFiles_KeyPress(object sender, KeyPressEventArgs e) {
+        if (e.KeyChar == (char)Keys.Enter) {
+            if (lvwFiles.SelectedIndices.Count == 0 || _explorerObjects is null)
+                return;
+            if (_explorerObjects[lvwFiles.SelectedIndices[0]].Folder is { } folder)
+                SetActiveExplorerFolder(folder);
+        }
+    }
+
     private void lvwFiles_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) {
         if (_explorerObjects is null)
             e.Item = new("Expanding...");
@@ -141,7 +150,7 @@ public partial class Explorer : Form {
     }
 
     private void lvwFiles_SearchForVirtualItem(object sender, SearchForVirtualItemEventArgs e) {
-        if (e is {IsTextSearch: true, Text: { }} && _explorerObjects is not null) {
+        if (e is { IsTextSearch: true, Text: { } } && _explorerObjects is not null) {
             for (var i = e.StartIndex; i < _explorerObjects.Count; i++) {
                 if (_explorerObjects[i].Name.StartsWith(e.Text, StringComparison.InvariantCultureIgnoreCase)) {
                     e.Index = i;
@@ -160,7 +169,7 @@ public partial class Explorer : Form {
 
     private void lvwFiles_SelectedIndexChanged(object sender, EventArgs e) {
         if (lvwFiles.SelectedIndices.Count is > 1 or 0 || _explorerObjects is null) {
-            _fileViewControl.SetFile(null, null);
+            _fileViewControl.ClearFile();
             return;
         }
 

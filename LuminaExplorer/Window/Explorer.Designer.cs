@@ -135,6 +135,7 @@ partial class Explorer {
         lvwFiles.SearchForVirtualItem += lvwFiles_SearchForVirtualItem;
         lvwFiles.SelectedIndexChanged += lvwFiles_SelectedIndexChanged;
         lvwFiles.DoubleClick += lvwFiles_DoubleClick;
+        lvwFiles.KeyPress += lvwFiles_KeyPress;
         // 
         // Explorer
         // 

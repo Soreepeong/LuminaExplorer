@@ -5,6 +5,8 @@ namespace LuminaExplorer.ObjectRepresentationWrapper;
 
 [TypeConverter(typeof(WrapperTypeConverter))]
 public abstract class BaseWrapper<T> : ICustomTypeDescriptor {
+    protected static readonly WrapperTypeConverter Converter = new();
+    
     protected const BindingFlags bindingFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
     public readonly T Obj;
 
@@ -42,11 +44,14 @@ public abstract class BaseWrapper<T> : ICustomTypeDescriptor {
     // Probably wrong, but don't care, unless something breaks.
     public object? GetPropertyOwner(PropertyDescriptor? pd) => this;
 
+    protected virtual object? TransformObject(object? obj) => obj;
+
     protected class SimplePropertyDescriptor : PropertyDescriptor {
         private readonly Lazy<object?> _resolver;
 
-        public SimplePropertyDescriptor(Type componentType, string name, Type propertyType, Lazy<object?> resolver)
-            : base(name, null) {
+        public SimplePropertyDescriptor(Type componentType, string name, Type propertyType, Lazy<object?> resolver,
+            params Attribute?[] attributes)
+            : base(name, attributes.Where(x => x != null).ToArray()!) {
             ComponentType = componentType;
             PropertyType = propertyType;
             _resolver = resolver;

@@ -9,10 +9,12 @@ public class ArrayWrapper : BaseWrapper<Array> {
     public readonly int RangeTo;
     public readonly int RangeJumpUnit;
 
-    internal ArrayWrapper(Array obj, params int[] baseIndices)
+    internal ArrayWrapper(Array obj) : this(obj, Array.Empty<int>()) { }
+
+    internal ArrayWrapper(Array obj, int[] baseIndices)
         : this(obj, 0, obj.GetLength(baseIndices.Length), baseIndices) { }
 
-    private ArrayWrapper(Array obj, int rangeFrom, int rangeTo, params int[] baseIndices) : base(obj) {
+    protected ArrayWrapper(Array obj, int rangeFrom, int rangeTo, int[] baseIndices) : base(obj) {
         BaseIndices = baseIndices;
         RangeFrom = rangeFrom;
         RangeTo = rangeTo;
@@ -65,13 +67,11 @@ public class ArrayWrapper : BaseWrapper<Array> {
         if (i < 0 || i >= Length)
             throw new IndexOutOfRangeException();
         if (RangeJumpUnit == 1 && IsFlat) {
-            var et = Obj.GetType().GetElementType()!;
-            return WrapperTypeConverter.Instance.CanConvertFrom(null, et)
-                ? WrapperTypeConverter.Instance.GetWrappingType(et)
-                : et;
+            var et = TransformValueType(Obj.GetType().GetElementType()!);
+            return Converter.CanConvertFrom(null, et) ? Converter.GetWrapperType(et) : et;
         }
 
-        return typeof(ArrayWrapper);
+        return GetType();
     }
 
     public object? this[int i] {
@@ -79,21 +79,27 @@ public class ArrayWrapper : BaseWrapper<Array> {
             if (i < 0 || i >= Length)
                 throw new IndexOutOfRangeException();
             if (RangeJumpUnit != 1) {
-                return new ArrayWrapper(Obj,
+                return CreateSubView(
                     RangeFrom + i * RangeJumpUnit,
                     Math.Min(RangeTo, RangeFrom + (i + 1) * RangeJumpUnit),
                     BaseIndices);
             }
 
             if (!IsFlat)
-                return new ArrayWrapper(Obj, BaseIndices.Append(RangeFrom + i).ToArray());
+                return CreateSubView(BaseIndices.Append(RangeFrom + i).ToArray());
 
             var obj = Obj.GetValue(BaseIndices.Append(RangeFrom + i * RangeJumpUnit).ToArray());
+            obj = TransformObject(obj);
             if (obj is null)
                 return null;
-            if (!WrapperTypeConverter.Instance.CanConvertFrom(null, obj.GetType()))
-                return obj;
-            return WrapperTypeConverter.Instance.ConvertFrom(null, null, obj);
+            
+            return Converter.CanConvertFrom(null, obj.GetType()) ? Converter.ConvertFrom(null, null, obj) : obj;
         }
     }
+
+    protected virtual Type TransformValueType(Type type) => type;
+
+    protected virtual ArrayWrapper CreateSubView(int[] baseIndices) => new(Obj, baseIndices);
+    
+    protected virtual ArrayWrapper CreateSubView(int rangeFrom, int rangeTo, int[] baseIndices) => new(Obj, rangeFrom, rangeTo, baseIndices);
 }
