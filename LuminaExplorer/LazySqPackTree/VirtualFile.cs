@@ -1,54 +1,37 @@
-using Lumina.Data;
-using Lumina.Data.Structs;
-
 namespace LuminaExplorer.LazySqPackTree;
 
 public class VirtualFile {
-    private string? _name;
-    private Func<string?>? _nameResolver;
-    private SqPackFileInfo? _metadata;
-
-    public readonly Category Owner;
+    private readonly Lazy<string?> _name;
+    private readonly uint _dataFileIdAndOffset;
     public readonly uint IndexId;
     public readonly uint FileHash;
-    public readonly byte DataFileId;
-    public readonly long Offset;
-
-    public VirtualFile(Func<string?> nameResolver, uint indexId, uint fileHash, Category owner, byte dataFileId,
-        long offset) {
-        _nameResolver = nameResolver;
-        Owner = owner;
-        IndexId = indexId;
-        FileHash = fileHash;
-        DataFileId = dataFileId;
-        Offset = offset;
-    }
-
-    public VirtualFile(string name, uint indexId, uint fileHash, Category owner, byte dataFileId, long offset) {
-        _name = name;
-        Owner = owner;
-        IndexId = indexId;
-        FileHash = fileHash;
-        DataFileId = dataFileId;
-        Offset = offset;
-    }
-
-    internal void TryResolve() {
-        if (_nameResolver is null)
-            return;
-        var resolved = _nameResolver();
-        if (resolved is not null)
-            _name = resolved;
-        _nameResolver = null;
-    }
-
-    public string Name => _name ?? $"~{FileHash:X08}";
-
-    public SqPackFileInfo Metadata => _metadata ??= Owner.DatFiles[DataFileId].GetFileMetadata(Offset);
-
-    public T GetFileTyped<T>() where T : FileResource => Owner.DatFiles[DataFileId].ReadFile<T>(Offset);
     
-    public FileResource GetFile() => Owner.DatFiles[DataFileId].ReadFile<FileResource>(Offset);
+    public byte DataFileId => unchecked((byte) ((_dataFileIdAndOffset & 0b1110) >> 1));
+    public long Offset => (_dataFileIdAndOffset & ~0xF) << 3;
 
-    public bool NameResolved => _nameResolver is null;
+    internal VirtualFile(Func<string?> nameResolver, uint indexId, uint fileHash, uint dataFileIdAndOffset) {
+        IndexId = indexId;
+        FileHash = fileHash;
+        _dataFileIdAndOffset = dataFileIdAndOffset;
+        _name = new(nameResolver);
+    }
+
+    internal VirtualFile(string name, uint indexId, uint fileHash, uint dataFileIdAndOffset) {
+        IndexId = indexId;
+        FileHash = fileHash;
+        _dataFileIdAndOffset = dataFileIdAndOffset;
+        _name = new(name);
+    }
+
+    public string Name => _name.Value ?? $"~{FileHash:X08}";
+
+    // public SqPackFileInfo Metadata => _metadata ??= Owner.DatFiles[DataFileId].GetFileMetadata(Offset);
+    //
+    // public T GetFileTyped<T>() where T : FileResource => Owner.DatFiles[DataFileId].ReadFile<T>(Offset);
+    //
+    // public FileResource GetFile() => Owner.DatFiles[DataFileId].ReadFile<FileResource>(Offset);
+
+    internal void TryResolve() => _ = _name.Value;
+
+    public bool NameResolved => _name.IsValueCreated;
 }

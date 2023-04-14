@@ -10,4 +10,10 @@ public static class StreamExtensions {
             i += r;
         }
     }
+
+    public static Stream SeekIfNecessary(this Stream stream, long absoluteOffset) {
+        if (stream.Position != absoluteOffset)
+            stream.Position = absoluteOffset;
+        return stream;
+    }
 }

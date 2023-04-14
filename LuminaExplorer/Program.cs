@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using LuminaExplorer.LazySqPackTree;
 using LuminaExplorer.SqPackPath;
 using LuminaExplorer.Window;
 
@@ -21,6 +22,8 @@ static class Program {
             HashDatabase.WriteCachedFile(hashCacheFile.OpenWrite(), x => Debug.WriteLine($@"Progress: {x * 100:0.00}%"), new()).Wait();
         var hashdb = new HashDatabase(hashCacheFile);
 
-        Application.Run(new Explorer(hashdb, gameData));
+        var vsptree = new VirtualSqPackTree(hashdb, gameData);
+
+        Application.Run(new Explorer(vsptree));
     }
 }

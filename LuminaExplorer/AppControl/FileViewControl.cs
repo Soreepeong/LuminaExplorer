@@ -5,14 +5,16 @@ using Be.Windows.Forms;
 using Lumina.Data.Attributes;
 using Lumina.Data.Structs;
 using LuminaExplorer.ObjectRepresentationWrapper;
+using LuminaExplorer.Util;
 
-namespace LuminaExplorer.AppControl; 
+namespace LuminaExplorer.AppControl;
 
 public partial class FileViewControl : UserControl {
     private readonly Dictionary<string, MethodInfo> _getFileByExtension;
     private readonly Dictionary<uint, MethodInfo> _getFileBySignature;
     private readonly HexBox _hexbox;
 
+    private VirtualSqPackTree? _vspTree;
     private VirtualFile? _file;
     private FileResource? _fileResource;
 
@@ -51,7 +53,8 @@ public partial class FileViewControl : UserControl {
         });
     }
 
-    public void SetFile(VirtualFile? file) {
+    public void SetFile(VirtualSqPackTree? vspTree, VirtualFile? file) {
+        _vspTree = vspTree;
         _file = file;
         _fileResource = null;
 
@@ -60,7 +63,7 @@ public partial class FileViewControl : UserControl {
             tabRaw,
         };
 
-        if (file is null) {
+        if (file is null || _vspTree is null) {
             // tabsToHide.ForEach(x => x.Hide());
             return;
         }
@@ -70,7 +73,8 @@ public partial class FileViewControl : UserControl {
         try {
             var possibleTypes = new List<MethodInfo>();
 
-            switch (file.Metadata.Type) {
+            var lookup = _vspTree.GetLookup(file);
+            switch (lookup.Type) {
                 case FileType.Empty:
                     // TODO: deal with hidden files
                     throw new FileNotFoundException();
@@ -82,10 +86,9 @@ public partial class FileViewControl : UserControl {
                             possibleTypes.Add(type);
                     }
 
-                    if (file.Metadata.RawFileSize >= 4) {
-                        // TODO: peek
-                        if (_getFileBySignature.TryGetValue(BitConverter.ToUInt32(file.GetFile().Data[..4]),
-                                out var type))
+                    if (lookup.Size >= 4) {
+                        if (_getFileBySignature.TryGetValue(
+                                new BinaryReader(lookup.DataStream.SeekIfNecessary(0)).ReadUInt32(), out var type))
                             possibleTypes.Add(type);
                     }
 
@@ -113,7 +116,6 @@ public partial class FileViewControl : UserControl {
             }
 
             _fileResource ??= file.GetFile();
-
         } catch (FileNotFoundException) {
             // TODO: show that the file is empty (placeholder)
         }

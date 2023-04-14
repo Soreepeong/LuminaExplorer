@@ -25,144 +25,140 @@ partial class Explorer {
     ///  the contents of this method with the code editor.
     /// </summary>
     private void InitializeComponent() {
-            this.menuStrip1 = new System.Windows.Forms.MenuStrip();
-            this.fileToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.quitToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.splMain = new System.Windows.Forms.SplitContainer();
-            this.txtFileFilter = new System.Windows.Forms.TextBox();
-            this.tvwFiles = new System.Windows.Forms.TreeView();
-            this.splSub = new System.Windows.Forms.SplitContainer();
-            this.lvwFiles = new System.Windows.Forms.ListView();
-            this.menuStrip1.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.splMain)).BeginInit();
-            this.splMain.Panel1.SuspendLayout();
-            this.splMain.Panel2.SuspendLayout();
-            this.splMain.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.splSub)).BeginInit();
-            this.splSub.Panel1.SuspendLayout();
-            this.splSub.SuspendLayout();
-            this.SuspendLayout();
-            // 
-            // menuStrip1
-            // 
-            this.menuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.fileToolStripMenuItem});
-            this.menuStrip1.Location = new System.Drawing.Point(0, 0);
-            this.menuStrip1.Name = "menuStrip1";
-            this.menuStrip1.Size = new System.Drawing.Size(1264, 24);
-            this.menuStrip1.TabIndex = 0;
-            this.menuStrip1.Text = "menuStrip1";
-            // 
-            // fileToolStripMenuItem
-            // 
-            this.fileToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.quitToolStripMenuItem});
-            this.fileToolStripMenuItem.Name = "fileToolStripMenuItem";
-            this.fileToolStripMenuItem.Size = new System.Drawing.Size(37, 20);
-            this.fileToolStripMenuItem.Text = "&File";
-            // 
-            // quitToolStripMenuItem
-            // 
-            this.quitToolStripMenuItem.Name = "quitToolStripMenuItem";
-            this.quitToolStripMenuItem.Size = new System.Drawing.Size(97, 22);
-            this.quitToolStripMenuItem.Text = "&Quit";
-            // 
-            // splMain
-            // 
-            this.splMain.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.splMain.FixedPanel = System.Windows.Forms.FixedPanel.Panel1;
-            this.splMain.Location = new System.Drawing.Point(0, 24);
-            this.splMain.Name = "splMain";
-            // 
-            // splMain.Panel1
-            // 
-            this.splMain.Panel1.Controls.Add(this.txtFileFilter);
-            this.splMain.Panel1.Controls.Add(this.tvwFiles);
-            // 
-            // splMain.Panel2
-            // 
-            this.splMain.Panel2.Controls.Add(this.splSub);
-            this.splMain.Size = new System.Drawing.Size(1264, 737);
-            this.splMain.SplitterDistance = 266;
-            this.splMain.TabIndex = 1;
-            // 
-            // txtFileFilter
-            // 
-            this.txtFileFilter.Dock = System.Windows.Forms.DockStyle.Bottom;
-            this.txtFileFilter.Location = new System.Drawing.Point(0, 714);
-            this.txtFileFilter.Name = "txtFileFilter";
-            this.txtFileFilter.PlaceholderText = "filter...";
-            this.txtFileFilter.Size = new System.Drawing.Size(266, 23);
-            this.txtFileFilter.TabIndex = 1;
-            // 
-            // tvwFiles
-            // 
-            this.tvwFiles.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
-            | System.Windows.Forms.AnchorStyles.Left) 
-            | System.Windows.Forms.AnchorStyles.Right)));
-            this.tvwFiles.HideSelection = false;
-            this.tvwFiles.Location = new System.Drawing.Point(3, 3);
-            this.tvwFiles.Name = "tvwFiles";
-            this.tvwFiles.PathSeparator = "/";
-            this.tvwFiles.Size = new System.Drawing.Size(260, 708);
-            this.tvwFiles.TabIndex = 0;
-            this.tvwFiles.BeforeExpand += new System.Windows.Forms.TreeViewCancelEventHandler(this.tvwFiles_BeforeExpand);
-            this.tvwFiles.AfterSelect += new System.Windows.Forms.TreeViewEventHandler(this.tvwFiles_AfterSelect);
-            // 
-            // splSub
-            // 
-            this.splSub.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.splSub.FixedPanel = System.Windows.Forms.FixedPanel.Panel2;
-            this.splSub.Location = new System.Drawing.Point(0, 0);
-            this.splSub.Name = "splSub";
-            // 
-            // splSub.Panel1
-            // 
-            this.splSub.Panel1.Controls.Add(this.lvwFiles);
-            this.splSub.Size = new System.Drawing.Size(994, 737);
-            this.splSub.SplitterDistance = 670;
-            this.splSub.TabIndex = 0;
-            // 
-            // lvwFiles
-            // 
-            this.lvwFiles.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.lvwFiles.Location = new System.Drawing.Point(0, 0);
-            this.lvwFiles.Name = "lvwFiles";
-            this.lvwFiles.Size = new System.Drawing.Size(670, 737);
-            this.lvwFiles.TabIndex = 1;
-            this.lvwFiles.UseCompatibleStateImageBehavior = false;
-            this.lvwFiles.VirtualMode = true;
-            this.lvwFiles.CacheVirtualItems += new System.Windows.Forms.CacheVirtualItemsEventHandler(this.lvwFiles_CacheVirtualItems);
-            this.lvwFiles.ItemDrag += new System.Windows.Forms.ItemDragEventHandler(this.lvwFiles_ItemDrag);
-            this.lvwFiles.RetrieveVirtualItem += new System.Windows.Forms.RetrieveVirtualItemEventHandler(this.lvwFiles_RetrieveVirtualItem);
-            this.lvwFiles.SearchForVirtualItem += new System.Windows.Forms.SearchForVirtualItemEventHandler(this.lvwFiles_SearchForVirtualItem);
-            this.lvwFiles.SelectedIndexChanged += new System.EventHandler(this.lvwFiles_SelectedIndexChanged);
-            this.lvwFiles.DoubleClick += new System.EventHandler(this.lvwFiles_DoubleClick);
-            // 
-            // Explorer
-            // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(1264, 761);
-            this.Controls.Add(this.splMain);
-            this.Controls.Add(this.menuStrip1);
-            this.MainMenuStrip = this.menuStrip1;
-            this.Name = "Explorer";
-            this.Text = "Form1";
-            this.FormClosed += new System.Windows.Forms.FormClosedEventHandler(this.Explorer_FormClosed);
-            this.menuStrip1.ResumeLayout(false);
-            this.menuStrip1.PerformLayout();
-            this.splMain.Panel1.ResumeLayout(false);
-            this.splMain.Panel1.PerformLayout();
-            this.splMain.Panel2.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)(this.splMain)).EndInit();
-            this.splMain.ResumeLayout(false);
-            this.splSub.Panel1.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)(this.splSub)).EndInit();
-            this.splSub.ResumeLayout(false);
-            this.ResumeLayout(false);
-            this.PerformLayout();
-
+        menuStrip1 = new MenuStrip();
+        fileToolStripMenuItem = new ToolStripMenuItem();
+        quitToolStripMenuItem = new ToolStripMenuItem();
+        splMain = new SplitContainer();
+        txtFileFilter = new TextBox();
+        tvwFiles = new TreeView();
+        splSub = new SplitContainer();
+        lvwFiles = new ListView();
+        menuStrip1.SuspendLayout();
+        ((System.ComponentModel.ISupportInitialize)splMain).BeginInit();
+        splMain.Panel1.SuspendLayout();
+        splMain.Panel2.SuspendLayout();
+        splMain.SuspendLayout();
+        ((System.ComponentModel.ISupportInitialize)splSub).BeginInit();
+        splSub.Panel1.SuspendLayout();
+        splSub.SuspendLayout();
+        SuspendLayout();
+        // 
+        // menuStrip1
+        // 
+        menuStrip1.Items.AddRange(new ToolStripItem[] { fileToolStripMenuItem });
+        menuStrip1.Location = new Point(0, 0);
+        menuStrip1.Name = "menuStrip1";
+        menuStrip1.Size = new Size(1264, 24);
+        menuStrip1.TabIndex = 0;
+        menuStrip1.Text = "menuStrip1";
+        // 
+        // fileToolStripMenuItem
+        // 
+        fileToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { quitToolStripMenuItem });
+        fileToolStripMenuItem.Name = "fileToolStripMenuItem";
+        fileToolStripMenuItem.Size = new Size(37, 20);
+        fileToolStripMenuItem.Text = "&File";
+        // 
+        // quitToolStripMenuItem
+        // 
+        quitToolStripMenuItem.Name = "quitToolStripMenuItem";
+        quitToolStripMenuItem.Size = new Size(97, 22);
+        quitToolStripMenuItem.Text = "&Quit";
+        // 
+        // splMain
+        // 
+        splMain.Dock = DockStyle.Fill;
+        splMain.FixedPanel = FixedPanel.Panel1;
+        splMain.Location = new Point(0, 24);
+        splMain.Name = "splMain";
+        // 
+        // splMain.Panel1
+        // 
+        splMain.Panel1.Controls.Add(txtFileFilter);
+        splMain.Panel1.Controls.Add(tvwFiles);
+        // 
+        // splMain.Panel2
+        // 
+        splMain.Panel2.Controls.Add(splSub);
+        splMain.Size = new Size(1264, 737);
+        splMain.SplitterDistance = 266;
+        splMain.TabIndex = 1;
+        // 
+        // txtFileFilter
+        // 
+        txtFileFilter.Dock = DockStyle.Bottom;
+        txtFileFilter.Location = new Point(0, 714);
+        txtFileFilter.Name = "txtFileFilter";
+        txtFileFilter.PlaceholderText = "filter...";
+        txtFileFilter.Size = new Size(266, 23);
+        txtFileFilter.TabIndex = 1;
+        // 
+        // tvwFiles
+        // 
+        tvwFiles.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+        tvwFiles.HideSelection = false;
+        tvwFiles.Location = new Point(3, 3);
+        tvwFiles.Name = "tvwFiles";
+        tvwFiles.PathSeparator = "/";
+        tvwFiles.Size = new Size(260, 708);
+        tvwFiles.TabIndex = 0;
+        tvwFiles.BeforeExpand += tvwFiles_BeforeExpand;
+        tvwFiles.AfterExpand += tvwFiles_AfterExpand;
+        tvwFiles.AfterSelect += tvwFiles_AfterSelect;
+        // 
+        // splSub
+        // 
+        splSub.Dock = DockStyle.Fill;
+        splSub.FixedPanel = FixedPanel.Panel2;
+        splSub.Location = new Point(0, 0);
+        splSub.Name = "splSub";
+        // 
+        // splSub.Panel1
+        // 
+        splSub.Panel1.Controls.Add(lvwFiles);
+        splSub.Size = new Size(994, 737);
+        splSub.SplitterDistance = 670;
+        splSub.TabIndex = 0;
+        // 
+        // lvwFiles
+        // 
+        lvwFiles.Dock = DockStyle.Fill;
+        lvwFiles.Location = new Point(0, 0);
+        lvwFiles.Name = "lvwFiles";
+        lvwFiles.Size = new Size(670, 737);
+        lvwFiles.TabIndex = 1;
+        lvwFiles.UseCompatibleStateImageBehavior = false;
+        lvwFiles.VirtualMode = true;
+        lvwFiles.CacheVirtualItems += lvwFiles_CacheVirtualItems;
+        lvwFiles.ItemDrag += lvwFiles_ItemDrag;
+        lvwFiles.RetrieveVirtualItem += lvwFiles_RetrieveVirtualItem;
+        lvwFiles.SearchForVirtualItem += lvwFiles_SearchForVirtualItem;
+        lvwFiles.SelectedIndexChanged += lvwFiles_SelectedIndexChanged;
+        lvwFiles.DoubleClick += lvwFiles_DoubleClick;
+        // 
+        // Explorer
+        // 
+        AutoScaleDimensions = new SizeF(7F, 15F);
+        AutoScaleMode = AutoScaleMode.Font;
+        ClientSize = new Size(1264, 761);
+        Controls.Add(splMain);
+        Controls.Add(menuStrip1);
+        MainMenuStrip = menuStrip1;
+        Name = "Explorer";
+        Text = "Form1";
+        FormClosed += Explorer_FormClosed;
+        menuStrip1.ResumeLayout(false);
+        menuStrip1.PerformLayout();
+        splMain.Panel1.ResumeLayout(false);
+        splMain.Panel1.PerformLayout();
+        splMain.Panel2.ResumeLayout(false);
+        ((System.ComponentModel.ISupportInitialize)splMain).EndInit();
+        splMain.ResumeLayout(false);
+        splSub.Panel1.ResumeLayout(false);
+        ((System.ComponentModel.ISupportInitialize)splSub).EndInit();
+        splSub.ResumeLayout(false);
+        ResumeLayout(false);
+        PerformLayout();
     }
 
     #endregion
