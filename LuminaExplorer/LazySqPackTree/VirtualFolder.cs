@@ -8,9 +8,9 @@ namespace LuminaExplorer.LazySqPackTree;
 
 public class VirtualFolder {
     public readonly VirtualFolder? Parent;
+    public readonly string Name;
     public readonly Dictionary<string, VirtualFolder> Folders = new();
     public readonly List<VirtualFile> Files = new();
-    public readonly string Name;
     public readonly bool NameUnknown;
 
     private Action<VirtualFolder>? _folderResolver;
@@ -18,13 +18,13 @@ public class VirtualFolder {
     private Task _folderResolverTask = Task.CompletedTask;
     private Task _fileResolverTask = Task.CompletedTask;
 
-    internal VirtualFolder(string name, VirtualFolder? parent) {
+    private VirtualFolder(string name, VirtualFolder? parent) {
         Name = name;
         NameUnknown = false;
         Parent = parent;
     }
 
-    internal VirtualFolder(int chunk, uint hash, VirtualFolder? parent) {
+    private VirtualFolder(int chunk, uint hash, VirtualFolder? parent) {
         Name = $"~{chunk:X02}~{hash:X08}";
         NameUnknown = true;
         Parent = parent;

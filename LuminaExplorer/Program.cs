@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using LuminaExplorer.SqPackPath;
+using LuminaExplorer.Window;
 
 namespace LuminaExplorer;
 

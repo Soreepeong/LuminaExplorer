@@ -153,9 +153,9 @@ public class HashDatabase {
 
                 var sep = line.LastIndexOf('/');
                 var folderName = line[..sep];
-                var folderHash = Crc32.Get(folderName);
+                var folderHash = Crc32.Get(folderName.ToLowerInvariant());
                 var fileName = line[(sep + 1)..];
-                var fileHash = Crc32.Get(fileName);
+                var fileHash = Crc32.Get(fileName.ToLowerInvariant());
                 var folderKey = Tuple.Create(indexId, folderHash);
 
                 if (!indexToFolderMap.TryGetValue(folderKey, out var folder))
