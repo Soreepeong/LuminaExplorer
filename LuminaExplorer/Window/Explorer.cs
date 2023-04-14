@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
-using Be.Windows.Forms;
 using Lumina;
 using Lumina.Data;
+using LuminaExplorer.AppControl;
 using LuminaExplorer.LazySqPackTree;
 using LuminaExplorer.SqPackPath;
 using LuminaExplorer.Util;
@@ -9,15 +9,21 @@ using LuminaExplorer.Util;
 namespace LuminaExplorer.Window;
 
 public partial class Explorer : Form {
-    private VirtualFolder? _explorerFolder;
-    private List<VirtualObject>? _explorerObjects;
-
+    private readonly FileViewControl _fileViewControl;
     private readonly ImageList _smallImageList;
     private readonly ImageList _largeImageList;
+
+    private VirtualFolder? _explorerFolder;
+    private List<VirtualObject>? _explorerObjects;
 
     public Explorer(HashDatabase hashDatabase, GameData gameData) {
         InitializeComponent();
 
+        splSub.Panel2.Controls.Add(_fileViewControl = new() {
+            Anchor = AnchorStyles.Left | AnchorStyles.Top,
+            Dock = DockStyle.Fill,
+        });
+        
         _smallImageList = new();
         _smallImageList.Images.Add(Extract("shell32.dll", 0, false)!);
         _smallImageList.Images.Add(Extract("shell32.dll", 4, false)!);
@@ -116,7 +122,14 @@ public partial class Explorer : Form {
             for (var i = e.StartIndex; i < _explorerObjects.Count; i++) {
                 if (_explorerObjects[i].Name.StartsWith(e.Text, StringComparison.InvariantCultureIgnoreCase)) {
                     e.Index = i;
-                    break;
+                    return;
+                }
+            }
+            
+            for (var i = 0; i < e.StartIndex; i++) {
+                if (_explorerObjects[i].Name.StartsWith(e.Text, StringComparison.InvariantCultureIgnoreCase)) {
+                    e.Index = i;
+                    return;
                 }
             }
         }
@@ -124,35 +137,16 @@ public partial class Explorer : Form {
 
     private void lvwFiles_SelectedIndexChanged(object sender, EventArgs e) {
         if (lvwFiles.SelectedIndices.Count is > 1 or 0 || _explorerObjects is null) {
-            splSub.Panel2.Controls.Clear();
+            _fileViewControl.SetFile(null);
             return;
         }
 
-        byte[]? data;
-
-        try {
-            data = _explorerObjects[lvwFiles.SelectedIndices[0]].File?.GetFile().Data;
-            if (data is null)
-                throw new FileNotFoundException();
-        } catch (FileNotFoundException) {
-            splSub.Panel2.Controls.Clear();
-            return;
+        if (_explorerObjects[lvwFiles.SelectedIndices[0]].File is { } file) {
+            var isFocused = lvwFiles.Focused;
+            _fileViewControl.SetFile(file);
+            if (isFocused)
+                lvwFiles.Focus();
         }
-
-        var hexbox = new HexBox {
-            Anchor = AnchorStyles.Left | AnchorStyles.Top,
-            Dock = DockStyle.Fill,
-            Font = new(FontFamily.GenericMonospace, 12),
-            VScrollBarVisible = true,
-            ColumnInfoVisible = true,
-            GroupSeparatorVisible = true,
-            LineInfoVisible = true,
-            StringViewVisible = true,
-            ByteProvider = new DynamicByteProvider(data),
-            ReadOnly = true,
-        };
-        splSub.Panel2.Controls.Add(hexbox);
-        lvwFiles.Focus();
     }
 
     private void SetActiveExplorerFolder(VirtualFolder newFolder) {

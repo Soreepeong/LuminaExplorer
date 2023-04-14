@@ -42,11 +42,11 @@ public class VirtualFile {
         _nameResolver = null;
     }
 
-    public string Name => _name ?? $"{FileHash:X08}";
+    public string Name => _name ?? $"~{FileHash:X08}";
 
     public SqPackFileInfo Metadata => _metadata ??= Owner.DatFiles[DataFileId].GetFileMetadata(Offset);
 
-    public T GetFile<T>() where T : FileResource => Owner.DatFiles[DataFileId].ReadFile<T>(Offset);
+    public T GetFileTyped<T>() where T : FileResource => Owner.DatFiles[DataFileId].ReadFile<T>(Offset);
     
     public FileResource GetFile() => Owner.DatFiles[DataFileId].ReadFile<FileResource>(Offset);
 

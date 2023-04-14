@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Drawing;
 using System.ComponentModel;
+using System.Runtime.Versioning;
 using System.Windows.Forms;
 
 namespace Be.Windows.Forms
@@ -11,6 +12,7 @@ namespace Be.Windows.Forms
     /// Defines a build-in ContextMenuStrip manager for HexBox control to show Copy, Cut, Paste menu in contextmenu of the control.
     /// </summary>
     [TypeConverterAttribute(typeof(ExpandableObjectConverter))]
+    [SupportedOSPlatform("windows")]
     public sealed class BuiltInContextMenu : Component
     {
         /// <summary>
