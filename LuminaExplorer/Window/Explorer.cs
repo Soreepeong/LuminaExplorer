@@ -65,9 +65,11 @@ public partial class Explorer : Form {
                 _vspTree.AsFoldersResolved(ln.Folder)
                     .ContinueWith(_ => {
                         ln.Nodes.Clear();
-                        ln.Nodes.AddRange(ln.Folder.Folders.Values.OrderBy(x => x.Name.ToLowerInvariant())
+                        ln.Nodes.AddRange(ln.Folder.Folders
+                            .Where(x => x.Key != "..")
+                            .OrderBy(x => x.Value.Name.ToLowerInvariant())
                             .Select(x =>
-                                (TreeNode)new FolderTreeNode(x, x.Name, _vspTree.WillFolderNeverHaveSubfolders(x)))
+                                (TreeNode)new FolderTreeNode(x.Value, x.Key, !_vspTree.WillFolderNeverHaveSubfolders(x.Value)))
                             .ToArray());
 
                         if (ln.ShouldExpandRecursively()) {
@@ -157,13 +159,13 @@ public partial class Explorer : Form {
 
     private void lvwFiles_SelectedIndexChanged(object sender, EventArgs e) {
         if (lvwFiles.SelectedIndices.Count is > 1 or 0 || _explorerObjects is null) {
-            _fileViewControl.SetFile(null);
+            _fileViewControl.SetFile(null, null);
             return;
         }
 
         if (_explorerObjects[lvwFiles.SelectedIndices[0]].File is { } file) {
             var isFocused = lvwFiles.Focused;
-            _fileViewControl.SetFile(file);
+            _fileViewControl.SetFile(_vspTree, file);
             if (isFocused)
                 lvwFiles.Focus();
         }

@@ -10,8 +10,8 @@ using LuminaExplorer.Util;
 namespace LuminaExplorer.AppControl;
 
 public partial class FileViewControl : UserControl {
-    private readonly Dictionary<string, MethodInfo> _getFileByExtension;
-    private readonly Dictionary<uint, MethodInfo> _getFileBySignature;
+    private readonly Dictionary<string, Type> _getFileByExtension;
+    private readonly Dictionary<uint, Type> _getFileBySignature;
     private readonly HexBox _hexbox;
 
     private VirtualSqPackTree? _vspTree;
@@ -26,11 +26,10 @@ public partial class FileViewControl : UserControl {
             .SelectMany(x => x.GetTypes())
             .Where(x => fileResourceType.IsAssignableFrom(x) && x != fileResourceType)
             .ToArray();
-        var genericGetFile = typeof(VirtualFile).GetMethod("GetFileTyped")!;
         _getFileByExtension = allResourceTypes.ToDictionary(
             x => (x.GetCustomAttribute<FileExtensionAttribute>()?.Extension ?? $".{x.Name[..^4]}")
                 .ToLowerInvariant(),
-            x => genericGetFile.MakeGenericMethod(x));
+            x => x);
 
         _getFileByExtension[".atex"] = _getFileByExtension[".tex"];
 
@@ -71,7 +70,7 @@ public partial class FileViewControl : UserControl {
         var tabsToShow = new List<TabPage>();
 
         try {
-            var possibleTypes = new List<MethodInfo>();
+            var possibleTypes = new List<Type>();
 
             var lookup = _vspTree.GetLookup(file);
             switch (lookup.Type) {
@@ -106,16 +105,13 @@ public partial class FileViewControl : UserControl {
             possibleTypes.Reverse();
             foreach (var f in possibleTypes) {
                 try {
-                    if (f.Invoke(file, null) is not FileResource fr)
-                        continue;
-
-                    _fileResource = fr;
+                    _fileResource = lookup.AsResource(f);
                 } catch (Exception) {
                     // pass 
                 }
             }
 
-            _fileResource ??= file.GetFile();
+            _fileResource ??= lookup.AsResource(typeof(FileResource));
         } catch (FileNotFoundException) {
             // TODO: show that the file is empty (placeholder)
         }

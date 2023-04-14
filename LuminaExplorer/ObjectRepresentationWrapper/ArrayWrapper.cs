@@ -42,11 +42,20 @@ public class ArrayWrapper : BaseWrapper<Array> {
         var pds = new PropertyDescriptorCollection(null);
 
         foreach (var i in Enumerable.Range(0, Length)) {
-            pds.Add(new SimplePropertyDescriptor(
-                typeof(ArrayWrapper),
-                GetValueName(i),
-                GetValueType(i),
-                new(() => this[i])));
+            var valueType = GetValueType(i);
+            if (valueType.IsAssignableTo(typeof(ArrayWrapper)) || !WrapperTypeConverter.Instance.CanConvertFrom(null, valueType)) {
+                pds.Add(new SimplePropertyDescriptor(
+                    typeof(ArrayWrapper),
+                    GetValueName(i),
+                    valueType,
+                    new(() => this[i])));
+            } else {
+                pds.Add(new SimplePropertyDescriptor(
+                    typeof(ArrayWrapper),
+                    GetValueName(i),
+                    valueType,
+                    new(() => WrapperTypeConverter.Instance.ConvertFrom(null, null, this[i]))));
+            }
         }
 
         return pds;

@@ -8,6 +8,7 @@ namespace LuminaExplorer.LazySqPackTree.VirtualFileStream;
 public class StandardVirtualFileStream : BaseVirtualFileStream {
     private readonly Stream _baseStream;
     private readonly long _baseOffset;
+    private readonly uint _headerSize;
     private readonly int _numBlocks;
     private readonly uint[] _requestOffsets;
     private readonly uint[] _blockOffsets;
@@ -20,11 +21,12 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
     private readonly byte[] _readBuffer = new byte[16384];
     private readonly byte[] _blockBuffer = new byte[16000];
 
-    public StandardVirtualFileStream(Stream baseStream, long baseOffset, uint numBlocks, uint length,
+    public StandardVirtualFileStream(Stream baseStream, long baseOffset, uint headerSize, uint numBlocks, uint length,
         uint reservedSpaceUnits, uint occupiedSpaceUnits)
         : base(length, reservedSpaceUnits, occupiedSpaceUnits) {
         _baseStream = baseStream;
         _baseOffset = baseOffset;
+        _headerSize = headerSize;
         _numBlocks = (int) numBlocks;
         _requestOffsets = new uint[numBlocks + 1];
         _requestOffsets[^1] = length;
@@ -46,7 +48,7 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
             var bufferRemaining = (_requestOffsets[_blockIndex + 1] - _position);
             if (bufferConsumed < _blockDecompressedSize && bufferRemaining > 0) {
                 var available = Math.Min((int)bufferRemaining, count);
-                Array.Copy(_blockBuffer, bufferConsumed, buffer, offset, count);
+                Array.Copy(_blockBuffer, bufferConsumed, buffer, offset, available);
                 offset += available;
                 count -= available;
                 _position += (uint)available;
@@ -62,13 +64,14 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
         }
 
         // 2. New blocks!
-        var i = Array.BinarySearch(_requestOffsets, (int) _position);
+        var i = Array.BinarySearch(_requestOffsets, _position);
         if (i < 0)
             i = ~i - 1;
 
         unsafe {
             fixed (void* p = _readBuffer) {
                 var dbh = (DatBlockHeader*) p;
+                var dbhSize = Marshal.SizeOf<DatBlockHeader>();
                 
                 for (; i < _numBlocks; i++) {
                     _baseStream
@@ -76,7 +79,9 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
                         .ReadFully(new(_readBuffer, 0, _blockSizes[i]));
 
                     if (dbh->IsCompressed) {
-                        using var zlibStream = new DeflateStream(new MemoryStream(_readBuffer), CompressionMode.Decompress);
+                        using var zlibStream = new DeflateStream(
+                            new MemoryStream(_readBuffer, dbhSize, (int)dbh->CompressedSize),
+                            CompressionMode.Decompress);
                         zlibStream.ReadFully(new(_blockBuffer, 0, (int)dbh->DecompressedSize));
                     } else {
                         Array.Copy(_readBuffer, 0, _blockBuffer, 0, dbh->DecompressedSize);
@@ -115,11 +120,10 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
         if (_offsetsReady)
             return;
 
-        var headerSize = (uint) Marshal.SizeOf<SqPackFileInfo>();
         var blockInfos = new DatStdFileBlockInfos[_numBlocks];
         fixed (void* p = blockInfos) {
             _baseStream
-                .SeekIfNecessary(_baseOffset + headerSize)
+                .SeekIfNecessary(_baseOffset + (uint) Marshal.SizeOf<SqPackFileInfo>())
                 .ReadFully(new(p, Marshal.SizeOf<DatStdFileBlockInfos>() * _numBlocks));
         }
 
@@ -127,7 +131,7 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
         for (var i = 0; i < _numBlocks; i++) {
             _requestOffsets[i] = requestOffset;
             _blockSizes[i] = blockInfos[i].CompressedSize;
-            _blockOffsets[i] = headerSize + blockInfos[i].Offset;
+            _blockOffsets[i] = _headerSize + blockInfos[i].Offset;
             requestOffset += blockInfos[i].UncompressedSize;
         }
 
