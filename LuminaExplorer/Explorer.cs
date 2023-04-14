@@ -5,6 +5,7 @@ using Be.Windows.Forms;
 using Lumina;
 using Lumina.Data;
 using LuminaExplorer.LazySqPackTree;
+using LuminaExplorer.SqPackPath;
 using LuminaExplorer.Util;
 
 namespace LuminaExplorer;

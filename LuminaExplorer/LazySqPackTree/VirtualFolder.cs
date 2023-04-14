@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Lumina;
 using Lumina.Data;
+using LuminaExplorer.SqPackPath;
 
 namespace LuminaExplorer.LazySqPackTree;
 
