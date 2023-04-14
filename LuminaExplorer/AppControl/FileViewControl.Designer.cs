@@ -10,8 +10,7 @@
         /// </summary>
         /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
         protected override void Dispose(bool disposing) {
-            if (disposing && (components != null))
-            {
+            if (disposing && (components != null)) {
                 components.Dispose();
             }
             base.Dispose(disposing);
@@ -24,65 +23,65 @@
         /// the contents of this method with the code editor.
         /// </summary>
         private void InitializeComponent() {
-            this.tabs = new System.Windows.Forms.TabControl();
-            this.tabProperties = new System.Windows.Forms.TabPage();
-            this.tabRaw = new System.Windows.Forms.TabPage();
-            this.propertyGrid = new System.Windows.Forms.PropertyGrid();
-            this.tabs.SuspendLayout();
-            this.tabProperties.SuspendLayout();
-            this.SuspendLayout();
+            tabs = new TabControl();
+            tabProperties = new TabPage();
+            propertyGrid = new PropertyGrid();
+            tabRaw = new TabPage();
+            tabs.SuspendLayout();
+            tabProperties.SuspendLayout();
+            SuspendLayout();
             // 
             // tabs
             // 
-            this.tabs.Controls.Add(this.tabProperties);
-            this.tabs.Controls.Add(this.tabRaw);
-            this.tabs.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.tabs.Location = new System.Drawing.Point(0, 0);
-            this.tabs.Name = "tabs";
-            this.tabs.SelectedIndex = 0;
-            this.tabs.Size = new System.Drawing.Size(517, 478);
-            this.tabs.TabIndex = 0;
+            tabs.Controls.Add(tabProperties);
+            tabs.Controls.Add(tabRaw);
+            tabs.Dock = DockStyle.Fill;
+            tabs.Location = new Point(0, 0);
+            tabs.Name = "tabs";
+            tabs.SelectedIndex = 0;
+            tabs.Size = new Size(517, 478);
+            tabs.TabIndex = 0;
             // 
             // tabProperties
             // 
-            this.tabProperties.Controls.Add(this.propertyGrid);
-            this.tabProperties.Location = new System.Drawing.Point(4, 24);
-            this.tabProperties.Name = "tabProperties";
-            this.tabProperties.Padding = new System.Windows.Forms.Padding(3);
-            this.tabProperties.Size = new System.Drawing.Size(509, 450);
-            this.tabProperties.TabIndex = 0;
-            this.tabProperties.Text = "Properties";
-            this.tabProperties.UseVisualStyleBackColor = true;
-            // 
-            // tabRaw
-            // 
-            this.tabRaw.Location = new System.Drawing.Point(4, 24);
-            this.tabRaw.Name = "tabRaw";
-            this.tabRaw.Padding = new System.Windows.Forms.Padding(3);
-            this.tabRaw.Size = new System.Drawing.Size(509, 450);
-            this.tabRaw.TabIndex = 1;
-            this.tabRaw.Text = "Hex View";
-            this.tabRaw.UseVisualStyleBackColor = true;
+            tabProperties.Controls.Add(propertyGrid);
+            tabProperties.Location = new Point(4, 24);
+            tabProperties.Name = "tabProperties";
+            tabProperties.Padding = new Padding(3);
+            tabProperties.Size = new Size(509, 450);
+            tabProperties.TabIndex = 0;
+            tabProperties.Text = "Properties";
+            tabProperties.UseVisualStyleBackColor = true;
             // 
             // propertyGrid
             // 
-            this.propertyGrid.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.propertyGrid.Location = new System.Drawing.Point(3, 3);
-            this.propertyGrid.Name = "propertyGrid";
-            this.propertyGrid.Size = new System.Drawing.Size(503, 444);
-            this.propertyGrid.TabIndex = 0;
+            propertyGrid.Dock = DockStyle.Fill;
+            propertyGrid.Location = new Point(3, 3);
+            propertyGrid.Name = "propertyGrid";
+            propertyGrid.PropertySort = PropertySort.Categorized;
+            propertyGrid.Size = new Size(503, 444);
+            propertyGrid.TabIndex = 0;
+            // 
+            // tabRaw
+            // 
+            tabRaw.Location = new Point(4, 24);
+            tabRaw.Name = "tabRaw";
+            tabRaw.Padding = new Padding(3);
+            tabRaw.Size = new Size(509, 450);
+            tabRaw.TabIndex = 1;
+            tabRaw.Text = "Hex View";
+            tabRaw.UseVisualStyleBackColor = true;
             // 
             // FileViewControl
             // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.Controls.Add(this.tabs);
-            this.Name = "FileViewControl";
-            this.Size = new System.Drawing.Size(517, 478);
-            this.tabs.ResumeLayout(false);
-            this.tabProperties.ResumeLayout(false);
-            this.ResumeLayout(false);
-
+            AutoScaleDimensions = new SizeF(7F, 15F);
+            AutoScaleMode = AutoScaleMode.Font;
+            Controls.Add(tabs);
+            Name = "FileViewControl";
+            Size = new Size(517, 478);
+            tabs.ResumeLayout(false);
+            tabProperties.ResumeLayout(false);
+            ResumeLayout(false);
         }
 
         #endregion
