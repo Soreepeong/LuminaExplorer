@@ -23,6 +23,16 @@ public class WrapperTypeConverter : TypeConverter {
         return true;
     }
 
+    public Type GetWrappingType(Type t) {
+        if (t.IsAssignableTo(typeof(Array)))
+            return typeof(ArrayWrapper);
+
+        if (t.IsAssignableTo(typeof(ICollection)))
+            return typeof(ArrayWrapper);
+
+        return typeof(ObjectWrapper);
+    }
+
     public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object? value) {
         if (value is null)
             return null;

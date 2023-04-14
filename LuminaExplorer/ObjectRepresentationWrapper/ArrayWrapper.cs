@@ -42,20 +42,11 @@ public class ArrayWrapper : BaseWrapper<Array> {
         var pds = new PropertyDescriptorCollection(null);
 
         foreach (var i in Enumerable.Range(0, Length)) {
-            var valueType = GetValueType(i);
-            if (valueType.IsAssignableTo(typeof(ArrayWrapper)) || !WrapperTypeConverter.Instance.CanConvertFrom(null, valueType)) {
-                pds.Add(new SimplePropertyDescriptor(
-                    typeof(ArrayWrapper),
-                    GetValueName(i),
-                    valueType,
-                    new(() => this[i])));
-            } else {
-                pds.Add(new SimplePropertyDescriptor(
-                    typeof(ArrayWrapper),
-                    GetValueName(i),
-                    valueType,
-                    new(() => WrapperTypeConverter.Instance.ConvertFrom(null, null, this[i]))));
-            }
+            pds.Add(new SimplePropertyDescriptor(
+                typeof(ArrayWrapper),
+                GetValueName(i),
+                GetValueType(i),
+                new(() => this[i])));
         }
 
         return pds;
@@ -73,8 +64,13 @@ public class ArrayWrapper : BaseWrapper<Array> {
     public Type GetValueType(int i) {
         if (i < 0 || i >= Length)
             throw new IndexOutOfRangeException();
-        if (RangeJumpUnit == 1 && IsFlat)
-            return Obj.GetType().GetElementType()!;
+        if (RangeJumpUnit == 1 && IsFlat) {
+            var et = Obj.GetType().GetElementType()!;
+            return WrapperTypeConverter.Instance.CanConvertFrom(null, et)
+                ? WrapperTypeConverter.Instance.GetWrappingType(et)
+                : et;
+        }
+
         return typeof(ArrayWrapper);
     }
 

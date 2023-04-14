@@ -53,7 +53,7 @@ public partial class Explorer : Form {
             if (ln.ShouldExpandRecursively()) {
                 BeginInvoke(() => {
                     foreach (var n in e.Node.Nodes)
-                        ((TreeNode)n).Expand();
+                        ((TreeNode) n).Expand();
                 });
             }
         }
@@ -67,14 +67,15 @@ public partial class Explorer : Form {
                         ln.Nodes.Clear();
                         ln.Nodes.AddRange(ln.Folder.Folders
                             .Where(x => x.Key != "..")
-                            .OrderBy(x => x.Value.Name.ToLowerInvariant())
+                            .OrderBy(x => x.Key.ToLowerInvariant())
                             .Select(x =>
-                                (TreeNode)new FolderTreeNode(x.Value, x.Key, !_vspTree.WillFolderNeverHaveSubfolders(x.Value)))
+                                (TreeNode) new FolderTreeNode(x.Value, x.Key,
+                                    !_vspTree.WillFolderNeverHaveSubfolders(x.Value)))
                             .ToArray());
 
                         if (ln.ShouldExpandRecursively()) {
                             foreach (var n in ln.Nodes)
-                                ((TreeNode)n).Expand();
+                                ((TreeNode) n).Expand();
                         }
                     }, TaskScheduler.FromCurrentSynchronizationContext());
             }
@@ -140,7 +141,7 @@ public partial class Explorer : Form {
     }
 
     private void lvwFiles_SearchForVirtualItem(object sender, SearchForVirtualItemEventArgs e) {
-        if (e is { IsTextSearch: true, Text: { } } && _explorerObjects is not null) {
+        if (e is {IsTextSearch: true, Text: { }} && _explorerObjects is not null) {
             for (var i = e.StartIndex; i < _explorerObjects.Count; i++) {
                 if (_explorerObjects[i].Name.StartsWith(e.Text, StringComparison.InvariantCultureIgnoreCase)) {
                     e.Index = i;
@@ -191,16 +192,12 @@ public partial class Explorer : Form {
 
             lvwFiles.BeginUpdate();
             _explorerObjects = new();
-            _explorerObjects.AddRange(_explorerFolder.Folders.Values
-                .OrderBy(x => x.Name.ToLowerInvariant())
-                .Select(x => new VirtualObject {
-                    Folder = x
-                }));
+            _explorerObjects.AddRange(_explorerFolder.Folders
+                .OrderBy(x => x.Key.ToLowerInvariant())
+                .Select(x => new VirtualObject(x.Value, x.Key)));
             _explorerObjects.AddRange(_explorerFolder.Files
                 .OrderBy(x => x.Name.ToLowerInvariant())
-                .Select(x => new VirtualObject {
-                    File = x
-                }));
+                .Select(x => new VirtualObject(x)));
             lvwFiles.VirtualListSize = _explorerObjects.Count;
             lvwFiles.EndUpdate();
         }, TaskScheduler.FromCurrentSynchronizationContext());
@@ -236,12 +233,21 @@ public partial class Explorer : Form {
     }
 
     private class VirtualObject {
-        public VirtualFile? File;
-        public VirtualFolder? Folder;
+        public readonly VirtualFile? File;
+        public readonly VirtualFolder? Folder;
+        public readonly string Name;
 
         private ListViewItem? _lvi;
 
-        public string Name => File?.Name ?? Folder?.Name ?? throw new InvalidOperationException();
+        public VirtualObject(VirtualFile file) {
+            File = file;
+            Name = file.Name;
+        }
+
+        public VirtualObject(VirtualFolder folder, string? preferredName) {
+            Folder = folder;
+            Name = preferredName ?? folder.Name;
+        }
 
         public ListViewItem ListViewItem =>
             _lvi ??= new(new ListViewItem.ListViewSubItem[] {

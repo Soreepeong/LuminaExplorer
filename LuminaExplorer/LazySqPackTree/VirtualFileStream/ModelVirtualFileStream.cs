@@ -169,7 +169,7 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
             _blockDecompressedSizes[i] = checked((ushort) blockHeader.DecompressedSize);
             _requestOffsets[i] = i == 0
                 ? ModelFileHeaderSize
-                : _requestOffsets[i - 1] + blockHeader.DecompressedSize;
+                : _requestOffsets[i - 1] + _blockDecompressedSizes[i - 1];
         }
 
         _requestOffsets[^1] = (uint) Length;

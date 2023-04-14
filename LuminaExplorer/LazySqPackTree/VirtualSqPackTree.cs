@@ -70,12 +70,15 @@ public class VirtualSqPackTree {
     }
 
     public bool WillFolderNeverHaveSubfolders(VirtualFolder folder) =>
-        !folder.Folders.Any() && IsFoldersResolved(folder);
+        folder.Folders.All(x => x.Key == "..") && IsFoldersResolved(folder);
 
     public bool IsFoldersResolved(VirtualFolder folder) {
         lock (_childFoldersResolvers) {
             if (!_childFoldersResolvers.TryGetValue(folder, out var resolver))
                 return true;
+
+            if (!resolver.IsValueCreated)
+                return false;
 
             if (resolver.Value.IsCompleted)
                 _childFoldersResolvers.Remove(folder);

@@ -127,12 +127,10 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
                 .ReadFully(new(p, Marshal.SizeOf<DatStdFileBlockInfos>() * _numBlocks));
         }
 
-        var requestOffset = 0u;
         for (var i = 0; i < _numBlocks; i++) {
-            _requestOffsets[i] = requestOffset;
+            _requestOffsets[i] = i == 0 ? 0 : _requestOffsets[i - 1] + blockInfos[i - 1].UncompressedSize;
             _blockSizes[i] = blockInfos[i].CompressedSize;
             _blockOffsets[i] = _headerSize + blockInfos[i].Offset;
-            requestOffset += blockInfos[i].UncompressedSize;
         }
 
         _offsetsReady = true;
