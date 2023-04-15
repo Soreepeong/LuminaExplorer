@@ -2,8 +2,8 @@
 
 namespace LuminaExplorer.LazySqPackTree.VirtualFileStream;
 
-public abstract class BaseVirtualFileStream : Stream {
-    protected uint _position = 0;
+public abstract class BaseVirtualFileStream : Stream, ICloneable {
+    protected uint PositionUint = 0;
 
     public readonly uint ReservedSpaceUnits;
     public readonly uint OccupiedSpaceUnits;
@@ -25,7 +25,7 @@ public abstract class BaseVirtualFileStream : Stream {
         };
         if (newPosition < 0 || newPosition > Length)
             throw new IOException();
-        return _position = (uint) newPosition;
+        return PositionUint = (uint) newPosition;
     }
 
     public override void SetLength(long value) => throw new NotSupportedException();
@@ -39,7 +39,15 @@ public abstract class BaseVirtualFileStream : Stream {
     public override long Length { get; }
 
     public override long Position {
-        get => _position;
+        get => PositionUint;
         set => Seek(value, SeekOrigin.Begin);
     }
+
+    protected int ReadImplPadToEnd(byte[] buffer, int offset, int count) {
+        count = (int) Math.Min(Length - Position, count);
+        Array.Fill(buffer, (byte) 0, offset, count);
+        return count;
+    }
+
+    public abstract object Clone();
 }

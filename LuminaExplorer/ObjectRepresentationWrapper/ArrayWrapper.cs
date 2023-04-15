@@ -48,7 +48,9 @@ public class ArrayWrapper : BaseWrapper<Array> {
                 typeof(ArrayWrapper),
                 GetValueName(i),
                 GetValueType(i),
-                new(() => this[i])));
+                new(() => this[i]),
+                null,
+                null));
         }
 
         return pds;

@@ -63,7 +63,7 @@ public class VirtualSqPackTree {
         var fileName = Repository.BuildDatStr(cat, ex, chunk, PlatformId, $"dat{file.DataFileId}");
         var datPath = Path.Combine(InstallationSqPackDirectory.FullName, repoName, fileName);
 
-        data = new(file, PlatformId, File.OpenRead(datPath));
+        data = new(this, file, new(File.OpenRead(datPath), PlatformId));
         
         _fileLookups.Add(file, data);
         return data;

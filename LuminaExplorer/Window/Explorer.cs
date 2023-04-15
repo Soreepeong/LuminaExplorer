@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using Lumina.Data;
 using LuminaExplorer.AppControl;
 using LuminaExplorer.LazySqPackTree;
 using LuminaExplorer.Util;

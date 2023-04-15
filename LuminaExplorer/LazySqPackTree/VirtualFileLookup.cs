@@ -10,26 +10,42 @@ using LuminaExplorer.Util;
 namespace LuminaExplorer.LazySqPackTree;
 
 public sealed class VirtualFileLookup : IDisposable {
+    private readonly VirtualSqPackTree _tree;
+    private readonly Lazy<BaseVirtualFileStream> _dataStream;
+
     public readonly VirtualFile VirtualFile;
-    public readonly PlatformId PlatformId;
-    public readonly BaseVirtualFileStream DataStream;
     public readonly FileType Type;
     public readonly uint Size;
     public readonly uint ReservedSpaceUnits;
     public readonly uint OccupiedSpaceUnits;
 
+    /// <summary>Used only for constructiong MdlFile.</summary>
     private ModelBlock _modelBlock;
 
-    internal unsafe VirtualFileLookup(VirtualFile virtualFile, PlatformId platformId, Stream datStream) {
-        VirtualFile = virtualFile;
-        PlatformId = platformId;
-        datStream.Position = virtualFile.Offset;
 
+    internal unsafe VirtualFileLookup(VirtualSqPackTree tree, VirtualFile virtualFile, LuminaBinaryReader reader) {
+        _tree = tree;
+        VirtualFile = virtualFile;
+        reader.Position = virtualFile.Offset;
+
+        // TODO: figure out why does it AVEs without these 
+        var fileResourceType = typeof(FileResource);
+        _ = AppDomain.CurrentDomain.GetAssemblies()
+            .SelectMany(x => x.GetTypes())
+            .Where(x => fileResourceType.IsAssignableFrom(x) && x != fileResourceType)
+            .ToArray();
+        
+        // Note: do not use ReadStructure/ReadFully.
         _modelBlock = new();
         fixed (void* p = &_modelBlock) {
-            var mdlBlockReadSize = datStream.Read(new(p, Marshal.SizeOf<ModelBlock>()));
+            var mdlBlockReadSize = reader.Read(new Span<byte>(p, Marshal.SizeOf<ModelBlock>()));
             if (mdlBlockReadSize < Marshal.SizeOf<SqPackFileInfo>()) {
-                datStream.Close();
+                reader.Close();
+                throw new InvalidDataException();
+            }
+
+            if (_modelBlock.Type == FileType.Model && mdlBlockReadSize < Marshal.SizeOf<ModelBlock>()) {
+                reader.Close();
                 throw new InvalidDataException();
             }
         }
@@ -39,25 +55,27 @@ public sealed class VirtualFileLookup : IDisposable {
         ReservedSpaceUnits = _modelBlock.NumberOfBlocks;
         OccupiedSpaceUnits = _modelBlock.UsedNumberOfBlocks;
 
-        DataStream = Type switch {
+        _dataStream = new(() => Type switch {
             FileType.Empty => new EmptyVirtualFileStream(ReservedSpaceUnits, OccupiedSpaceUnits),
-            FileType.Standard => new StandardVirtualFileStream(datStream, virtualFile.Offset, _modelBlock.Size,
+            FileType.Standard => new StandardVirtualFileStream(reader, virtualFile.Offset, _modelBlock.Size,
                 _modelBlock.Version, Size, ReservedSpaceUnits, OccupiedSpaceUnits),
-            FileType.Model => new ModelVirtualFileStream(datStream, virtualFile.Offset, Size, ReservedSpaceUnits,
-                OccupiedSpaceUnits),
-            FileType.Texture => new EmptyVirtualFileStream(ReservedSpaceUnits, OccupiedSpaceUnits), // TODO
+            FileType.Model => new ModelVirtualFileStream(reader, virtualFile.Offset, _modelBlock),
+            FileType.Texture => new TextureVirtualFileStream(reader, virtualFile.Offset, _modelBlock.Size,
+                _modelBlock.Version, Size, ReservedSpaceUnits, OccupiedSpaceUnits, _tree.PlatformId),
             _ => throw new NotSupportedException()
-        };
+        });
     }
 
+    public BaseVirtualFileStream DataStream => _dataStream.Value;
+    
     public Task<FileResource> AsFileResource(Type type) {
         const BindingFlags bindingFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
         if (!type.IsAssignableTo(typeof(FileResource)))
             throw new ArgumentException(null, nameof(type));
 
         return Task.Run(() => {
-            var buffer = new byte[DataStream.Length];
-            DataStream.SeekIfNecessary(0).ReadFully(new(buffer));
+            var buffer = new byte[_dataStream.Value.Length];
+            _dataStream.Value.WithSeek(0).ReadFully(new(buffer));
 
             var file = (FileResource) Activator.CreateInstance(type)!;
             var luminaFileInfo = new LuminaFileInfo {
@@ -84,7 +102,7 @@ public sealed class VirtualFileLookup : IDisposable {
                 !.SetValue(file, buffer);
             typeof(FileResource)
                 .GetProperty("Reader", bindingFlags)
-                !.SetValue(file, new LuminaBinaryReader(buffer, PlatformId));
+                !.SetValue(file, new LuminaBinaryReader(buffer, _tree.PlatformId));
             typeof(FileResource)
                 .GetMethod("LoadFile", bindingFlags)
                 !.Invoke(file, null);
@@ -98,7 +116,7 @@ public sealed class VirtualFileLookup : IDisposable {
             .SelectMany(x => x.GetTypes())
             .Where(x => fileResourceType.IsAssignableFrom(x) && x != fileResourceType)
             .ToArray();
-        
+
         var typeByExt = allResourceTypes.ToDictionary(
             x => (x.GetCustomAttribute<FileExtensionAttribute>()?.Extension ?? $".{x.Name[..^4]}")
                 .ToLowerInvariant(),
@@ -127,7 +145,7 @@ public sealed class VirtualFileLookup : IDisposable {
 
                 if (Size >= 4) {
                     if (typeByMagic.TryGetValue(
-                            new BinaryReader(DataStream.SeekIfNecessary(0)).ReadUInt32(), out var type))
+                            new BinaryReader(_dataStream.Value.WithSeek(0)).ReadUInt32(), out var type))
                         possibleTypes.Add(type);
                 }
 
@@ -140,7 +158,7 @@ public sealed class VirtualFileLookup : IDisposable {
             case FileType.Texture:
                 possibleTypes.Add(typeByExt[".tex"]);
                 break;
-            
+
             default:
                 throw new NotSupportedException();
         }
@@ -158,6 +176,7 @@ public sealed class VirtualFileLookup : IDisposable {
     }
 
     public void Dispose() {
-        DataStream.Dispose();
+        if (_dataStream.IsValueCreated)
+            _dataStream.Value.Dispose();
     }
 }

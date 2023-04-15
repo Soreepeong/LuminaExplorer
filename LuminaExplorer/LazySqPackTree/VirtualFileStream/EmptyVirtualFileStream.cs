@@ -9,4 +9,6 @@ public class EmptyVirtualFileStream : BaseVirtualFileStream {
     public override int Read(byte[] buffer, int offset, int count) => 0;
 
     public override FileType Type => FileType.Empty;
+
+    public override object Clone() => new EmptyVirtualFileStream(ReservedSpaceUnits, OccupiedSpaceUnits);
 }

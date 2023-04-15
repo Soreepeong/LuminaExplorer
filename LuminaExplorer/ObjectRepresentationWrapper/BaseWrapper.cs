@@ -49,9 +49,17 @@ public abstract class BaseWrapper<T> : ICustomTypeDescriptor {
     protected class SimplePropertyDescriptor : PropertyDescriptor {
         private readonly Lazy<object?> _resolver;
 
-        public SimplePropertyDescriptor(Type componentType, string name, Type propertyType, Lazy<object?> resolver,
-            params Attribute?[] attributes)
-            : base(name, attributes.Where(x => x != null).ToArray()!) {
+        public SimplePropertyDescriptor(
+            Type componentType,
+            string name,
+            Type propertyType,
+            Lazy<object?> resolver,
+            string? categoryName,
+            string? description)
+            : base(name, new Attribute?[] {
+                categoryName is null ? null : new CategoryAttribute(categoryName),
+                description is null ? null : new DescriptionAttribute(description)
+            }.Where(x => x != null).ToArray()!) {
             ComponentType = componentType;
             PropertyType = propertyType;
             _resolver = resolver;

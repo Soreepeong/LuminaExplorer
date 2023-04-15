@@ -18,8 +18,6 @@ public class ObjectWrapper : BaseWrapper<object> {
         
         var type = obj.GetType();
 
-        var categoryAttributes = new Dictionary<Type, CategoryAttribute>();
-
         var skipFields = false;
         skipFields |= obj is DictionaryEntry;
         skipFields |= type.IsGenericType && type.GetGenericTypeDefinition() == typeof(KeyValuePair<,>);
@@ -31,20 +29,31 @@ public class ObjectWrapper : BaseWrapper<object> {
                 if (info.GetCustomAttributes(typeof(ObsoleteAttribute), false).Any())
                     continue;
 
-                CategoryAttribute? catAttr = null;
-                if (info.DeclaringType != null && !categoryAttributes.TryGetValue(info.DeclaringType, out catAttr))
-                    categoryAttributes.Add(info.DeclaringType, catAttr = new(info.DeclaringType.ToString()));
+                var accessModifier = info.IsPublic ? "public" :
+                    info.IsAssembly ? "internal" :
+                    info.IsFamily ? "protected" :
+                    info.IsFamilyOrAssembly ? "protected public" :
+                    info.IsFamilyAndAssembly ? "private protected" :
+                    info.IsPrivate ? "private" :
+                    "";
 
+                var category = info.DeclaringType?.ToString();
+                var description = $"{accessModifier} {info.FieldType} {info.Name};";
+                
+                Type fieldType;
+                Func<object?> valueResolver;
                 if (info.TryGetCopyOfFixedArray(obj, out var array)) {
-                    pds.Add(new SimplePropertyDescriptor(type, info.Name, Converter.GetWrapperType(array.GetType()),
-                        new(() => Converter.ConvertFrom(null, null, array)), catAttr));
+                    fieldType = Converter.GetWrapperType(array.GetType());
+                    valueResolver = () => Converter.ConvertFrom(null, null, array);
                 } else if (Converter.CanConvertFrom(null, info.FieldType)) {
-                    pds.Add(new SimplePropertyDescriptor(type, info.Name, Converter.GetWrapperType(info.FieldType),
-                        new(() => Converter.ConvertFrom(null, null, info.GetValue(obj))), catAttr));
+                    fieldType = Converter.GetWrapperType(info.FieldType);
+                    valueResolver = () => Converter.ConvertFrom(null, null, info.GetValue(obj));
                 } else {
-                    pds.Add(new SimplePropertyDescriptor(type, info.Name, info.FieldType,
-                        new(() => info.GetValue(obj)), catAttr));
+                    fieldType = info.FieldType;
+                    valueResolver = () => info.GetValue(obj);
                 }
+                
+                pds.Add(new SimplePropertyDescriptor(type, info.Name, fieldType, new(valueResolver), category, description));
             }
         }
 
@@ -55,17 +64,42 @@ public class ObjectWrapper : BaseWrapper<object> {
                 if (info.GetCustomAttributes(typeof(ObsoleteAttribute), false).Any())
                     continue;
 
-                CategoryAttribute? catAttr = null;
-                if (info.DeclaringType != null && !categoryAttributes.TryGetValue(info.DeclaringType, out catAttr))
-                    categoryAttributes.Add(info.DeclaringType, catAttr = new(info.DeclaringType.ToString()));
+                var getAccessModifier = info.GetMethod is null ? null :
+                    info.GetMethod.IsPublic ? "get" :
+                    info.GetMethod.IsAssembly ? "internal get" :
+                    info.GetMethod.IsFamily ? "protected get" :
+                    info.GetMethod.IsFamilyOrAssembly ? "protected public get" :
+                    info.GetMethod.IsFamilyAndAssembly ? "private protected get" :
+                    info.GetMethod.IsPrivate ? "private get" :
+                    "??? get";
+                var setAccessModifier = info.SetMethod is null ? null :
+                    info.SetMethod.IsPublic ? "set" :
+                    info.SetMethod.IsAssembly ? "internal set" :
+                    info.SetMethod.IsFamily ? "protected set" :
+                    info.SetMethod.IsFamilyOrAssembly ? "protected public set" :
+                    info.SetMethod.IsFamilyAndAssembly ? "private protected set" :
+                    info.SetMethod.IsPrivate ? "private set" :
+                    "??? set";
 
+                var accessModifiers = setAccessModifier is null && getAccessModifier is null ? ""
+                    : getAccessModifier is null ? $"{setAccessModifier};"
+                    : setAccessModifier is null ? $"{getAccessModifier};" 
+                    : $"{getAccessModifier}; {setAccessModifier};";
+
+                var category = info.DeclaringType?.ToString();
+                var description = $"{info.PropertyType} {info.Name} {{ {accessModifiers} }};";
+                
+                Type fieldType;
+                Func<object?> valueResolver;
                 if (Converter.CanConvertFrom(null, info.PropertyType)) {
-                    pds.Add(new SimplePropertyDescriptor(type, info.Name, Converter.GetWrapperType(info.PropertyType),
-                        new(() => Converter.ConvertFrom(null, null, info.GetValue(obj))), catAttr));
+                    fieldType = Converter.GetWrapperType(info.PropertyType);
+                    valueResolver = () => Converter.ConvertFrom(null, null, info.GetValue(obj));
                 } else {
-                    pds.Add(new SimplePropertyDescriptor(type, info.Name, info.PropertyType,
-                        new(() => info.GetValue(obj)), catAttr));
+                    fieldType = info.PropertyType;
+                    valueResolver = () => info.GetValue(obj);
                 }
+                
+                pds.Add(new SimplePropertyDescriptor(type, info.Name, fieldType, new(valueResolver), category, description));
             }
         }
 
