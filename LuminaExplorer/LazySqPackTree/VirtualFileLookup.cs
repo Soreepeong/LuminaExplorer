@@ -132,7 +132,7 @@ public sealed class VirtualFileLookup : IDisposable {
                 throw new FileNotFoundException();
 
             case FileType.Standard:
-                if (VirtualFile.NameResolved) {
+                if (VirtualFile.NameResolveAttempted) {
                     if (typeByExt.TryGetValue(Path.GetExtension(VirtualFile.Name).ToLowerInvariant(),
                             out var type))
                         possibleTypes.Add(type);

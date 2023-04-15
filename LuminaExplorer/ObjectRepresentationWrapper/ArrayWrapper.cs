@@ -1,4 +1,6 @@
-﻿using System.ComponentModel;
+﻿using System.Collections;
+using System.ComponentModel;
+using LuminaExplorer.Util;
 
 namespace LuminaExplorer.ObjectRepresentationWrapper;
 
@@ -60,9 +62,43 @@ public class ArrayWrapper : BaseWrapper<Array> {
         if (i < 0 || i >= Length)
             throw new IndexOutOfRangeException();
 
-        return RangeJumpUnit == 1
-            ? $"[{RangeFrom + i}]"
-            : $"[{RangeFrom + i * RangeJumpUnit}..{Math.Min(RangeTo, (i + 1) * RangeJumpUnit)}]";
+        if (RangeJumpUnit != 1)
+            return $"[{RangeFrom + i * RangeJumpUnit}..{Math.Min(RangeTo, (i + 1) * RangeJumpUnit)}]";
+        
+        var obj = Obj.GetValue(BaseIndices.Append(RangeFrom + i * RangeJumpUnit).ToArray());
+        obj = TransformObject(obj);
+        if (obj is null)
+            return $"[{RangeFrom + i}]";
+
+        var objType = obj.GetType();
+        if (objType.IsDerivedFromGenericParent(typeof(BaseWrapper<>))) {
+            if (objType.GetField("Obj")?.GetValue(obj) is { } obj2) {
+                obj = obj2;
+                objType = obj2.GetType();
+            }
+        }
+
+        switch (obj) {
+            case DictionaryEntry de:
+                obj = de.Key;
+                break;
+            default: {
+                if (objType.IsGenericType) {
+                    if (objType.GetGenericTypeDefinition() == typeof(Tuple<>) &&
+                        objType.GetGenericArguments().Length >= 2) {
+                        obj = objType.GetProperty("Item1")!.GetValue(obj);
+                    } else if (objType.GetGenericTypeDefinition() == typeof(KeyValuePair<,>)) {
+                        obj = objType.GetProperty("Key")!.GetValue(obj);
+                    } else
+                        return $"[{RangeFrom + i}]";
+                } else
+                    return $"[{RangeFrom + i}]";
+
+                break;
+            }
+        }
+
+        return $"[{RangeFrom + i}] {obj}";
     }
 
     public Type GetValueType(int i) {

@@ -39,5 +39,7 @@ public class VirtualFile {
 
     internal void TryResolve() => _ = _name.Value;
 
-    public bool NameResolved => _name.IsValueCreated;
+    public bool NameResolveAttempted => _name.IsValueCreated;
+
+    public bool NameResolved => _name is {IsValueCreated: true, Value: not null};
 }

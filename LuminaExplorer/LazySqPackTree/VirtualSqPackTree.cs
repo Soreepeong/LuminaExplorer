@@ -140,7 +140,7 @@ public class VirtualSqPackTree {
 
             var folderResolver = AsFoldersResolved(folder);
             if (folderResolver.IsCompleted) {
-                filesToResolve = folder.Files.Where(f => !f.NameResolved).ToArray();
+                filesToResolve = folder.Files.Where(f => !f.NameResolveAttempted).ToArray();
                 if (!filesToResolve.Any()) {
                     folder.FileNamesResolveAttempted = true;
                     return Task.FromResult(folder);
@@ -148,7 +148,7 @@ public class VirtualSqPackTree {
             }
 
             resolver = folderResolver.ContinueWith(_ => {
-                (filesToResolve ?? folder.Files.Where(f => !f.NameResolved))
+                (filesToResolve ?? folder.Files.Where(f => !f.NameResolveAttempted))
                     .AsParallel()
                     .ForAll(f => f.TryResolve());
                 folder.FileNamesResolveAttempted = true;

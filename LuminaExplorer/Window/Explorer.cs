@@ -60,7 +60,12 @@ public partial class Explorer : Form {
         cboView.SelectedIndex = 5;
 
         NavigateTo(vspTree.RootFolder, true);
-        TryNavigateTo("chara/monster/m0361/obj/body/b0001/texture");
+        
+        // mustadio
+        // TryNavigateTo("/chara/monster/m0361/obj/body/b0003/texture/");
+        
+        // construct 14
+        TryNavigateTo("/chara/monster/m0489/animation/a0001/bt_common/loop_sp/");
     }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData) {
@@ -495,6 +500,7 @@ public partial class Explorer : Form {
             _listViewImageList.Images.Add(Extract("shell32.dll", 0)!);
             _listViewImageList.Images.Add(Extract("shell32.dll", 4)!);
 
+            lvwFiles.SelectedIndex = -1;
             lvwFiles.SetObjects(folder.Folders.Select(x => (object)new VirtualObject(x.Value, x.Key))
                 .Concat(folder.Files.Select(x => (object)new VirtualObject(
                     _vspTree,
@@ -652,7 +658,7 @@ public partial class Explorer : Form {
 
                 try {
                     // may be an .atex file
-                    if (!canBeTexture && Lookup.Type == FileType.Standard && Lookup.Size > 256)
+                    if (!canBeTexture && !File.NameResolved && Lookup.Type == FileType.Standard && Lookup.Size > 256)
                         canBeTexture = true;
                     
                     if (!canBeTexture)
