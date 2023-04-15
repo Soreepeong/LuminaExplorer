@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Lumina.Data;
 using Lumina.Data.Structs;
@@ -34,22 +35,25 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
 
         // 1. Drain previous read
         if (0 <= _bufferBlockIndex && _bufferBlockIndex < _offsetManager.NumBlocks) {
-            var bufferConsumed = PositionUint - _offsetManager.RequestOffsets[_bufferBlockIndex];
-            var bufferRemaining = _offsetManager.RequestOffsets[_bufferBlockIndex + 1] - PositionUint;
-            if (bufferConsumed < _bufferValidSize && bufferRemaining > 0) {
-                var available = Math.Min((int)bufferRemaining, count);
-                Array.Copy(_blockBuffer, bufferConsumed, buffer, offset, available);
-                offset += available;
-                count -= available;
-                PositionUint += (uint)available;
-                totalRead += available;
-                if (available == bufferRemaining) {
-                    _bufferBlockIndex = -1;
-                    _bufferValidSize = 0;
-                }
+            if (_offsetManager.RequestOffsets[_bufferBlockIndex] <= PositionUint &&
+                PositionUint < _offsetManager.RequestOffsets[_bufferBlockIndex + 1]) {
+                var bufferConsumed = PositionUint - _offsetManager.RequestOffsets[_bufferBlockIndex];
+                var bufferRemaining = _offsetManager.RequestOffsets[_bufferBlockIndex + 1] - PositionUint;
+                if (bufferConsumed < _bufferValidSize && bufferRemaining > 0) {
+                    var available = Math.Min((int) bufferRemaining, count);
+                    Array.Copy(_blockBuffer, bufferConsumed, buffer, offset, available);
+                    offset += available;
+                    count -= available;
+                    PositionUint += (uint) available;
+                    totalRead += available;
+                    if (available == bufferRemaining) {
+                        _bufferBlockIndex = -1;
+                        _bufferValidSize = 0;
+                    }
 
-                if (count == 0)
-                    return totalRead;
+                    if (count == 0)
+                        return totalRead;
+                }
             }
         }
 
@@ -60,7 +64,7 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
 
         fixed (void* p = _readBuffer) {
             var dbh = (DatBlockHeader*) p;
-            var dbhSize = Marshal.SizeOf<DatBlockHeader>();
+            var dbhSize = sizeof(DatBlockHeader);
                 
             for (; i < _offsetManager.NumBlocks; i++) {
                 if (_offsetManager.RequestOffsets[i + 1] <= PositionUint)
@@ -106,7 +110,7 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
         }
 
         // 3. Pad.
-        totalRead += ReadImplPadToEnd(buffer, offset, count);
+        totalRead += ReadImplPadTo(buffer, ref offset, ref count, (uint)Length);
 
         return totalRead;
     }
@@ -133,7 +137,7 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
             BlockSizes = new ushort[numBlocks];
             
             var blockInfos = reader
-                .WithSeek(BaseOffset + (uint) Marshal.SizeOf<SqPackFileInfo>())
+                .WithSeek(BaseOffset + (uint) Unsafe.SizeOf<SqPackFileInfo>())
                 .ReadStructuresAsArray<DatStdFileBlockInfos>(NumBlocks);
 
             for (var i = 0; i < NumBlocks; i++) {

@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Lumina;
@@ -140,6 +141,7 @@ public class VirtualSqPackTree {
         string expectedPathPrefix,
         List<Category> chunks) {
         _childFoldersResolvers.Add(currentFolder, new(() => Task.Run(() => {
+            var unknownFolder = new VirtualFolder("<unknown>", currentFolder);
             var unknownFolders = new Dictionary<Tuple<int, uint>, VirtualFolder>();
 
             foreach (var category in chunks) {
@@ -158,7 +160,7 @@ public class VirtualSqPackTree {
                         if (!unknownFolders.TryGetValue(Tuple.Create(category.Chunk, folderHash), out virtualFolder!)) {
                             unknownFolders.Add(
                                 Tuple.Create(category.Chunk, folderHash),
-                                virtualFolder = new(category.Chunk, folderHash, currentFolder));
+                                virtualFolder = new(category.Chunk, folderHash, unknownFolder));
                         }
                     } else {
                         var folderName = hashDatabase.GetString(folderEntry.Value.NameOffset);
@@ -184,7 +186,7 @@ public class VirtualSqPackTree {
                 br.Position = category.Index.IndexHeader.synonym_data_offset;
                 foreach (var e in br.ReadStructuresAsArray<SqPackIndexFullPathEntry>(
                              (int) (category.Index.IndexHeader.synonym_data_size /
-                                    Marshal.SizeOf<SqPackIndexFullPathEntry>()))) {
+                                    Unsafe.SizeOf<SqPackIndexFullPathEntry>()))) {
                     string name;
                     unsafe {
                         var len = 0;
@@ -210,7 +212,6 @@ public class VirtualSqPackTree {
             }
 
             if (unknownFolders.Any()) {
-                var unknownFolder = new VirtualFolder("<unknown>", currentFolder);
                 _childFoldersResolvers.Add(unknownFolder, new(() => Task.Run(() => {
                     foreach (var v in unknownFolders.Values)
                         unknownFolder.Folders.Add(v.Name, v);

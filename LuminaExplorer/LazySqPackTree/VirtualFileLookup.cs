@@ -66,8 +66,12 @@ public sealed class VirtualFileLookup : IDisposable {
             throw new ArgumentException(null, nameof(type));
 
         return Task.Run(() => {
-            var buffer = new byte[_dataStream.Value.Length];
-            _dataStream.Value.WithSeek(0).ReadFully(new(buffer));
+            byte[] buffer;
+
+            using (var clonedStream = (Stream) _dataStream.Value.Clone()) {
+                buffer = new byte[clonedStream.Length];
+                clonedStream.WithSeek(0).ReadFully(new(buffer));
+            }
 
             var file = (FileResource) Activator.CreateInstance(type)!;
             var luminaFileInfo = new LuminaFileInfo {

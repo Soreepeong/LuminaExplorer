@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Lumina.Data;
 using Lumina.Data.Files;
@@ -53,38 +54,48 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
         if (0 <= _bufferLodIndex && _bufferLodIndex < _offsetManager.NumLods &&
             0 <= _bufferBlockIndex && _bufferBlockIndex < _offsetManager.Lods[_bufferLodIndex].Summary.BlockCount) {
             var blockGroup = _offsetManager.Lods[_bufferLodIndex];
-            var bufferConsumed = (int) (Position - blockGroup.RequestOffsets[_bufferBlockIndex]);
-            var bufferRemaining = (int) (blockGroup.RequestOffsets[_bufferBlockIndex + 1] - Position);
-            if (bufferConsumed < blockGroup.Sizes[_bufferBlockIndex] && bufferRemaining > 0) {
-                var available = Math.Min(bufferRemaining, count);
-                Array.Copy(_blockBuffer, bufferConsumed, buffer, offset, available);
-                offset += available;
-                count -= available;
-                Position += available;
-                totalRead += available;
-                if (available == bufferRemaining)
-                    _bufferLodIndex = _bufferBlockIndex = -1;
-                if (count == 0)
-                    return totalRead;
+            if (blockGroup.RequestOffsets[_bufferBlockIndex] <= PositionUint &&
+                PositionUint < blockGroup.RequestOffsets[_bufferBlockIndex + 1]) {
+                var bufferConsumed = (int) (Position - blockGroup.RequestOffsets[_bufferBlockIndex]);
+                var bufferRemaining = (int) (blockGroup.RequestOffsets[_bufferBlockIndex + 1] - Position);
+                if (bufferConsumed < blockGroup.Sizes[_bufferBlockIndex] && bufferRemaining > 0) {
+                    var available = Math.Min(bufferRemaining, count);
+                    Array.Copy(_blockBuffer, bufferConsumed, buffer, offset, available);
+                    offset += available;
+                    count -= available;
+                    Position += available;
+                    totalRead += available;
+                    if (available == bufferRemaining)
+                        _bufferLodIndex = _bufferBlockIndex = -1;
+                    if (count == 0)
+                        return totalRead;
+                }
             }
         }
 
         // 2. New blocks!
         fixed (void* p = _readBuffer) {
             var dbh = (DatBlockHeader*) p;
-            var dbhSize = Marshal.SizeOf<DatBlockHeader>();
+            var dbhSize = sizeof(DatBlockHeader);
 
             // There will never be more than 16 mipmaps (width and height are u16 values,) so just count it.
-            for (var i = 0; i < _offsetManager.NumLods; i++) {
+            for (var i = 0; i < _offsetManager.NumLods && count > 0; i++) {
                 var lod = _offsetManager.Lods[i];
-
-                // There can be many subblocks on the other hand.
-                var j = Array.BinarySearch(lod.RequestOffsets, PositionUint);
-                if (j < 0)
-                    j = ~j - 1;
 
                 if (PositionUint >= lod.RequestOffsets[0] + lod.Summary.DecompressedSize)
                     continue;
+
+                // There can be many subblocks on the other hand.
+                var j = Array.BinarySearch(lod.RequestOffsets, 0, lod.RequestOffsets.Length - 1, PositionUint);
+                if (j < 0)
+                    j = ~j - 1;
+
+                if (j == -1) {
+                    totalRead += ReadImplPadTo(buffer, ref offset, ref count, lod.RequestOffsets[0]);
+                    if (count == 0)
+                        break;
+                    j = 0;
+                }
 
                 for (; j < lod.Summary.BlockCount; j++) {
                     if (lod.RequestOffsets[j + 1] <= PositionUint && lod.RequestOffsets[j] != uint.MaxValue)
@@ -138,7 +149,7 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
         }
 
         // 3. Pad.
-        totalRead += ReadImplPadToEnd(buffer, offset, count);
+        totalRead += ReadImplPadTo(buffer, ref offset, ref count, (uint)Length);
 
         return totalRead;
     }
@@ -148,6 +159,16 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
     public override object Clone() => new TextureVirtualFileStream(this);
 
     public TexFile.TexHeader TexHeader => _offsetManager.Header;
+    
+    public TextureBuffer ExtractMipmapOfSizeAtLeast(int minEdgeLength) {
+        var header = _offsetManager.Header;
+        var level = 0;
+        while (level < header.MipLevels - 1 &&
+               (header.Width >> (level + 1)) >= minEdgeLength &&
+               (header.Height >> (level + 1)) >= minEdgeLength)
+            level++;
+        return ExtractMipmap(level);
+    }
 
     public unsafe TextureBuffer ExtractMipmap(int level) {
         var header = _offsetManager.Header;
@@ -190,16 +211,14 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
             NumLods = (int) numBlocks;
 
             var locators = reader
-                .WithSeek(BaseOffset + (uint) Marshal.SizeOf<SqPackFileInfo>())
+                .WithSeek(BaseOffset + (uint) Unsafe.SizeOf<SqPackFileInfo>())
                 .ReadStructuresAsArray<LodBlockStruct>(NumLods);
 
             var texHeaderLength = locators[0].CompressedOffset;
 
             Lods = new LodBlock[NumLods];
             for (var i = 0; i < NumLods; i++) {
-                var baseRequestOffset = i == 0
-                    ? texHeaderLength
-                    : Lods[i - 1].RequestOffsets[^1] + Lods[i - 1].DecompressedSizes[^1];
+                var baseRequestOffset = i == 0 ? texHeaderLength : Lods[i - 1].RequestOffsets[^1];
                 var blockSizes = reader.ReadStructuresAsArray<ushort>((int) locators[i].BlockCount);
 
                 Lods[i] = new(locators[i], blockSizes, baseRequestOffset, headerSize);
@@ -238,7 +257,7 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
             RequestOffsets = new uint[locator.BlockCount + 1];
             Array.Fill(RequestOffsets, uint.MaxValue);
             RequestOffsets[0] = baseRequestOffset;
-            RequestOffsets[^1] = Summary.DecompressedSize;
+            RequestOffsets[^1] = baseRequestOffset + Summary.DecompressedSize;
 
             Offsets = new uint[locator.BlockCount];
             Offsets[0] = headerSize + locator.CompressedOffset;

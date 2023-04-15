@@ -1,9 +1,11 @@
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Lumina.Data;
 using Lumina.Data.Parsing;
 using Lumina.Data.Structs;
+using Lumina.Extensions;
 using LuminaExplorer.Util;
 
 namespace LuminaExplorer.LazySqPackTree.VirtualFileStream;
@@ -50,19 +52,22 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
 
         // 1. Drain previous read
         if (0 <= _bufferBlockIndex && _bufferBlockIndex < _offsetManager.NumBlocks) {
-            var bufferConsumed = (int) (Position - _offsetManager.RequestOffsets[_bufferBlockIndex]);
-            var bufferRemaining = (int) (_offsetManager.RequestOffsets[_bufferBlockIndex + 1] - Position);
-            if (bufferConsumed < _offsetManager.BlockSizes[_bufferBlockIndex] && bufferRemaining > 0) {
-                var available = Math.Min(bufferRemaining, count);
-                Array.Copy(_blockBuffer, bufferConsumed, buffer, offset, available);
-                offset += available;
-                count -= available;
-                Position += available;
-                totalRead += available;
-                if (available == bufferRemaining)
-                    _bufferBlockIndex = -1;
-                if (count == 0)
-                    return totalRead;
+            if (_offsetManager.RequestOffsets[_bufferBlockIndex] <= PositionUint &&
+                PositionUint < _offsetManager.RequestOffsets[_bufferBlockIndex + 1]) {
+                var bufferConsumed = (int) (Position - _offsetManager.RequestOffsets[_bufferBlockIndex]);
+                var bufferRemaining = (int) (_offsetManager.RequestOffsets[_bufferBlockIndex + 1] - Position);
+                if (bufferConsumed < _offsetManager.BlockSizes[_bufferBlockIndex] && bufferRemaining > 0) {
+                    var available = Math.Min(bufferRemaining, count);
+                    Array.Copy(_blockBuffer, bufferConsumed, buffer, offset, available);
+                    offset += available;
+                    count -= available;
+                    Position += available;
+                    totalRead += available;
+                    if (available == bufferRemaining)
+                        _bufferBlockIndex = -1;
+                    if (count == 0)
+                        return totalRead;
+                }
             }
         }
 
@@ -73,7 +78,7 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
 
         fixed (void* p = _readBuffer) {
             var dbh = (DatBlockHeader*) p;
-            var dbhSize = Marshal.SizeOf<DatBlockHeader>();
+            var dbhSize = sizeof(DatBlockHeader);
 
             for (; i < _offsetManager.NumBlocks; i++) {
                 if (_offsetManager.RequestOffsets[i + 1] <= PositionUint)
@@ -119,7 +124,7 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
         }
 
         // 3. Pad.
-        totalRead += ReadImplPadToEnd(buffer, offset, count);
+        totalRead += ReadImplPadTo(buffer, ref offset, ref count, (uint)Length);
 
         return totalRead;
     }
@@ -142,18 +147,18 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
             BaseOffset = baseOffset;
 
             var fileInfo = *(SqPackFileInfo*) &modelBlock;
-            var locator = *(ModelBlockLocator*) ((byte*) &modelBlock + Marshal.SizeOf<SqPackFileInfo>());
+            var locator = *(ModelBlockLocator*) ((byte*) &modelBlock + Unsafe.SizeOf<SqPackFileInfo>());
+
+            var underlyingSize = (long)fileInfo.__unknown[0] << 7;
 
             NumBlocks = locator.FirstBlockIndices.Index[2] + locator.BlockCount.Index[2];
             RequestOffsets = new uint[NumBlocks + 1];
             BlockOffsets = new uint[NumBlocks];
-            BlockSizes = new ushort[NumBlocks];
             var blockDecompressedSizes = new ushort[NumBlocks];
             HeaderBytes = new byte[ModelFileHeaderSize];
 
-            fixed (void* p = BlockSizes)
-                reader.WithSeek(BaseOffset + Marshal.SizeOf<SqPackFileInfo>() + Marshal.SizeOf<ModelBlockLocator>())
-                    .ReadFully(new(p, 2 * NumBlocks));
+            BlockSizes = reader.WithSeek(BaseOffset + Unsafe.SizeOf<ModelBlock>())
+                .ReadStructuresAsArray<ushort>(NumBlocks);
 
             var modelFileHeader = new MdlStructs.ModelFileHeader {
                 Version = fileInfo.NumberOfBlocks,
@@ -168,15 +173,14 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
                 IndexOffset = new uint[3],
             };
 
-            var blockHeader = new DatBlockHeader();
             for (var i = 0; i < NumBlocks; i++) {
                 BlockOffsets[i] = i == 0 ? fileInfo.Size : BlockOffsets[i - 1] + BlockSizes[i - 1];
-                if (BlockOffsets[i] == modelBlock.RawFileSize)
-                    blockHeader.CompressedSize = blockHeader.DecompressedSize = 0;
-                else
-                    reader.WithSeek(BaseOffset + BlockOffsets[i])
-                        .ReadFully(new(&blockHeader, Marshal.SizeOf<DatBlockHeader>()));
-                blockDecompressedSizes[i] = checked((ushort) blockHeader.DecompressedSize);
+                if (BlockOffsets[i] == underlyingSize) {
+                    blockDecompressedSizes[i] = 0;
+                } else {
+                    var blockHeader = reader.WithSeek(BaseOffset + BlockOffsets[i]).ReadStructure<DatBlockHeader>();
+                    blockDecompressedSizes[i] = checked((ushort) blockHeader.DecompressedSize);
+                }
                 RequestOffsets[i] = i == 0
                     ? ModelFileHeaderSize
                     : RequestOffsets[i - 1] + blockDecompressedSizes[i - 1];

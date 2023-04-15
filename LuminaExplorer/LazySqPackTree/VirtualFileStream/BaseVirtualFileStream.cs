@@ -14,6 +14,9 @@ public abstract class BaseVirtualFileStream : Stream, ICloneable {
         OccupiedSpaceUnits = occupiedSpaceUnits;
     }
 
+    public long ReservedBlockBytes => (long)ReservedSpaceUnits << 7;
+    public long OccupiedBlockBytes => (long)OccupiedSpaceUnits << 7;
+
     public override void Flush() { }
 
     public override long Seek(long offset, SeekOrigin origin) {
@@ -43,10 +46,13 @@ public abstract class BaseVirtualFileStream : Stream, ICloneable {
         set => Seek(value, SeekOrigin.Begin);
     }
 
-    protected int ReadImplPadToEnd(byte[] buffer, int offset, int count) {
-        count = (int) Math.Min(Length - Position, count);
-        Array.Fill(buffer, (byte) 0, offset, count);
-        return count;
+    protected int ReadImplPadTo(byte[] buffer, ref int offset, ref int count, uint padTo) {
+        var pad = (int) Math.Min(padTo - PositionUint, count);
+        Array.Fill(buffer, (byte) 0, offset, pad);
+        offset += pad;
+        count -= pad;
+        PositionUint += (uint)pad;
+        return pad;
     }
 
     public abstract object Clone();

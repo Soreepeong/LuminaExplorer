@@ -1,4 +1,5 @@
 ﻿using System.IO.Compression;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Lumina.Data;
@@ -32,8 +33,8 @@ public class HashDatabase {
             var endOffset = reader.ReadInt32();
 
             reader.BaseStream.Position = folderOffset;
-            _folders = new FolderStruct[(fileOffset - folderOffset) / Marshal.SizeOf<FolderStruct>()];
-            _files = new FileStruct[(endOffset - fileOffset) / Marshal.SizeOf<FileStruct>()];
+            _folders = new FolderStruct[(fileOffset - folderOffset) / Unsafe.SizeOf<FolderStruct>()];
+            _files = new FileStruct[(endOffset - fileOffset) / Unsafe.SizeOf<FileStruct>()];
             unsafe {
                 fixed (void* b = _folders)
                     reader.ReadFully(new(b, fileOffset - folderOffset));
@@ -217,8 +218,8 @@ public class HashDatabase {
             outWriter.BaseStream.Write(new byte[padding]);
 
         var folderOffset = checked((int) outWriter.BaseStream.Position);
-        var fileOffset = folderOffset + Marshal.SizeOf<FolderStruct>() * folders.Length;
-        var endOffset = fileOffset + Marshal.SizeOf<FileStruct>() * files.Length;
+        var fileOffset = folderOffset + Unsafe.SizeOf<FolderStruct>() * folders.Length;
+        var endOffset = fileOffset + Unsafe.SizeOf<FileStruct>() * files.Length;
 
         outWriter.BaseStream.Position = 0;
         outWriter.Write(folderOffset);

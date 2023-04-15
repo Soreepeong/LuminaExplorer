@@ -145,7 +145,6 @@ partial class Explorer {
         // colFilesName
         // 
         colFilesName.AspectName = "Name";
-        colFilesName.CheckBoxes = true;
         colFilesName.HeaderCheckBox = true;
         colFilesName.ImageAspectName = "Image";
         colFilesName.IsEditable = false;
