@@ -1,28 +1,22 @@
 ﻿using System.Drawing.Imaging;
 using Lumina.Data.Files;
-using LuminaExplorer.LazySqPackTree;
 using LuminaExplorer.LazySqPackTree.VirtualFileStream;
 
 namespace LuminaExplorer.Util;
 
-public class ThumbnailCache {
-    public static readonly ThumbnailCache Instance = new();
+public class QueuedThumbnailer {
+    public static readonly QueuedThumbnailer Instance = new();
 
     private const float CropThresholdAspectRatioRatio = 2;
 
-    private readonly Dictionary<Tuple<object, int, int>, Task<Bitmap>> _cache = new();
-    private readonly Queue<Tuple<object, int, int>> _taskQueue = new();
+    private readonly Queue<Task<Bitmap>> _taskQueue = new();
 
-    private ThumbnailCache() { }
+    private QueuedThumbnailer() { }
 
-    public Task<Bitmap> LoadFrom(VirtualFile file, int w, int h, TextureVirtualFileStream tvfs) {
-        var key = Tuple.Create((object) file, w, h);
+    public Task<Bitmap> LoadFrom(int w, int h, TextureVirtualFileStream tvfs) {
         Task<Bitmap> task;
-        lock (_cache) {
-            if (_cache.TryGetValue(key, out task!))
-                return task;
-
-            _cache.Add(key, task = new(() => {
+        lock (_taskQueue) {
+            _taskQueue.Enqueue(task = new(() => {
                 var f = tvfs
                     .ExtractMipmapOfSizeAtLeast(Math.Max(w, h))
                     .Filter(format: TexFile.TextureFormat.B8G8R8A8);
@@ -40,9 +34,8 @@ public class ThumbnailCache {
 
                 using (sourceBitmap) {
                     Bitmap? targetBitmap = null;
-                    Graphics? g = null;
                     try {
-                        g = Graphics.FromImage(targetBitmap = new(w, h, PixelFormat.Format32bppArgb));
+                        using var g = Graphics.FromImage(targetBitmap = new(w, h, PixelFormat.Format32bppArgb));
                         var srcRect = new Rectangle(0, 0, sourceBitmap.Width, sourceBitmap.Height);
                         var destRect = new Rectangle(0, 0, w, h);
 
@@ -78,13 +71,10 @@ public class ThumbnailCache {
                         targetBitmap = null;
                         return result;
                     } finally {
-                        g?.Dispose();
                         targetBitmap?.Dispose();
                     }
                 }
             }));
-
-            _taskQueue.Enqueue(key);
         }
 
         ProcessQueuedItems();
@@ -93,17 +83,13 @@ public class ThumbnailCache {
     }
 
     private void ProcessQueuedItems() {
-        if (!_taskQueue.Any())
-            return;
-
         lock (_taskQueue) {
             if (_taskQueue.Count > Environment.ProcessorCount)
                 return;
 
-            if (!_taskQueue.TryDequeue(out var key))
+            if (!_taskQueue.TryDequeue(out var task))
                 return;
 
-            var task = _cache[key];
             task.ContinueWith(_ => ProcessQueuedItems());
             task.Start(TaskScheduler.Default);
         }
