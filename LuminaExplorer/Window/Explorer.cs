@@ -1,4 +1,10 @@
+using System.Collections;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using BrightIdeasSoftware;
+using JetBrains.Annotations;
+using Lumina.Data.Structs;
 using LuminaExplorer.AppControl;
 using LuminaExplorer.LazySqPackTree;
 using LuminaExplorer.Util;
@@ -8,12 +14,12 @@ namespace LuminaExplorer.Window;
 public partial class Explorer : Form {
     private readonly VirtualSqPackTree _vspTree;
 
+    private readonly ExplorerListViewDataSource _explorerDataViewSource;
     private readonly FileViewControl _fileViewControl;
     private readonly ImageList _smallImageList;
     private readonly ImageList _largeImageList;
 
     private VirtualFolder? _explorerFolder;
-    private List<VirtualObject>? _explorerObjects;
 
     public Explorer(VirtualSqPackTree vspTree) {
         _vspTree = vspTree;
@@ -35,6 +41,9 @@ public partial class Explorer : Form {
 
         lvwFiles.SmallImageList = _smallImageList;
         lvwFiles.LargeImageList = _largeImageList;
+        lvwFiles.VirtualListDataSource = _explorerDataViewSource = new(lvwFiles);
+        lvwFiles.PrimarySortColumn = colFilesName;
+        lvwFiles.PrimarySortOrder = SortOrder.Ascending;
 
         tvwFiles.ImageList = _smallImageList;
         tvwFiles.Nodes.Add(new FolderTreeNode(vspTree.RootFolder, @"(root)", true));
@@ -87,20 +96,22 @@ public partial class Explorer : Form {
     }
 
     private void lvwFiles_DoubleClick(object sender, EventArgs e) {
-        if (lvwFiles.SelectedIndices.Count == 0 || _explorerObjects is null)
+        if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
             return;
-        if (_explorerObjects[lvwFiles.SelectedIndices[0]].Folder is { } folder)
+        if (lvwFiles.SelectedIndices.Count == 0)
+            return;
+        if (source[lvwFiles.SelectedIndices[0]].Folder is { } folder)
             SetActiveExplorerFolder(folder);
     }
 
     private void lvwFiles_ItemDrag(object sender, ItemDragEventArgs e) {
-        if (_explorerObjects is null)
+        if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
             return;
 
         var folders = new List<VirtualFolder>();
         var files = new List<VirtualFile>();
         for (var i = 0; i < lvwFiles.SelectedIndices.Count; i++) {
-            var obj = _explorerObjects[lvwFiles.SelectedIndices[i]];
+            var obj = source[lvwFiles.SelectedIndices[i]];
             if (obj.Folder is { } folder)
                 folders.Add(folder);
             if (obj.File is { } file)
@@ -125,54 +136,27 @@ public partial class Explorer : Form {
         }
     }
 
-    private void lvwFiles_CacheVirtualItems(object sender, CacheVirtualItemsEventArgs e) {
-        if (_explorerObjects is null)
-            return;
-        for (var i = e.StartIndex; i <= e.EndIndex; i++)
-            _ = _explorerObjects[i].ListViewItem;
-    }
-
     private void lvwFiles_KeyPress(object sender, KeyPressEventArgs e) {
+        if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
+            return;
         if (e.KeyChar == (char)Keys.Enter) {
-            if (lvwFiles.SelectedIndices.Count == 0 || _explorerObjects is null)
+            if (lvwFiles.SelectedIndices.Count == 0)
                 return;
-            if (_explorerObjects[lvwFiles.SelectedIndices[0]].Folder is { } folder)
+            if (source[lvwFiles.SelectedIndices[0]].Folder is { } folder)
                 SetActiveExplorerFolder(folder);
         }
     }
 
-    private void lvwFiles_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) {
-        if (_explorerObjects is null)
-            e.Item = new("Expanding...");
-        else
-            e.Item = _explorerObjects[e.ItemIndex].ListViewItem;
-    }
-
-    private void lvwFiles_SearchForVirtualItem(object sender, SearchForVirtualItemEventArgs e) {
-        if (e is { IsTextSearch: true, Text: { } } && _explorerObjects is not null) {
-            for (var i = e.StartIndex; i < _explorerObjects.Count; i++) {
-                if (_explorerObjects[i].Name.StartsWith(e.Text, StringComparison.InvariantCultureIgnoreCase)) {
-                    e.Index = i;
-                    return;
-                }
-            }
-
-            for (var i = 0; i < e.StartIndex; i++) {
-                if (_explorerObjects[i].Name.StartsWith(e.Text, StringComparison.InvariantCultureIgnoreCase)) {
-                    e.Index = i;
-                    return;
-                }
-            }
-        }
-    }
-
     private void lvwFiles_SelectedIndexChanged(object sender, EventArgs e) {
-        if (lvwFiles.SelectedIndices.Count is > 1 or 0 || _explorerObjects is null) {
+        if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
+            return;
+
+        if (lvwFiles.SelectedIndices.Count is > 1 or 0) {
             _fileViewControl.ClearFile();
             return;
         }
 
-        if (_explorerObjects[lvwFiles.SelectedIndices[0]].File is { } file) {
+        if (source[lvwFiles.SelectedIndices[0]].File is { } file) {
             var isFocused = lvwFiles.Focused;
             _fileViewControl.SetFile(_vspTree, file);
             if (isFocused)
@@ -180,34 +164,23 @@ public partial class Explorer : Form {
         }
     }
 
-    private void SetActiveExplorerFolder(VirtualFolder newFolder) {
-        if (_explorerFolder == newFolder)
+    private void SetActiveExplorerFolder(VirtualFolder folder) {
+        if (_explorerFolder == folder)
             return;
 
-        _explorerFolder = newFolder;
+        _explorerFolder = folder;
 
         var resolveTask = _vspTree.AsFilesResolved(_explorerFolder);
-        if (!resolveTask.IsCompleted) {
-            lvwFiles.BeginUpdate();
-            _explorerObjects = null;
-            lvwFiles.VirtualListSize = 1;
-            lvwFiles.EndUpdate();
-        }
+        if (!resolveTask.IsCompleted)
+            lvwFiles.SetObjects(Array.Empty<object>());
 
         resolveTask.ContinueWith(_ => {
-            if (_explorerFolder != newFolder)
+            if (_explorerFolder != folder)
                 return;
 
-            lvwFiles.BeginUpdate();
-            _explorerObjects = new();
-            _explorerObjects.AddRange(_explorerFolder.Folders
-                .OrderBy(x => x.Key.ToLowerInvariant())
-                .Select(x => new VirtualObject(x.Value, x.Key)));
-            _explorerObjects.AddRange(_explorerFolder.Files
-                .OrderBy(x => x.Name.ToLowerInvariant())
-                .Select(x => new VirtualObject(x)));
-            lvwFiles.VirtualListSize = _explorerObjects.Count;
-            lvwFiles.EndUpdate();
+            lvwFiles.SetObjects(folder.Folders.Select(x => (object)new VirtualObject(x.Value, x.Key))
+                .Concat(folder.Files.Select(x => (object)new VirtualObject(_vspTree, x)))
+                .ToArray());
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
@@ -240,16 +213,94 @@ public partial class Explorer : Form {
         }
     }
 
-    private class VirtualObject {
+    private class ExplorerListViewDataSource : AbstractVirtualListDataSource, IReadOnlyList<VirtualObject> {
+        private readonly List<VirtualObject> _objects = new();
+
+        public ExplorerListViewDataSource(VirtualObjectListView volv) : base(volv) { }
+
+        public override object GetNthObject(int n) => _objects[n];
+
+        public override int GetObjectCount() => _objects.Count;
+
+        public override int GetObjectIndex(object model) => model is VirtualObject vo ? _objects.IndexOf(vo) : -1;
+
+        public override void PrepareCache(int first, int last) {
+            // throw new NotImplementedException();
+        }
+
+        public override int SearchText(string value, int first, int last, OLVColumn column)
+            => DefaultSearchText(value, first, last, column, this);
+
+        public override void Sort(OLVColumn column, SortOrder order) {
+            if (column.AspectName == "Name") {
+                _objects.Sort((a, b) => {
+                    var r = a.IsFolder switch {
+                        true when !b.IsFolder => -1,
+                        false when b.IsFolder => 1,
+                        _ => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase)
+                    };
+                    return order switch {
+                        SortOrder.None or SortOrder.Ascending => r,
+                        SortOrder.Descending => -r,
+                        _ => throw new InvalidOperationException(),
+                    };
+                });
+            } else if (column.AspectName == "PackType") {
+                _objects.Sort((a, b) => {
+                    var r = a.IsFolder switch {
+                        true when !b.IsFolder => -1,
+                        true when b.IsFolder => 0,
+                        false when b.IsFolder => 1,
+                        _ => a.Lookup!.Type.CompareTo(b.Lookup!.Type),
+                    };
+                    return order switch {
+                        SortOrder.None or SortOrder.Ascending => r,
+                        SortOrder.Descending => -r,
+                        _ => throw new InvalidOperationException(),
+                    };
+                });
+            }
+        }
+
+        public override void AddObjects(ICollection modelObjects)
+            => _objects.AddRange(modelObjects.Cast<VirtualObject>());
+
+        public override void InsertObjects(int index, ICollection modelObjects)
+            => _objects.InsertRange(index, modelObjects.Cast<VirtualObject>());
+
+        public override void RemoveObjects(ICollection modelObjects) {
+            foreach (var o in modelObjects)
+                if (o is VirtualObject vo)
+                    _objects.Remove(vo);
+        }
+
+        public override void SetObjects(IEnumerable collection) {
+            _objects.Clear();
+            _objects.AddRange(collection.Cast<VirtualObject>());
+        }
+
+        public override void UpdateObject(int index, object modelObject) => _objects[index] = (VirtualObject)modelObject;
+
+        public VirtualObject this[int n] => _objects[n];
+
+        public IEnumerator<VirtualObject> GetEnumerator() => _objects.GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator() => _objects.GetEnumerator();
+
+        public int Count => _objects.Count;
+    }
+
+    // ReSharper disable once ClassWithVirtualMembersNeverInherited.Local
+    private class VirtualObject : INotifyPropertyChanged {
         public readonly VirtualFile? File;
         public readonly VirtualFolder? Folder;
-        public readonly string Name;
 
-        private ListViewItem? _lvi;
+        private readonly Lazy<VirtualFileLookup>? _lookup;
 
-        public VirtualObject(VirtualFile file) {
+        public VirtualObject(VirtualSqPackTree tree, VirtualFile file) {
             File = file;
             Name = file.Name;
+            _lookup = new(() => tree.GetLookup(File));
         }
 
         public VirtualObject(VirtualFolder folder, string? preferredName) {
@@ -257,13 +308,48 @@ public partial class Explorer : Form {
             Name = preferredName ?? folder.Name;
         }
 
-        public ListViewItem ListViewItem =>
-            _lvi ??= new(new ListViewItem.ListViewSubItem[] {
-                new() {
-                    Name = @"Name",
-                    Text = Name,
+        public bool IsFolder => _lookup is null;
+
+        public VirtualFileLookup? Lookup => _lookup?.Value;
+
+        [UsedImplicitly]
+        public bool Checked { get; set; }
+
+        [UsedImplicitly]
+        public string Name { get; }
+
+        [UsedImplicitly]
+        public string PackTypeString => _lookup is null
+            ? "(Folder)"
+            : _lookup.Value.Type is var x
+                ? x switch {
+                    FileType.Empty => "Placeholder",
+                    FileType.Standard => "Standard",
+                    FileType.Model => "Model",
+                    FileType.Texture => "Texture",
+                    _ => $"{x}",
                 }
-            }, File is null ? 1 : 0);
+                : "<error>";
+
+        [UsedImplicitly]
+        public object Image => _lookup is null ? 1 : 0;
+
+        #region Implementation of INotifyPropertyChanged
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
+            PropertyChanged?.Invoke(this, new(propertyName));
+        }
+
+        protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null) {
+            if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+            field = value;
+            OnPropertyChanged(propertyName);
+            return true;
+        }
+
+        #endregion
     }
 
     public static Icon? Extract(string filePath, int index, bool largeIcon = true) {

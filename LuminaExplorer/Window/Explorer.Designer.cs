@@ -32,7 +32,9 @@ partial class Explorer {
         txtFileFilter = new TextBox();
         tvwFiles = new TreeView();
         splSub = new SplitContainer();
-        lvwFiles = new ListView();
+        lvwFiles = new SimpleControlLibraries.CoreVirtualObjectListView();
+        colFilesName = new BrightIdeasSoftware.OLVColumn();
+        colFilesPackType = new BrightIdeasSoftware.OLVColumn();
         menuStrip1.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize)splMain).BeginInit();
         splMain.Panel1.SuspendLayout();
@@ -41,6 +43,7 @@ partial class Explorer {
         ((System.ComponentModel.ISupportInitialize)splSub).BeginInit();
         splSub.Panel1.SuspendLayout();
         splSub.SuspendLayout();
+        ((System.ComponentModel.ISupportInitialize)lvwFiles).BeginInit();
         SuspendLayout();
         // 
         // menuStrip1
@@ -122,20 +125,39 @@ partial class Explorer {
         // 
         // lvwFiles
         // 
+        lvwFiles.Columns.AddRange(new ColumnHeader[] { colFilesName, colFilesPackType });
         lvwFiles.Dock = DockStyle.Fill;
         lvwFiles.Location = new Point(0, 0);
         lvwFiles.Name = "lvwFiles";
+        lvwFiles.OwnerDraw = false;
+        lvwFiles.ShowGroups = false;
         lvwFiles.Size = new Size(670, 737);
-        lvwFiles.TabIndex = 1;
-        lvwFiles.UseCompatibleStateImageBehavior = false;
+        lvwFiles.TabIndex = 0;
+        lvwFiles.UseExplorerTheme = true;
+        lvwFiles.UseTranslucentSelection = true;
+        lvwFiles.View = View.Details;
         lvwFiles.VirtualMode = true;
-        lvwFiles.CacheVirtualItems += lvwFiles_CacheVirtualItems;
         lvwFiles.ItemDrag += lvwFiles_ItemDrag;
-        lvwFiles.RetrieveVirtualItem += lvwFiles_RetrieveVirtualItem;
-        lvwFiles.SearchForVirtualItem += lvwFiles_SearchForVirtualItem;
         lvwFiles.SelectedIndexChanged += lvwFiles_SelectedIndexChanged;
         lvwFiles.DoubleClick += lvwFiles_DoubleClick;
         lvwFiles.KeyPress += lvwFiles_KeyPress;
+        // 
+        // colFilesName
+        // 
+        colFilesName.AspectName = "Name";
+        colFilesName.CheckBoxes = true;
+        colFilesName.HeaderCheckBox = true;
+        colFilesName.ImageAspectName = "Image";
+        colFilesName.IsEditable = false;
+        colFilesName.Text = "Name";
+        colFilesName.Width = 240;
+        // 
+        // colFilesPackType
+        // 
+        colFilesPackType.AspectName = "PackTypeString";
+        colFilesPackType.IsEditable = false;
+        colFilesPackType.Text = "Pack Type";
+        colFilesPackType.Width = 80;
         // 
         // Explorer
         // 
@@ -158,6 +180,7 @@ partial class Explorer {
         splSub.Panel1.ResumeLayout(false);
         ((System.ComponentModel.ISupportInitialize)splSub).EndInit();
         splSub.ResumeLayout(false);
+        ((System.ComponentModel.ISupportInitialize)lvwFiles).EndInit();
         ResumeLayout(false);
         PerformLayout();
     }
@@ -171,5 +194,7 @@ partial class Explorer {
     private TextBox txtFileFilter;
     private TreeView tvwFiles;
     private SplitContainer splSub;
-    private ListView lvwFiles;
+    private SimpleControlLibraries.CoreVirtualObjectListView lvwFiles;
+    private BrightIdeasSoftware.OLVColumn colFilesName;
+    private BrightIdeasSoftware.OLVColumn colFilesPackType;
 }

@@ -1,9 +1,9 @@
 ﻿using System.Reflection;
-using System.Runtime.InteropServices;
 using Lumina;
 using Lumina.Data;
 using Lumina.Data.Attributes;
 using Lumina.Data.Structs;
+using Lumina.Extensions;
 using LuminaExplorer.LazySqPackTree.VirtualFileStream;
 using LuminaExplorer.Util;
 
@@ -19,11 +19,10 @@ public sealed class VirtualFileLookup : IDisposable {
     public readonly uint ReservedSpaceUnits;
     public readonly uint OccupiedSpaceUnits;
 
-    /// <summary>Used only for constructiong MdlFile.</summary>
-    private ModelBlock _modelBlock;
+    private readonly SqPackFileInfo _fileInfo;
+    private readonly ModelBlock? _modelBlock;
 
-
-    internal unsafe VirtualFileLookup(VirtualSqPackTree tree, VirtualFile virtualFile, LuminaBinaryReader reader) {
+    internal VirtualFileLookup(VirtualSqPackTree tree, VirtualFile virtualFile, LuminaBinaryReader reader) {
         _tree = tree;
         VirtualFile = virtualFile;
         reader.Position = virtualFile.Offset;
@@ -36,32 +35,25 @@ public sealed class VirtualFileLookup : IDisposable {
             .ToArray();
         
         // Note: do not use ReadStructure/ReadFully.
-        _modelBlock = new();
-        fixed (void* p = &_modelBlock) {
-            var mdlBlockReadSize = reader.Read(new Span<byte>(p, Marshal.SizeOf<ModelBlock>()));
-            if (mdlBlockReadSize < Marshal.SizeOf<SqPackFileInfo>()) {
-                reader.Close();
-                throw new InvalidDataException();
-            }
+        _fileInfo = reader.WithSeek(virtualFile.Offset).ReadStructure<SqPackFileInfo>();
+        _modelBlock = _fileInfo.Type == FileType.Model
+            ? reader.WithSeek(virtualFile.Offset).ReadStructure<ModelBlock>()
+            : null;
 
-            if (_modelBlock.Type == FileType.Model && mdlBlockReadSize < Marshal.SizeOf<ModelBlock>()) {
-                reader.Close();
-                throw new InvalidDataException();
-            }
+        Type = _fileInfo.Type;
+        Size = _fileInfo.RawFileSize;
+        unsafe {
+            ReservedSpaceUnits = _fileInfo.__unknown[0];
+            OccupiedSpaceUnits = _fileInfo.__unknown[1];
         }
-
-        Type = _modelBlock.Type;
-        Size = _modelBlock.RawFileSize;
-        ReservedSpaceUnits = _modelBlock.NumberOfBlocks;
-        OccupiedSpaceUnits = _modelBlock.UsedNumberOfBlocks;
 
         _dataStream = new(() => Type switch {
             FileType.Empty => new EmptyVirtualFileStream(ReservedSpaceUnits, OccupiedSpaceUnits),
-            FileType.Standard => new StandardVirtualFileStream(reader, virtualFile.Offset, _modelBlock.Size,
-                _modelBlock.Version, Size, ReservedSpaceUnits, OccupiedSpaceUnits),
-            FileType.Model => new ModelVirtualFileStream(reader, virtualFile.Offset, _modelBlock),
-            FileType.Texture => new TextureVirtualFileStream(reader, virtualFile.Offset, _modelBlock.Size,
-                _modelBlock.Version, Size, ReservedSpaceUnits, OccupiedSpaceUnits, _tree.PlatformId),
+            FileType.Standard => new StandardVirtualFileStream(reader, virtualFile.Offset, _fileInfo.Size,
+                _fileInfo.NumberOfBlocks, Size, ReservedSpaceUnits, OccupiedSpaceUnits),
+            FileType.Model => new ModelVirtualFileStream(reader, virtualFile.Offset, _modelBlock!.Value),
+            FileType.Texture => new TextureVirtualFileStream(reader, virtualFile.Offset, _fileInfo.Size,
+                _fileInfo.NumberOfBlocks, Size, ReservedSpaceUnits, OccupiedSpaceUnits, _tree.PlatformId),
             _ => throw new NotSupportedException()
         });
     }
@@ -79,11 +71,11 @@ public sealed class VirtualFileLookup : IDisposable {
 
             var file = (FileResource) Activator.CreateInstance(type)!;
             var luminaFileInfo = new LuminaFileInfo {
-                HeaderSize = _modelBlock.Size,
-                Type = _modelBlock.Type,
+                HeaderSize = _fileInfo.Size,
+                Type = _fileInfo.Type,
                 BlockCount = Type == FileType.Model
-                    ? _modelBlock.UsedNumberOfBlocks
-                    : _modelBlock.Version,
+                    ? _modelBlock!.Value.UsedNumberOfBlocks
+                    : _fileInfo.NumberOfBlocks,
             };
             typeof(LuminaFileInfo)
                 .GetProperty("Offset", bindingFlags)
