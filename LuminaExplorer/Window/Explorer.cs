@@ -17,51 +17,245 @@ public partial class Explorer : Form {
     private readonly VirtualSqPackTree _vspTree;
 
     private readonly FileViewControl _fileViewControl;
-    private readonly ImageList _smallImageList;
-    private readonly ImageList _largeImageList;
+    private readonly ImageList _treeViewImageList;
+    private readonly ImageList _listViewImageList;
 
-    private VirtualFolder? _explorerFolder;
+    private readonly List<VirtualFolder> _navigationHistory = new();
+    private int _navigationHistoryPosition = -1;
+    private VirtualFolder _explorerFolder = null!;
 
     public Explorer(VirtualSqPackTree vspTree) {
         _vspTree = vspTree;
 
         InitializeComponent();
 
+        txtPath.AutoCompleteMode = AutoCompleteMode.Suggest;
+        txtPath.AutoCompleteSource = AutoCompleteSource.CustomSource;
+
         splSub.Panel2.Controls.Add(_fileViewControl = new() {
             Anchor = AnchorStyles.Left | AnchorStyles.Top,
             Dock = DockStyle.Fill,
         });
 
-        _largeImageList = new();
-        _largeImageList.ColorDepth = ColorDepth.Depth32Bit;
-        _largeImageList.ImageSize = new(64, 64);
-        _largeImageList.Images.Add(Extract("shell32.dll", 0)!);
-        _largeImageList.Images.Add(Extract("shell32.dll", 4)!);
+        _listViewImageList = new();
+        _listViewImageList.ColorDepth = ColorDepth.Depth32Bit;
+        _listViewImageList.ImageSize = new(64, 64);
 
-        lvwFiles.LargeImageList = _largeImageList;
+        lvwFiles.SmallImageList = lvwFiles.LargeImageList = _listViewImageList;
         lvwFiles.VirtualListDataSource = new ExplorerListViewDataSource(lvwFiles);
         lvwFiles.PrimarySortColumn = colFilesName;
         lvwFiles.PrimarySortOrder = SortOrder.Ascending;
-        lvwFiles.View = View.LargeIcon;
+        lvwFiles.MouseWheel += lvwFiles_MouseWheel;
 
-        _smallImageList = new();
-        _smallImageList.ColorDepth = ColorDepth.Depth32Bit;
-        _smallImageList.Images.Add(Extract("shell32.dll", 0, false)!);
-        _smallImageList.Images.Add(Extract("shell32.dll", 4, false)!);
+        _treeViewImageList = new();
+        _treeViewImageList.ColorDepth = ColorDepth.Depth32Bit;
+        _treeViewImageList.Images.Add(Extract("shell32.dll", 0, false)!);
+        _treeViewImageList.Images.Add(Extract("shell32.dll", 4, false)!);
 
-        tvwFiles.ImageList = _smallImageList;
+        tvwFiles.ImageList = _treeViewImageList;
         tvwFiles.Nodes.Add(new FolderTreeNode(vspTree.RootFolder, @"(root)", true));
         tvwFiles.Nodes[0].Expand();
         tvwFiles.SelectedNode = tvwFiles.Nodes[0];
 
+        cboView.SelectedIndex = 5;
+
+        NavigateTo(vspTree.RootFolder, true);
         TryNavigateTo("chara/monster/m0361/obj/body/b0001/texture");
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData) {
+        switch (keyData) {
+            case Keys.Control | Keys.F:
+            case Keys.BrowserSearch:
+                txtSearch.Focus();
+                return true;
+            case Keys.F4:
+                txtPath.Focus();
+                return true;
+            case Keys.BrowserBack:
+                NavigateBack();
+                return true;
+            case Keys.BrowserForward:
+                NavigateForward();
+                return true;
+            default:
+                return base.ProcessCmdKey(ref msg, keyData);
+        }
+    }
+
+    private bool NavigateBack() {
+        if (_navigationHistoryPosition <= 0)
+            return false;
+        NavigateTo(_navigationHistory[--_navigationHistoryPosition], false);
+        return true;
+    }
+
+    private bool NavigateForward() {
+        if (_navigationHistoryPosition + 1 >= _navigationHistory.Count)
+            return false;
+        NavigateTo(_navigationHistory[++_navigationHistoryPosition], false);
+        return true;
+    }
+
+    private bool NavigateUp() {
+        if (_explorerFolder.Parent is not { } parent)
+            return false;
+        NavigateTo(parent, true);
+        return true;
     }
 
     #region Event Handlers
 
+    private void btnNavBack_Click(object sender, EventArgs e) => NavigateBack();
+
+    private void btnNavForward_Click(object sender, EventArgs e) => NavigateForward();
+
+    private void btnNavUp_Click(object sender, EventArgs e) => NavigateUp();
+
+    private void btnsHistory_DropDownOpening(object sender, EventArgs e) {
+        var counter = 0;
+        for (int iFrom = Math.Max(0, _navigationHistoryPosition - 10),
+             iTo = Math.Min(_navigationHistory.Count - 1, _navigationHistoryPosition + 10),
+             i = iTo;
+             i >= iFrom;
+             i--, counter++) {
+            var path = _navigationHistory[i].FullPath;
+
+            if (btnsHistory.DropDownItems.Count <= counter) {
+                btnsHistory.DropDownItems.Add(new ToolStripButton() {
+                    AutoSize = false,
+                    Alignment = ToolStripItemAlignment.Left,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    Width = 320,
+                });
+            }
+
+            var ddi = btnsHistory.DropDownItems[counter];
+            ddi.Visible = true;
+            ddi.Text = path == "" ? "(root)" : path;
+            ddi.Tag = i;
+        }
+
+        for (; counter < btnsHistory.DropDownItems.Count; counter++)
+            btnsHistory.DropDownItems[counter].Visible = false;
+    }
+
+    private void btnsHistory_DropDownItemClicked(object sender, ToolStripItemClickedEventArgs e) {
+        if (e.ClickedItem?.Tag is int historyIndex)
+            NavigateTo(_navigationHistory[_navigationHistoryPosition = historyIndex], false);
+    }
+
+    private void cboView_SelectedIndexChanged(object sender, EventArgs e) {
+        lvwFiles.View = cboView.SelectedIndex switch {
+            0 or 1 or 2 => View.LargeIcon,
+            3 => View.SmallIcon,
+            4 => View.List,
+            5 => View.Details,
+            _ => View.Details,
+        };
+
+        var imageDimension = cboView.SelectedIndex switch {
+            0 => 128,
+            1 => 64,
+            2 => 32,
+            3 or 4 or 5 => 16,
+            _ => 16,
+        };
+
+        _listViewImageList.ImageSize = new(imageDimension, imageDimension);
+
+        var folder = _explorerFolder;
+        var selectedFolders = new List<VirtualFolder>();
+        var selectedFiles = new List<VirtualFile>();
+        foreach (var selobj in lvwFiles.SelectedObjects) {
+            if (selobj is not VirtualObject obj)
+                continue;
+            if (obj.Folder is { } selectedFolder)
+                selectedFolders.Add(selectedFolder);
+            if (obj.File is { } selectedFile)
+                selectedFiles.Add(selectedFile);
+        }
+
+        _explorerFolder = null!;
+        _listViewImageList.Images.Clear();
+        NavigateTo(folder, false)
+            .ContinueWith(_ => {
+                if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
+                    return;
+
+                lvwFiles.SelectedObjects = source
+                    .Select(x => selectedFolders.Any(y => y == x.Folder || y == x.Folder))
+                    .ToList();
+
+            }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
     private void Explorer_FormClosed(object sender, FormClosedEventArgs e) {
-        _smallImageList.Dispose();
-        _largeImageList.Dispose();
+        _treeViewImageList.Dispose();
+        _listViewImageList.Dispose();
+    }
+
+    private void txtPath_KeyUp(object? sender, KeyEventArgs keyEventArgs) {
+        var searchedText = txtPath.Text;
+        var cleanerPath = searchedText.Split('/', StringSplitOptions.TrimEntries);
+        if (cleanerPath.Any())
+            cleanerPath = cleanerPath[..^1];
+        _vspTree.AsFoldersResolved(cleanerPath)
+            .ContinueWith(res => {
+                if (searchedText != txtPath.Text || !res.IsCompletedSuccessfully)
+                    return;
+
+                if (txtPath.Tag == res.Result)
+                    return;
+
+                txtPath.Tag = res.Result;
+
+                var selectionStart = txtPath.ComboBox!.SelectionStart;
+                var selectionLength = txtPath.ComboBox!.SelectionLength;
+
+                var parentFolder = res.Result.FullPath;
+                var src = new AutoCompleteStringCollection();
+                foreach (var f in res.Result.Folders.Values.Where(x => x != res.Result.Parent))
+                    src.Add($"{parentFolder}{f.Name[..^1]}");
+                txtPath.AutoCompleteCustomSource = src;
+
+                txtPath.ComboBox.SelectionStart = selectionStart;
+                txtPath.ComboBox.SelectionLength = selectionLength;
+            }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    private void txtPath_KeyDown(object sender, KeyEventArgs e) {
+        switch (e.KeyCode) {
+            case Keys.Enter: {
+                    var prevText = txtPath.Text;
+                    TryNavigateTo(txtPath.Text)
+                        .ContinueWith(_ => {
+                            var exactMatchFound = 0 == string.Compare(
+                                _explorerFolder.FullPath.TrimEnd('/'),
+                                prevText.Trim().TrimEnd('/'),
+                                StringComparison.OrdinalIgnoreCase);
+                            txtPath.Text = prevText;
+
+                            if (exactMatchFound) {
+                                lvwFiles.Focus();
+                                return;
+                            }
+
+                            var currentFullPathLength = _explorerFolder.FullPath.Length;
+                            var sharedLength = 0;
+                            while (sharedLength < currentFullPathLength && sharedLength < prevText.Length)
+                                sharedLength++;
+                            txtPath.ComboBox!.SelectionStart = sharedLength;
+                            txtPath.ComboBox!.SelectionLength = prevText.Length - sharedLength;
+                        }, TaskScheduler.FromCurrentSynchronizationContext());
+                    break;
+                }
+
+            case Keys.Escape:
+                txtPath.Text = _explorerFolder.FullPath;
+                lvwFiles.Focus();
+                break;
+        }
     }
 
     private void tvwFiles_AfterExpand(object sender, TreeViewEventArgs e) {
@@ -82,7 +276,28 @@ public partial class Explorer : Form {
 
     private void tvwFiles_AfterSelect(object sender, TreeViewEventArgs e) {
         if (e.Node is FolderTreeNode node)
-            SetActiveExplorerFolder(node.Folder);
+            NavigateTo(node.Folder, true);
+    }
+
+    private void lvwFiles_MouseWheel(object? sender, MouseEventArgs e) {
+        if (ModifierKeys == Keys.Control) {
+            cboView.SelectedIndex = e.Delta switch {
+                > 0 => Math.Max(0, cboView.SelectedIndex - 1),
+                < 0 => Math.Min(cboView.Items.Count - 1, cboView.SelectedIndex + 1),
+                _ => cboView.SelectedIndex
+            };
+        }
+    }
+
+    private void lvwFiles_MouseUp(object sender, MouseEventArgs e) {
+        switch (e.Button) {
+            case MouseButtons.XButton1:
+                NavigateBack();
+                break;
+            case MouseButtons.XButton2:
+                NavigateForward();
+                break;
+        }
     }
 
     private void lvwFiles_DoubleClick(object sender, EventArgs e) {
@@ -91,7 +306,7 @@ public partial class Explorer : Form {
         if (lvwFiles.SelectedIndices.Count == 0)
             return;
         if (source[lvwFiles.SelectedIndices[0]].Folder is { } folder)
-            SetActiveExplorerFolder(folder);
+            NavigateTo(folder, true);
     }
 
     private void lvwFiles_ItemDrag(object sender, ItemDragEventArgs e) {
@@ -130,12 +345,27 @@ public partial class Explorer : Form {
         if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
             return;
         if (e.KeyChar == (char)Keys.Enter) {
-            e.KeyChar = (char)Keys.Escape;
-            // e.Handled = true;
             if (lvwFiles.SelectedIndices.Count == 0)
                 return;
             if (source[lvwFiles.SelectedIndices[0]].Folder is { } folder)
-                SetActiveExplorerFolder(folder);
+                NavigateTo(folder, true);
+        }
+    }
+
+    private void lvwFiles_KeyUp(object sender, KeyEventArgs e) {
+        switch (e.KeyCode) {
+            case Keys.Left when e is {Control: false, Alt: true, Shift: false}:
+            case Keys.Back when e is {Control: false, Alt: false, Shift: false}:
+            case Keys.BrowserBack:
+                NavigateBack();
+                break;
+            case Keys.Right when e is {Control: false, Alt: true, Shift: false}:
+            case Keys.BrowserForward:
+                NavigateForward();
+                break;
+            case Keys.Up when e is {Control: false, Alt: true, Shift: false}:
+                NavigateUp();
+                break;
         }
     }
 
@@ -161,16 +391,16 @@ public partial class Explorer : Form {
     private Task<FolderTreeNode> TryNavigateTo(params string[] pathComponents) =>
         TryNavigateToImpl(
             (FolderTreeNode)tvwFiles.Nodes[0],
-            Path.Join(pathComponents).Replace('\\', '/').Split('/'),
+            Path.Join(pathComponents).Replace('\\', '/').TrimStart('/').Split('/'),
             0);
 
     private Task<FolderTreeNode> TryNavigateToImpl(FolderTreeNode node, string[] parts, int partIndex) {
         for (; partIndex < parts.Length; partIndex++) {
-            var name = parts[partIndex];
-            if (name == ".")
+            var name = parts[partIndex] + "/";
+            if (name == "./")
                 continue;
 
-            if (name == "..") {
+            if (name == "../") {
                 node = node.Parent as FolderTreeNode ?? node;
                 continue;
             }
@@ -184,12 +414,12 @@ public partial class Explorer : Form {
                     }
                 }
 
-                SetActiveExplorerFolder(node.Folder);
+                NavigateTo(node.Folder, true);
                 return Task.FromResult(node);
             }, TaskScheduler.FromCurrentSynchronizationContext()).Unwrap();
         }
 
-        SetActiveExplorerFolder(node.Folder);
+        NavigateTo(node.Folder, true);
         return Task.FromResult(node);
     }
 
@@ -212,7 +442,7 @@ public partial class Explorer : Form {
             .ContinueWith(_ => {
                 ln.Nodes.Clear();
                 ln.Nodes.AddRange(ln.Folder.Folders
-                    .Where(x => x.Key != "..")
+                    .Where(x => x.Value != ln.Folder.Parent)
                     .OrderBy(x => x.Key.ToLowerInvariant())
                     .Select(x =>
                         (TreeNode)new FolderTreeNode(x.Value, x.Key,
@@ -226,39 +456,68 @@ public partial class Explorer : Form {
             }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
-    private void SetActiveExplorerFolder(VirtualFolder folder) {
+    private Task NavigateTo(VirtualFolder folder, bool addToHistory) {
         if (_explorerFolder == folder)
-            return;
+            return Task.CompletedTask;
 
         _explorerFolder = folder;
+        if (addToHistory) {
+            _navigationHistory.RemoveRange(
+                _navigationHistoryPosition + 1,
+                _navigationHistory.Count - _navigationHistoryPosition - 1);
+            _navigationHistory.Add(folder);
+            _navigationHistoryPosition++;
+
+            if (_navigationHistory.Count > 1000) {
+                var toRemove = _navigationHistory.Count - 1000;
+                _navigationHistory.RemoveRange(0, toRemove);
+                _navigationHistoryPosition -= toRemove;
+                if (_navigationHistoryPosition < 0)
+                    _navigationHistoryPosition = 0;
+            }
+        }
+
+        btnNavBack.Enabled = _navigationHistoryPosition > 0;
+        btnNavForward.Enabled = _navigationHistoryPosition < _navigationHistory.Count - 1;
+        btnNavUp.Enabled = folder.Parent is not null;
 
         var resolveTask = _vspTree.AsFilesResolved(_explorerFolder);
         if (!resolveTask.IsCompleted)
             lvwFiles.SetObjects(Array.Empty<object>());
 
-        resolveTask.ContinueWith(_ => {
+        txtPath.Text = folder.FullPath;
+
+        return resolveTask.ContinueWith(_ => {
             if (_explorerFolder != folder)
                 return;
 
-            while (_largeImageList.Images.Count > 2)
-                _largeImageList.Images.RemoveAt(_largeImageList.Images.Count - 1);
+            _listViewImageList.Images.Clear();
+            _listViewImageList.Images.Add(Extract("shell32.dll", 0)!);
+            _listViewImageList.Images.Add(Extract("shell32.dll", 4)!);
 
             lvwFiles.SetObjects(folder.Folders.Select(x => (object)new VirtualObject(x.Value, x.Key))
                 .Concat(folder.Files.Select(x => (object)new VirtualObject(
                     _vspTree,
                     x,
-                    (vobj, tvfs) => QueuedThumbnailer.Instance.LoadFrom(_largeImageList.ImageSize.Width,
-                        _largeImageList.ImageSize.Height,
+                    (vobj, tvfs) => QueuedThumbnailer.Instance.LoadFrom(
+                        _listViewImageList.ImageSize.Width,
+                        _listViewImageList.ImageSize.Height,
                         tvfs
                     ).ContinueWith(img => {
                         if (!img.IsCompletedSuccessfully)
                             return (object?)null;
 
-                        _largeImageList.Images.Add(img.Result);
+                        if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
+                            return null;
+
+                        if (!source.Contains(vobj))
+                            return null;
+
+                        _listViewImageList.Images.Add(img.Result);
                         img.Result.Dispose();
 
                         BeginInvoke(() => lvwFiles.RefreshObject(vobj));
-                        return _largeImageList.Images.Count - 1;
+                        return _listViewImageList.Images.Count - 1;
                     }, TaskScheduler.FromCurrentSynchronizationContext()))))
                 .ToArray());
         }, TaskScheduler.FromCurrentSynchronizationContext());

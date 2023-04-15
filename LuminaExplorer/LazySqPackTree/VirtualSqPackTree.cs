@@ -23,7 +23,7 @@ public class VirtualSqPackTree {
     public VirtualSqPackTree(HashDatabase hashDatabase, GameData gameData) {
         InstallationSqPackDirectory = gameData.DataPath;
         PlatformId = gameData.Options.CurrentPlatform;
-        
+
         _childFoldersResolvers.Add(RootFolder, new(() => Task.Run(() => {
             foreach (var (categoryId, categoryName) in Repository.CategoryIdToNameMap) {
                 var repos = gameData.Repositories
@@ -65,13 +65,13 @@ public class VirtualSqPackTree {
         var datPath = Path.Combine(InstallationSqPackDirectory.FullName, repoName, fileName);
 
         data = new(this, file, new(File.OpenRead(datPath), PlatformId));
-        
+
         _fileLookups.Add(file, data);
         return data;
     }
 
     public bool WillFolderNeverHaveSubfolders(VirtualFolder folder) =>
-        folder.Folders.All(x => x.Key == "..") && IsFoldersResolved(folder);
+        folder.Folders.All(x => x.Value == folder.Parent) && IsFoldersResolved(folder);
 
     public bool IsFoldersResolved(VirtualFolder folder) {
         lock (_childFoldersResolvers) {
@@ -86,6 +86,32 @@ public class VirtualSqPackTree {
 
             return resolver.Value.IsCompleted;
         }
+    }
+
+    public Task<VirtualFolder> AsFoldersResolved(params string[] pathComponents)
+        => AsFoldersResolvedImpl(RootFolder, Path.Join(pathComponents).Replace('\\', '/').TrimStart('/').Split('/'), 0);
+
+    private Task<VirtualFolder> AsFoldersResolvedImpl(VirtualFolder folder, string[] parts, int partIndex) {
+        for (; partIndex < parts.Length; partIndex++) {
+            var name = parts[partIndex] + "/";
+            if (name == "./")
+                continue;
+
+            if (name == "../") {
+                folder = folder.Parent ?? folder;
+                continue;
+            }
+
+            return AsFoldersResolved(folder).ContinueWith(_ => {
+                var subfolder = folder.Folders.Values.FirstOrDefault(
+                    f => string.Compare(f.Name, name, StringComparison.OrdinalIgnoreCase) == 0);
+                return subfolder is null
+                    ? AsFoldersResolved(folder)
+                    : AsFoldersResolvedImpl(subfolder, parts, partIndex + 1);
+            }, TaskScheduler.FromCurrentSynchronizationContext()).Unwrap();
+        }
+
+        return AsFoldersResolved(folder);
     }
 
     public Task<VirtualFolder> AsFoldersResolved(VirtualFolder folder) {
@@ -111,7 +137,7 @@ public class VirtualSqPackTree {
                 return resolver;
 
             VirtualFile[]? filesToResolve = null;
-            
+
             var folderResolver = AsFoldersResolved(folder);
             if (folderResolver.IsCompleted) {
                 filesToResolve = folder.Files.Where(f => !f.NameResolved).ToArray();

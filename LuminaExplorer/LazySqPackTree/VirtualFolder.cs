@@ -1,6 +1,7 @@
 namespace LuminaExplorer.LazySqPackTree;
 
 public class VirtualFolder {
+    public readonly VirtualFolder? Parent;
     public readonly string Name;
     public readonly Dictionary<string, VirtualFolder> Folders = new();
     public readonly List<VirtualFile> Files = new();
@@ -8,9 +9,10 @@ public class VirtualFolder {
     public bool FileNamesResolveAttempted { get; internal set; }
 
     internal VirtualFolder(string name, VirtualFolder? parent) {
-        Name = name;
+        Parent = parent;
+        Name = $"{name}/";
         if (parent is not null)
-            Folders.Add("..", parent);
+            Folders.Add("../", parent);
     }
 
     internal VirtualFolder(int chunk, uint hash, VirtualFolder? parent)
@@ -26,9 +28,7 @@ public class VirtualFolder {
         return subfolder;
     }
 
-    public string FullPath => Folders.TryGetValue("..", out var parent) && parent.Name != ""
-        ? $"{parent.FullPath}/{Name}"
-        : Name;
+    public string FullPath => $"{Parent?.FullPath ?? ""}{Name}";
 
     public override string ToString() => Name;
 }
