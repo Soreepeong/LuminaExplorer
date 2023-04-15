@@ -13,11 +13,11 @@ public class QueuedThumbnailer {
 
     private QueuedThumbnailer() { }
 
-    public Task<Bitmap> LoadFrom(int w, int h, TextureVirtualFileStream tvfs) {
+    public Task<Bitmap> LoadFrom(int w, int h, BaseVirtualFileStream vfs) {
         Task<Bitmap> task;
         lock (_taskQueue) {
             _taskQueue.Enqueue(task = new(() => {
-                var f = tvfs
+                var f = vfs
                     .ExtractMipmapOfSizeAtLeast(Math.Max(w, h))
                     .Filter(format: TexFile.TextureFormat.B8G8R8A8);
 

@@ -48,12 +48,11 @@ public sealed class VirtualFileLookup : IDisposable {
         }
 
         _dataStream = new(() => Type switch {
-            FileType.Empty => new EmptyVirtualFileStream(ReservedSpaceUnits, OccupiedSpaceUnits),
-            FileType.Standard => new StandardVirtualFileStream(reader, virtualFile.Offset, _fileInfo.Size,
+            FileType.Empty => new EmptyVirtualFileStream(_tree.PlatformId, ReservedSpaceUnits, OccupiedSpaceUnits),
+            FileType.Standard => new StandardVirtualFileStream(_tree.PlatformId, reader, virtualFile.Offset, _fileInfo.Size,
                 _fileInfo.NumberOfBlocks, Size, ReservedSpaceUnits, OccupiedSpaceUnits),
-            FileType.Model => new ModelVirtualFileStream(reader, virtualFile.Offset, _modelBlock!.Value),
-            FileType.Texture => new TextureVirtualFileStream(reader, virtualFile.Offset, _fileInfo.Size,
-                _fileInfo.NumberOfBlocks, Size, ReservedSpaceUnits, OccupiedSpaceUnits, _tree.PlatformId),
+            FileType.Model => new ModelVirtualFileStream(_tree.PlatformId, reader, virtualFile.Offset, _modelBlock!.Value),
+            FileType.Texture => new TextureVirtualFileStream(_tree.PlatformId, reader, virtualFile.Offset, _fileInfo.Size, _fileInfo.NumberOfBlocks, Size, ReservedSpaceUnits, OccupiedSpaceUnits),
             _ => throw new NotSupportedException()
         });
     }

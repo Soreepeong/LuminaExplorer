@@ -20,13 +20,13 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
     private readonly byte[] _readBuffer = new byte[16384];
     private readonly byte[] _blockBuffer = new byte[16000];
 
-    public ModelVirtualFileStream(LuminaBinaryReader reader, long baseOffset, ModelBlock modelBlock)
-        : base(modelBlock.RawFileSize, modelBlock.NumberOfBlocks, modelBlock.UsedNumberOfBlocks) {
+    public ModelVirtualFileStream(PlatformId platformId, LuminaBinaryReader reader, long baseOffset, ModelBlock modelBlock)
+        : base(platformId, modelBlock.RawFileSize, modelBlock.NumberOfBlocks, modelBlock.UsedNumberOfBlocks) {
         _offsetManager = new(reader, baseOffset, modelBlock);
     }
 
     public ModelVirtualFileStream(ModelVirtualFileStream cloneFrom)
-        : base((uint) cloneFrom.Length, cloneFrom.ReservedSpaceUnits, cloneFrom.OccupiedSpaceUnits) {
+        : base(cloneFrom.PlatformId, (uint) cloneFrom.Length, cloneFrom.ReservedSpaceUnits, cloneFrom.OccupiedSpaceUnits) {
         _offsetManager = cloneFrom._offsetManager;
     }
 

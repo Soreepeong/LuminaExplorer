@@ -16,14 +16,14 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
     private readonly byte[] _readBuffer = new byte[16384];
     private readonly byte[] _blockBuffer = new byte[16000];
 
-    public StandardVirtualFileStream(LuminaBinaryReader reader, long baseOffset, uint headerSize, uint numBlocks, uint length,
-        uint reservedSpaceUnits, uint occupiedSpaceUnits)
-        : base(length, reservedSpaceUnits, occupiedSpaceUnits) {
+    public StandardVirtualFileStream(PlatformId platformId, LuminaBinaryReader reader, long baseOffset, uint headerSize,
+        uint numBlocks, uint length, uint reservedSpaceUnits, uint occupiedSpaceUnits)
+        : base(platformId, length, reservedSpaceUnits, occupiedSpaceUnits) {
         _offsetManager = new(reader, baseOffset, headerSize, numBlocks, length);
     }
 
     public StandardVirtualFileStream(StandardVirtualFileStream cloneFrom) 
-        : base((uint)cloneFrom.Length, cloneFrom.ReservedSpaceUnits, cloneFrom.OccupiedSpaceUnits) {
+        : base(cloneFrom.PlatformId, (uint)cloneFrom.Length, cloneFrom.ReservedSpaceUnits, cloneFrom.OccupiedSpaceUnits) {
         _offsetManager = cloneFrom._offsetManager;
     }
 

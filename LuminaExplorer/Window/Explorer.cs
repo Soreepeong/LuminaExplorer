@@ -499,10 +499,10 @@ public partial class Explorer : Form {
                 .Concat(folder.Files.Select(x => (object)new VirtualObject(
                     _vspTree,
                     x,
-                    (vobj, tvfs) => QueuedThumbnailer.Instance.LoadFrom(
+                    (vobj, vfs) => QueuedThumbnailer.Instance.LoadFrom(
                         _listViewImageList.ImageSize.Width,
                         _listViewImageList.ImageSize.Height,
-                        tvfs
+                        vfs
                     ).ContinueWith(img => {
                         if (!img.IsCompletedSuccessfully)
                             return (object?)null;
@@ -640,19 +640,25 @@ public partial class Explorer : Form {
         private readonly Lazy<Task<object?>> _imageKeyTask;
 
         public VirtualObject(VirtualSqPackTree tree, VirtualFile file,
-            Func<VirtualObject, TextureVirtualFileStream, Task<object?>> imageKeyGetter) {
+            Func<VirtualObject, BaseVirtualFileStream, Task<object?>> imageKeyGetter) {
             File = file;
             Name = file.Name;
             _lookup = new(() => tree.GetLookup(File));
             _imageKeyFallback = 0;
             _imageKeyTask = new(() => {
-                if (Lookup!.Type != FileType.Texture &&
-                    !File.Name.EndsWith(".atex", StringComparison.OrdinalIgnoreCase))
-                    return Task.FromResult((object?)0);
+                var canBeTexture = false;
+                canBeTexture |= Lookup!.Type == FileType.Texture;
+                canBeTexture |= File.Name.EndsWith(".atex", StringComparison.OrdinalIgnoreCase);
 
                 try {
-                    if (Lookup?.DataStream is TextureVirtualFileStream tvfs)
-                        return imageKeyGetter(this, tvfs);
+                    // may be an .atex file
+                    if (!canBeTexture && Lookup.Type == FileType.Standard && Lookup.Size > 256)
+                        canBeTexture = true;
+                    
+                    if (!canBeTexture)
+                        return Task.FromResult((object?)0);
+                    
+                    return imageKeyGetter(this, Lookup.DataStream);
                 } catch (Exception e) {
                     Debug.WriteLine(e);
                 }

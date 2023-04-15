@@ -5,10 +5,12 @@ namespace LuminaExplorer.LazySqPackTree.VirtualFileStream;
 public abstract class BaseVirtualFileStream : Stream, ICloneable {
     protected uint PositionUint = 0;
 
+    public readonly PlatformId PlatformId;
     public readonly uint ReservedSpaceUnits;
     public readonly uint OccupiedSpaceUnits;
 
-    protected BaseVirtualFileStream(uint length, uint reservedSpaceUnits, uint occupiedSpaceUnits) {
+    protected BaseVirtualFileStream(PlatformId platformId, uint length, uint reservedSpaceUnits, uint occupiedSpaceUnits) {
+        PlatformId = platformId;
         Length = length;
         ReservedSpaceUnits = reservedSpaceUnits;
         OccupiedSpaceUnits = occupiedSpaceUnits;

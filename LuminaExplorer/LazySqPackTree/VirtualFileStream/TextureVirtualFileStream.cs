@@ -19,14 +19,14 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
     private readonly byte[] _readBuffer = new byte[16384];
     private readonly byte[] _blockBuffer = new byte[16000];
 
-    public TextureVirtualFileStream(LuminaBinaryReader reader, long baseOffset, uint headerSize, uint numBlocks,
-        uint length, uint reservedSpaceUnits, uint occupiedSpaceUnits, PlatformId platformId)
-        : base(length, reservedSpaceUnits, occupiedSpaceUnits) {
-        _offsetManager = new(reader, baseOffset, headerSize, numBlocks, platformId);
+    public TextureVirtualFileStream(PlatformId platformId, LuminaBinaryReader reader, long baseOffset, uint headerSize,
+        uint numBlocks, uint length, uint reservedSpaceUnits, uint occupiedSpaceUnits)
+        : base(platformId, length, reservedSpaceUnits, occupiedSpaceUnits) {
+        _offsetManager = new(reader, baseOffset, headerSize, numBlocks);
     }
 
     public TextureVirtualFileStream(TextureVirtualFileStream cloneFrom)
-        : base((uint) cloneFrom.Length, cloneFrom.ReservedSpaceUnits, cloneFrom.OccupiedSpaceUnits) {
+        : base(cloneFrom.PlatformId, (uint) cloneFrom.Length, cloneFrom.ReservedSpaceUnits, cloneFrom.OccupiedSpaceUnits) {
         _offsetManager = cloneFrom._offsetManager;
     }
 
@@ -191,22 +191,19 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
             mipDepth,
             new[] {length},
             buffer,
-            _offsetManager.PlatformId);
+            PlatformId);
     }
 
     private class OffsetManager {
         public readonly LuminaBinaryReader Reader;
-        public readonly PlatformId PlatformId;
         public readonly long BaseOffset;
         public readonly int NumLods;
         public readonly LodBlock[] Lods;
         public readonly TexFile.TexHeader Header;
         public readonly byte[] HeaderBytes;
 
-        public unsafe OffsetManager(LuminaBinaryReader reader, long baseOffset, uint headerSize, uint numBlocks,
-            PlatformId platformId) {
+        public unsafe OffsetManager(LuminaBinaryReader reader, long baseOffset, uint headerSize, uint numBlocks) {
             Reader = reader;
-            PlatformId = platformId;
             BaseOffset = baseOffset;
             NumLods = (int) numBlocks;
 
