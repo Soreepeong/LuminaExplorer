@@ -10,10 +10,10 @@ using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
 
-public class ModelVirtualFileStream : BaseVirtualFileStream {
+public sealed class ModelVirtualFileStream : BaseVirtualFileStream {
     private const int ModelFileHeaderSize = 0x44;
 
-    private readonly OffsetManager _offsetManager;
+    private OffsetManager? _offsetManager;
 
     private int _bufferBlockIndex = -1;
     private uint _bufferValidSize;
@@ -27,10 +27,21 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
     public ModelVirtualFileStream(ModelVirtualFileStream cloneFrom)
         : base(cloneFrom.PlatformId, (uint) cloneFrom.Length) {
         _offsetManager = cloneFrom._offsetManager;
+        if (_offsetManager is null)
+            throw new ObjectDisposedException(nameof(ModelVirtualFileStream));
+
+        _offsetManager.AddRef();
+    }
+
+    ~ModelVirtualFileStream() {
+        Dispose(false);
     }
 
     public override async Task<int>
         ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) {
+        if (_offsetManager is null)
+            throw new ObjectDisposedException(nameof(ModelVirtualFileStream));
+        
         if (count == 0)
             return 0;
 
@@ -149,7 +160,14 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
 
     public override object Clone() => new ModelVirtualFileStream(this);
 
-    private class OffsetManager {
+    protected override void Dispose(bool disposing) {
+        IReferenceCounted.DecRef(ref _offsetManager);
+        base.Dispose(disposing);
+    }
+
+    private class OffsetManager : IReferenceCounted {
+        private int _refcount = 1;
+        
         public readonly SemaphoreSlim ReaderLock = new(1, 1);
         public readonly LuminaBinaryReader Reader;
         public readonly long BaseOffset;
@@ -243,7 +261,13 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
             ms.Write(BitConverter.GetBytes(modelFileHeader.EnableEdgeGeometry));
             ms.Write(new byte[] {0});
         }
+        
+        public void AddRef() => Interlocked.Increment(ref _refcount);
 
+        public void DecRef() {
+            if (Interlocked.Decrement(ref _refcount) == 0)
+                Reader.Dispose();
+        }
 
 #pragma warning disable CS0649
         [SuppressMessage("ReSharper", "FieldCanBeMadeReadOnly.Local")]

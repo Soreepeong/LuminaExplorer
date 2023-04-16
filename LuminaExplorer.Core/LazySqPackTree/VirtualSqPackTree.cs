@@ -5,20 +5,24 @@ using System.Text;
 using Lumina;
 using Lumina.Data;
 using Lumina.Data.Structs;
+using Lumina.Misc;
 using LuminaExplorer.Core.SqPackPath;
 using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Core.LazySqPackTree;
 
-public class VirtualSqPackTree {
+public sealed class VirtualSqPackTree : IDisposable {
     public readonly DirectoryInfo InstallationSqPackDirectory;
-    public readonly VirtualFolder RootFolder = new("", null);
+    public readonly VirtualFolder RootFolder = VirtualFolder.CreateRoot();
     public readonly PlatformId PlatformId;
 
     private readonly Dictionary<VirtualFolder, Lazy<Task<VirtualFolder>>> _childFoldersResolvers = new();
     private readonly Dictionary<VirtualFolder, Task<VirtualFolder>> _childFilesResolvers = new();
 
     private readonly LruCache<VirtualFile, VirtualFileLookup> _fileLookups = new(128);
+
+    public event Action<VirtualFolder>? FolderResolved;
+    public event Action<VirtualFile>? FileResolved;
 
     public VirtualSqPackTree(HashDatabase hashDatabase, GameData gameData) {
         InstallationSqPackDirectory = gameData.DataPath;
@@ -50,6 +54,50 @@ public class VirtualSqPackTree {
             return RootFolder;
         })));
     }
+
+    public Task SuggestFullPath(string name) =>
+        Task.Run(async () => {
+            name = NormalizePath(name);
+            var sep = name.LastIndexOf('/');
+            if (sep == -1)
+                return;
+
+            var folderName = name[..sep];
+            var folderNameHash = Crc32.Get(folderName.ToLowerInvariant());
+
+            folderName = $"/{folderName}/";
+            name = name[(sep + 1)..];
+            var nameHash = Crc32.Get(name.ToLowerInvariant());
+
+            var chunkRootSolver = new HashSet<Task<VirtualFolder>> {Task.FromResult(RootFolder)};
+            while (chunkRootSolver.Any()) {
+                var folderTask = await Task.WhenAny(chunkRootSolver).ConfigureAwait(false);
+                chunkRootSolver.Remove(folderTask);
+
+                var folder = await folderTask.ConfigureAwait(false);
+                if (string.Compare(folder.FullPath, folderName, StringComparison.InvariantCultureIgnoreCase) == 0) {
+                    foreach (var f in folder.Files.Where(x => !x.NameResolved && x.FileHash == nameHash).ToArray())
+                        if (f.TryResolve(name))
+                            FileResolved?.Invoke(f);
+                }
+
+                if (folder.Folders.Values.FirstOrDefault(x => x.IsUnknownContainer) is { } unknownFolder) {
+                    // found an unknown folder; this folder is a sqpack chunk.
+                    // if unknown folder exists, then it always is resolved.
+                    foreach (var (_, f) in unknownFolder.Folders
+                                 .Where(x => x.Key != VirtualFolder.UpFolderKey && x.Value.FolderHash == folderNameHash)
+                                 .ToArray()) {
+                        if (f.TryResolve(folderName))
+                            FolderResolved?.Invoke(f);
+                    }
+                }
+
+                foreach (var (_, f) in folder.Folders.Where(x => x.Key != VirtualFolder.UpFolderKey)) {
+                    if (folderName.StartsWith(f.FullPath, StringComparison.InvariantCultureIgnoreCase))
+                        chunkRootSolver.Add(AsFoldersResolved(f));
+                }
+            }
+        });
 
     public VirtualFileLookup GetLookup(VirtualFile file) {
         if (_fileLookups.TryGet(file, out var data))
@@ -89,7 +137,7 @@ public class VirtualSqPackTree {
     }
 
     public Task<VirtualFolder> AsFoldersResolved(params string[] pathComponents)
-        => AsFoldersResolvedImpl(RootFolder, Path.Join(pathComponents).Replace('\\', '/').TrimStart('/').Split('/'), 0);
+        => AsFoldersResolvedImpl(RootFolder, NormalizePath(pathComponents).Split('/'), 0);
 
     private Task<VirtualFolder> AsFoldersResolvedImpl(VirtualFolder folder, string[] parts, int partIndex) {
         for (; partIndex < parts.Length; partIndex++) {
@@ -97,14 +145,14 @@ public class VirtualSqPackTree {
             if (name == "./")
                 continue;
 
-            if (name == "../") {
+            if (name == VirtualFolder.UpFolderKey) {
                 folder = folder.Parent ?? folder;
                 continue;
             }
 
             return AsFoldersResolved(folder).ContinueWith(_ => {
                 var subfolder = folder.Folders.Values.FirstOrDefault(
-                    f => string.Compare(f.Name, name, StringComparison.OrdinalIgnoreCase) == 0);
+                    f => string.Compare(f.Name, name, StringComparison.InvariantCultureIgnoreCase) == 0);
                 return subfolder is null
                     ? AsFoldersResolved(folder)
                     : AsFoldersResolvedImpl(subfolder, parts, partIndex + 1);
@@ -167,7 +215,7 @@ public class VirtualSqPackTree {
         string expectedPathPrefix,
         List<Category> chunks) {
         _childFoldersResolvers.Add(currentFolder, new(() => Task.Run(() => {
-            var unknownFolder = new VirtualFolder("<unknown>", currentFolder);
+            var unknownContainer = VirtualFolder.CreateUnknownContainer(currentFolder);
             var unknownFolders = new Dictionary<Tuple<int, uint>, VirtualFolder>();
 
             foreach (var category in chunks) {
@@ -186,7 +234,10 @@ public class VirtualSqPackTree {
                         if (!unknownFolders.TryGetValue(Tuple.Create(category.Chunk, folderHash), out virtualFolder!)) {
                             unknownFolders.Add(
                                 Tuple.Create(category.Chunk, folderHash),
-                                virtualFolder = new(category.Chunk, folderHash, unknownFolder));
+                                virtualFolder = VirtualFolder.CreateUnknownEntry(
+                                    category.Chunk,
+                                    folderHash,
+                                    unknownContainer));
                         }
                     } else {
                         var folderName = hashDatabase.GetString(folderEntry.Value.NameOffset);
@@ -238,17 +289,20 @@ public class VirtualSqPackTree {
             }
 
             if (unknownFolders.Any()) {
-                _childFoldersResolvers.Add(unknownFolder, new(() => Task.Run(() => {
+                _childFoldersResolvers.Add(unknownContainer, new(() => Task.Run(() => {
                     foreach (var v in unknownFolders.Values)
-                        unknownFolder.Folders.Add(v.Name, v);
-                    return unknownFolder;
+                        unknownContainer.Folders.Add(v.Name, v);
+                    return unknownContainer;
                 })));
-                currentFolder.Folders.Add("<unknown>", unknownFolder);
+                currentFolder.Folders.Add(unknownContainer.Name, unknownContainer);
             }
 
             return currentFolder;
         })));
     }
+
+    public static string NormalizePath(params string[] pathComponents) =>
+        Path.Join(pathComponents).Replace('\\', '/').Trim('/');
 
     [SuppressMessage("ReSharper", "FieldCanBeMadeReadOnly.Local")]
     [SuppressMessage("ReSharper", "MemberCanBePrivate.Local")]
@@ -264,5 +318,11 @@ public class VirtualSqPackTree {
         public byte DataFileId => (byte) ((Data & 0b1110) >> 1);
 
         public long Offset => (Data & ~0xF) * 0x08;
+    }
+
+    public void Dispose() {
+        _fileLookups.Dispose();
+        FolderResolved = null;
+        FileResolved = null;
     }
 }

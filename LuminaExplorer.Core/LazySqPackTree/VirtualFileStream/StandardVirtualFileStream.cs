@@ -7,8 +7,8 @@ using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
 
-public class StandardVirtualFileStream : BaseVirtualFileStream {
-    private readonly OffsetManager _offsetManager;
+public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
+    private OffsetManager? _offsetManager;
 
     private int _bufferBlockIndex = -1;
     private uint _bufferValidSize;
@@ -22,10 +22,21 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
     public StandardVirtualFileStream(StandardVirtualFileStream cloneFrom)
         : base(cloneFrom.PlatformId, (uint) cloneFrom.Length) {
         _offsetManager = cloneFrom._offsetManager;
+        if (_offsetManager is null)
+            throw new ObjectDisposedException(nameof(ModelVirtualFileStream));
+
+        _offsetManager.AddRef();
+    }
+
+    ~StandardVirtualFileStream() {
+        Dispose(false);
     }
 
     public override async Task<int>
         ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) {
+        if (_offsetManager is null)
+            throw new ObjectDisposedException(nameof(ModelVirtualFileStream));
+
         if (count == 0)
             return 0;
 
@@ -87,7 +98,7 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                _blockBuffer = ArrayPool<byte>.Shared.RentAsNecessary(_blockBuffer, (int)dbh.DecompressedSize);
+                _blockBuffer = ArrayPool<byte>.Shared.RentAsNecessary(_blockBuffer, (int) dbh.DecompressedSize);
                 if (dbh.IsCompressed) {
                     await using var zlibStream = new DeflateStream(
                         new MemoryStream(readBuffer, Unsafe.SizeOf<DatBlockHeader>(), (int) dbh.CompressedSize),
@@ -130,7 +141,14 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
 
     public override object Clone() => new StandardVirtualFileStream(this);
 
-    private class OffsetManager {
+    protected override void Dispose(bool disposing) {
+        IReferenceCounted.DecRef(ref _offsetManager);
+        base.Dispose(disposing);
+    }
+
+    private class OffsetManager : IReferenceCounted {
+        private int _refcount = 1;
+
         public readonly SemaphoreSlim ReaderLock = new(1, 1);
         public readonly LuminaBinaryReader Reader;
         public readonly long BaseOffset;
@@ -157,6 +175,13 @@ public class StandardVirtualFileStream : BaseVirtualFileStream {
                 BlockSizes[i] = blockInfos[i].CompressedSize;
                 BlockOffsets[i] = info.Size + blockInfos[i].Offset;
             }
+        }
+
+        public void AddRef() => Interlocked.Increment(ref _refcount);
+
+        public void DecRef() {
+            if (Interlocked.Decrement(ref _refcount) == 0)
+                Reader.Dispose();
         }
     }
 }

@@ -1,6 +1,6 @@
 ﻿namespace LuminaExplorer.Core.Util;
 
-public class LruCache<TKey, TValue>
+public sealed class LruCache<TKey, TValue> : IDisposable
     where TKey : notnull
     where TValue : notnull {
     private readonly object _syncRoot = new();
@@ -44,6 +44,9 @@ public class LruCache<TKey, TValue>
     public void Flush() {
         lock (_syncRoot) {
             _entryLookup.Clear();
+            foreach (var e in _entries)
+                if (e.Value is IDisposable disposable)
+                    disposable.Dispose();
             _entries.Clear();
         }
     }
@@ -52,6 +55,8 @@ public class LruCache<TKey, TValue>
         var node = _entries.First!;
         _entries.RemoveFirst();
         _entryLookup.Remove(node.Value.Key);
+        if (node.Value.Value is IDisposable disposable)
+            disposable.Dispose();
     }
 
     public class LruCacheItem {
@@ -63,4 +68,6 @@ public class LruCache<TKey, TValue>
             Value = v;
         }
     }
+
+    public void Dispose() => Flush();
 }

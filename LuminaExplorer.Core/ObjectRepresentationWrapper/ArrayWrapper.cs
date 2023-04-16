@@ -31,15 +31,16 @@ public class ArrayWrapper : BaseWrapper<Array> {
 
     public bool IsFlat => BaseIndices.Length + 1 == Obj.Rank;
 
+    public bool IsTopLevel => !BaseIndices.Any() && RangeFrom == 0 && RangeTo == Obj.GetLength(0);
+
     public override string ToString() {
-        if (!BaseIndices.Any() && RangeFrom == 0 && RangeTo == Obj.GetLength(0))
-            return
-                $"{Obj.GetType().GetElementType()!.Name}[{string.Join(", ", Enumerable.Range(0, Obj.Rank).Select(x => Obj.GetLength(x)))}]";
-
-        if (!BaseIndices.Any())
-            return $"[{RangeFrom}..{RangeTo}]";
-
-        return $"[{string.Join(", ", BaseIndices)}, {RangeFrom}..{RangeTo}]";
+        if (IsTopLevel)
+            return $"{Obj.GetType().GetElementType()!.GetCSharpTypeName()}" +
+                   $"[{string.Join(", ", Enumerable.Range(0, Obj.Rank).Select(x => Obj.GetLength(x)))}]";
+        
+        return BaseIndices.Any()
+            ? $"[{string.Join(", ", BaseIndices)}, {RangeFrom}..{RangeTo}]"
+            : $"[{RangeFrom}..{RangeTo}]";
     }
 
     public override PropertyDescriptorCollection GetProperties(Attribute[]? attributes) {
@@ -64,14 +65,14 @@ public class ArrayWrapper : BaseWrapper<Array> {
 
         if (RangeJumpUnit != 1)
             return $"[{RangeFrom + i * RangeJumpUnit}..{Math.Min(RangeTo, (i + 1) * RangeJumpUnit)}]";
-        
+
         var obj = Obj.GetValue(BaseIndices.Append(RangeFrom + i * RangeJumpUnit).ToArray());
         obj = TransformObject(obj);
         if (obj is null)
             return $"[{RangeFrom + i}]";
 
         var objType = obj.GetType();
-        if (objType.IsDerivedFromGenericParent(typeof(BaseWrapper<>))) {
+        if (objType.TryFindTypedGenericParent(typeof(BaseWrapper<>), out _)) {
             if (objType.GetField("Obj")?.GetValue(obj) is { } obj2) {
                 obj = obj2;
                 objType = obj2.GetType();
@@ -130,7 +131,7 @@ public class ArrayWrapper : BaseWrapper<Array> {
             obj = TransformObject(obj);
             if (obj is null)
                 return null;
-            
+
             return Converter.CanConvertFrom(null, obj.GetType()) ? Converter.ConvertFrom(null, null, obj) : obj;
         }
     }
@@ -138,6 +139,7 @@ public class ArrayWrapper : BaseWrapper<Array> {
     protected virtual Type TransformValueType(Type type) => type;
 
     protected virtual ArrayWrapper CreateSubView(int[] baseIndices) => new(Obj, baseIndices);
-    
-    protected virtual ArrayWrapper CreateSubView(int rangeFrom, int rangeTo, int[] baseIndices) => new(Obj, rangeFrom, rangeTo, baseIndices);
+
+    protected virtual ArrayWrapper CreateSubView(int rangeFrom, int rangeTo, int[] baseIndices) =>
+        new(Obj, rangeFrom, rangeTo, baseIndices);
 }

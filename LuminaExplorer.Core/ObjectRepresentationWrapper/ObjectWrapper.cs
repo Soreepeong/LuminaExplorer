@@ -38,7 +38,7 @@ public class ObjectWrapper : BaseWrapper<object> {
                     "";
 
                 var category = info.DeclaringType?.ToString();
-                var description = $"{accessModifier} {info.FieldType} {info.Name};";
+                var description = $"{accessModifier} {info.FieldType.GetCSharpTypeName()} {info.Name};";
                 
                 Type fieldType;
                 Func<object?> valueResolver;
@@ -87,7 +87,7 @@ public class ObjectWrapper : BaseWrapper<object> {
                     : $"{getAccessModifier}; {setAccessModifier};";
 
                 var category = info.DeclaringType?.ToString();
-                var description = $"{info.PropertyType} {info.Name} {{ {accessModifiers} }};";
+                var description = $"{info.PropertyType.GetCSharpTypeName()} {info.Name} {{ {accessModifiers} }};";
                 
                 Type fieldType;
                 Func<object?> valueResolver;

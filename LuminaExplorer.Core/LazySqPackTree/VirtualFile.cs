@@ -1,7 +1,9 @@
+using Lumina.Misc;
+
 namespace LuminaExplorer.Core.LazySqPackTree;
 
 public class VirtualFile {
-    private readonly Lazy<string?> _name;
+    private Lazy<string?> _name;
     private readonly uint _dataFileIdAndOffset;
 
     public readonly VirtualFolder Parent;
@@ -27,11 +29,19 @@ public class VirtualFile {
         _name = new(name);
     }
 
+    internal bool TryResolve(string name) {
+        if (Crc32.Get(name.ToLowerInvariant()) != FileHash)
+            return false;
+        
+        _name = new(name);
+        return true;
+    }
+
+    internal void TryResolve() => _ = _name.Value;
+
     public string Name => _name.Value ?? $"~{FileHash:X08}";
 
     public string FullPath => $"{Parent.FullPath}{Name}";
-
-    internal void TryResolve() => _ = _name.Value;
 
     public bool NameResolveAttempted => _name.IsValueCreated;
 

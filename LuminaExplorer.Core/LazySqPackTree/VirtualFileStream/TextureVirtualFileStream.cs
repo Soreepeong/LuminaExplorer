@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
@@ -11,8 +10,8 @@ using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
 
-public class TextureVirtualFileStream : BaseVirtualFileStream {
-    private readonly OffsetManager _offsetManager;
+public sealed class TextureVirtualFileStream : BaseVirtualFileStream {
+    private OffsetManager? _offsetManager;
 
     private int _bufferLodIndex = -1, _bufferBlockIndex = -1;
     private uint _bufferValidSize;
@@ -26,10 +25,21 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
     public TextureVirtualFileStream(TextureVirtualFileStream cloneFrom)
         : base(cloneFrom.PlatformId, (uint) cloneFrom.Length) {
         _offsetManager = cloneFrom._offsetManager;
+        if (_offsetManager is null)
+            throw new ObjectDisposedException(nameof(ModelVirtualFileStream));
+
+        _offsetManager.AddRef();
+    }
+
+    ~TextureVirtualFileStream() {
+        Dispose(false);
     }
 
     public override async Task<int>
         ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) {
+        if (_offsetManager is null)
+            throw new ObjectDisposedException(nameof(ModelVirtualFileStream));
+
         if (count == 0)
             return 0;
 
@@ -103,7 +113,7 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (lod.RequestOffsets[j + 1] <= PositionUint && lod.RequestOffsets[j] != uint.MaxValue)
                         continue;
-                    
+
                     await _offsetManager.ReaderLock.WaitAsync(cancellationToken);
                     readBuffer = ArrayPool<byte>.Shared.RentAsNecessary(readBuffer, 16384);
                     await _offsetManager.Reader
@@ -128,7 +138,7 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
 
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    _blockBuffer = ArrayPool<byte>.Shared.RentAsNecessary(_blockBuffer, (int)dbh.DecompressedSize);
+                    _blockBuffer = ArrayPool<byte>.Shared.RentAsNecessary(_blockBuffer, (int) dbh.DecompressedSize);
                     if (dbh.IsCompressed) {
                         await using var zlibStream = new DeflateStream(
                             new MemoryStream(readBuffer, Unsafe.SizeOf<DatBlockHeader>(), (int) dbh.CompressedSize),
@@ -173,9 +183,17 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
 
     public override object Clone() => new TextureVirtualFileStream(this);
 
-    public TexFile.TexHeader TexHeader => _offsetManager.Header;
+    protected override void Dispose(bool disposing) {
+        IReferenceCounted.DecRef(ref _offsetManager);
+        base.Dispose(disposing);
+    }
 
-    private class OffsetManager {
+    public TexFile.TexHeader TexHeader =>
+        _offsetManager?.Header ?? throw new ObjectDisposedException(nameof(TextureVirtualFileStream));
+
+    private class OffsetManager : IReferenceCounted {
+        private int _refcount = 1;
+
         public readonly SemaphoreSlim ReaderLock = new(1, 1);
         public readonly LuminaBinaryReader Reader;
         public readonly long BaseOffset;
@@ -206,6 +224,13 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
             HeaderBytes = reader.WithSeek(BaseOffset + info.Size).ReadBytes((int) texHeaderLength);
             fixed (void* p = HeaderBytes)
                 Header = *(TexFile.TexHeader*) p;
+        }
+        
+        public void AddRef() => Interlocked.Increment(ref _refcount);
+
+        public void DecRef() {
+            if (Interlocked.Decrement(ref _refcount) == 0)
+                Reader.Dispose();
         }
     }
 

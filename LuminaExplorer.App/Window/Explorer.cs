@@ -55,6 +55,8 @@ public partial class Explorer : Form {
 
         cboView.SelectedIndex = 5;
 
+        _vspTree.FileResolved += _vspTree_FileResolved;
+        _vspTree.FolderResolved += _vspTree_FolderResolved;
         NavigateTo(vspTree.RootFolder, true);
 
         // mustadio
@@ -84,6 +86,14 @@ public partial class Explorer : Form {
             default:
                 return base.ProcessCmdKey(ref msg, keyData);
         }
+    }
+
+    private void _vspTree_FileResolved(VirtualFile file) {
+        // TODO
+    }
+    
+    private void _vspTree_FolderResolved(VirtualFolder folder) {
+        // TODO
     }
 
     private void btnNavBack_Click(object sender, EventArgs e) => NavigateBack();
@@ -173,6 +183,8 @@ public partial class Explorer : Form {
     private void Explorer_FormClosed(object sender, FormClosedEventArgs e) {
         _treeViewImageList.Dispose();
         _listViewImageList.Dispose();
+        _vspTree.FileResolved -= _vspTree_FileResolved;
+        _vspTree.FolderResolved -= _vspTree_FolderResolved;
     }
 
     private void Explorer_Shown(object sender, EventArgs e) {
@@ -181,6 +193,8 @@ public partial class Explorer : Form {
 
     private void txtPath_KeyUp(object? sender, KeyEventArgs keyEventArgs) {
         var searchedText = txtPath.Text;
+        _vspTree.SuggestFullPath(searchedText);
+        
         var cleanerPath = searchedText.Split('/', StringSplitOptions.TrimEntries);
         if (cleanerPath.Any())
             cleanerPath = cleanerPath[..^1];
@@ -217,7 +231,7 @@ public partial class Explorer : Form {
                             var exactMatchFound = 0 == string.Compare(
                                 _explorerFolder.FullPath.TrimEnd('/'),
                                 prevText.Trim().TrimEnd('/'),
-                                StringComparison.OrdinalIgnoreCase);
+                                StringComparison.InvariantCultureIgnoreCase);
                             txtPath.Text = prevText;
 
                             if (exactMatchFound) {
@@ -421,7 +435,7 @@ public partial class Explorer : Form {
             if (name == "./")
                 continue;
 
-            if (name == "../") {
+            if (name == VirtualFolder.UpFolderKey) {
                 node = node.Parent as FolderTreeNode ?? node;
                 continue;
             }
@@ -430,7 +444,7 @@ public partial class Explorer : Form {
                 var i = 0;
                 for (; i < node.Nodes.Count; i++) {
                     if (node.Nodes[i] is FolderTreeNode subnode &&
-                        string.Compare(subnode.Folder.Name, name, StringComparison.OrdinalIgnoreCase) == 0) {
+                        string.Compare(subnode.Folder.Name, name, StringComparison.InvariantCultureIgnoreCase) == 0) {
                         return TryNavigateToImpl(subnode, parts, partIndex + 1);
                     }
                 }
@@ -601,7 +615,7 @@ public partial class Explorer : Form {
                     var r = a.IsFolder switch {
                         true when !b.IsFolder => -1,
                         false when b.IsFolder => 1,
-                        _ => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase)
+                        _ => string.Compare(a.Name, b.Name, StringComparison.InvariantCultureIgnoreCase)
                     };
                     return order switch {
                         SortOrder.None or SortOrder.Ascending => r,
@@ -660,10 +674,11 @@ public partial class Explorer : Form {
         public readonly VirtualFile? File;
         public readonly VirtualFolder? Folder;
 
+        private readonly string? _preferredName;
+        
         private readonly Lazy<VirtualFileLookup>? _lookup;
         private readonly object _imageKeyFallback;
         private readonly Lazy<Task<object?>> _imageKeyTask;
-        private readonly Lazy<string> _hash1;
         private readonly Lazy<string> _hash2;
         private readonly Lazy<long> _rawSize;
         private readonly Lazy<long> _storedSize;
@@ -672,7 +687,6 @@ public partial class Explorer : Form {
         public VirtualObject(VirtualSqPackTree tree, VirtualFile file,
             Func<VirtualObject, Stream, PlatformId, Task<object?>> imageKeyGetter) {
             File = file;
-            Name = file.Name;
             _lookup = new(() => tree.GetLookup(File));
             _imageKeyFallback = 0;
             _imageKeyTask = new(() => {
@@ -680,7 +694,7 @@ public partial class Explorer : Form {
 
                 var canBeTexture = false;
                 canBeTexture |= Lookup.Type == FileType.Texture;
-                canBeTexture |= File.Name.EndsWith(".atex", StringComparison.OrdinalIgnoreCase);
+                canBeTexture |= File.Name.EndsWith(".atex", StringComparison.InvariantCultureIgnoreCase);
 
                 try {
                     // may be an .atex file
@@ -697,7 +711,6 @@ public partial class Explorer : Form {
 
                 return Task.FromResult((object?) 0);
             });
-            _hash1 = new($"{File.FileHash:X08}");
             _hash2 = new(() => $"{Crc32.Get(File!.FullPath.Trim('/').ToLowerInvariant()):X08}");
             _rawSize = new(() => Lookup!.Size);
             _storedSize = new(() => Lookup!.OccupiedBlockBytes);
@@ -706,10 +719,9 @@ public partial class Explorer : Form {
 
         public VirtualObject(VirtualFolder folder, string? preferredName) {
             Folder = folder;
-            Name = preferredName ?? folder.Name;
+            _preferredName = preferredName;
             _imageKeyFallback = 1;
             _imageKeyTask = new(() => Task.FromResult((object?) 1));
-            _hash1 = new(() => $"{Crc32.Get(Folder!.FullPath.Trim('/').ToLowerInvariant()):X08}");
             _hash2 = new("");
             _rawSize = _storedSize = _reservedSize = new(0L);
         }
@@ -720,7 +732,7 @@ public partial class Explorer : Form {
 
         [UsedImplicitly] public bool Checked { get; set; }
 
-        [UsedImplicitly] public string Name { get; }
+        [UsedImplicitly] public string Name => _preferredName ?? (IsFolder ? Folder!.Name : File!.Name);
 
         [UsedImplicitly]
         public string PackTypeString => _lookup is null
@@ -735,7 +747,7 @@ public partial class Explorer : Form {
                 }
                 : "<error>";
 
-        [UsedImplicitly] public string Hash1 => _hash1.Value;
+        [UsedImplicitly] public string Hash1 => $"{(IsFolder ? Folder!.FolderHash : File!.FileHash):X08}";
 
         [UsedImplicitly] public string Hash2 => _hash2.Value;
 

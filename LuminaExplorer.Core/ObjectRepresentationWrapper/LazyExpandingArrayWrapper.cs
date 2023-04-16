@@ -19,20 +19,15 @@ public class LazyExpandingArrayWrapper : ArrayWrapper {
         _expectingType = expectingType;
     }
 
-    public override string ToString() {
-        if (!BaseIndices.Any() && RangeFrom == 0 && RangeTo == Obj.GetLength(0))
-            return
-                $"{_expectingType.Name}[{string.Join(", ", Enumerable.Range(0, Obj.Rank).Select(x => Obj.GetLength(x)))}]";
+    public override string ToString() => IsTopLevel
+        ? $"{_expectingType.Name}" +
+          $"[{string.Join(", ", Enumerable.Range(0, Obj.Rank).Select(x => Obj.GetLength(x)))}]"
+        : base.ToString();
 
-        return base.ToString();
-    }
-
-    protected override object? TransformObject(object? obj) {
-        if (obj?.GetType().GetGenericTypeDefinition() == typeof(Lazy<>))
-            return obj.GetType().GetProperty("Value", BindingFlags.Instance | BindingFlags.Public)!.GetValue(obj);
-
-        return base.TransformObject(obj);
-    }
+    protected override object? TransformObject(object? obj) =>
+        obj?.GetType().GetGenericTypeDefinition() == typeof(Lazy<>)
+            ? obj.GetType().GetProperty("Value", BindingFlags.Instance | BindingFlags.Public)!.GetValue(obj)
+            : base.TransformObject(obj);
 
     protected override Type TransformValueType(Type type) =>
         type.GetGenericTypeDefinition() == typeof(Lazy<>)
