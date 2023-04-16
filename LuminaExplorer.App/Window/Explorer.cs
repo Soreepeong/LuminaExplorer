@@ -7,6 +7,7 @@ using JetBrains.Annotations;
 using Lumina.Data.Structs;
 using LuminaExplorer.App.Utils;
 using LuminaExplorer.Core.LazySqPackTree;
+using LuminaExplorer.Core.LazySqPackTree.Matcher;
 using LuminaExplorer.Core.ObjectRepresentationWrapper;
 using LuminaExplorer.Core.Util;
 
@@ -210,7 +211,7 @@ public partial class Explorer : Form {
 
             try {
                 // may be an .atex file
-                if (!canBeTexture && !file.NameResolved && lookup is {Type: FileType.Standard, Size: > 256})
+                if (!canBeTexture && !file.NameResolved && lookup is { Type: FileType.Standard, Size: > 256 })
                     canBeTexture = true;
 
                 if (!canBeTexture)
@@ -386,30 +387,30 @@ public partial class Explorer : Form {
     private void txtPath_KeyDown(object sender, KeyEventArgs e) {
         switch (e.KeyCode) {
             case Keys.Enter: {
-                var prevText = txtPath.Text;
-                TryNavigateTo(txtPath.Text)
-                    .ContinueWith(_ => {
-                        var fullPath = _vspTree.GetFullPath(_explorerFolder);
-                        var exactMatchFound = 0 == string.Compare(
-                            fullPath.TrimEnd('/'),
-                            prevText.Trim().TrimEnd('/'),
-                            StringComparison.InvariantCultureIgnoreCase);
-                        txtPath.Text = prevText;
+                    var prevText = txtPath.Text;
+                    TryNavigateTo(txtPath.Text)
+                        .ContinueWith(_ => {
+                            var fullPath = _vspTree.GetFullPath(_explorerFolder);
+                            var exactMatchFound = 0 == string.Compare(
+                                fullPath.TrimEnd('/'),
+                                prevText.Trim().TrimEnd('/'),
+                                StringComparison.InvariantCultureIgnoreCase);
+                            txtPath.Text = prevText;
 
-                        if (exactMatchFound) {
-                            lvwFiles.Focus();
-                            return;
-                        }
+                            if (exactMatchFound) {
+                                lvwFiles.Focus();
+                                return;
+                            }
 
-                        var currentFullPathLength = fullPath.Length;
-                        var sharedLength = 0;
-                        while (sharedLength < currentFullPathLength && sharedLength < prevText.Length)
-                            sharedLength++;
-                        txtPath.ComboBox!.SelectionStart = sharedLength;
-                        txtPath.ComboBox!.SelectionLength = prevText.Length - sharedLength;
-                    }, TaskScheduler.FromCurrentSynchronizationContext());
-                break;
-            }
+                            var currentFullPathLength = fullPath.Length;
+                            var sharedLength = 0;
+                            while (sharedLength < currentFullPathLength && sharedLength < prevText.Length)
+                                sharedLength++;
+                            txtPath.ComboBox!.SelectionStart = sharedLength;
+                            txtPath.ComboBox!.SelectionLength = prevText.Length - sharedLength;
+                        }, TaskScheduler.FromCurrentSynchronizationContext());
+                    break;
+                }
 
             case Keys.Escape:
                 txtPath.Text = _vspTree.GetFullPath(_explorerFolder);
@@ -448,6 +449,13 @@ public partial class Explorer : Form {
                 txtPath.ComboBox.SelectionStart = selectionStart;
                 txtPath.ComboBox.SelectionLength = selectionLength;
             }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    private void txtSearch_KeyUp(object sender, KeyEventArgs e) {
+        var matcher = new MultipleConditionsMatcher();
+        matcher.ParseQuery(txtSearch.Text);
+
+        Debug.Print(matcher.ToString());
     }
 
     private void tvwFiles_AfterExpand(object sender, TreeViewEventArgs e) {
@@ -528,16 +536,16 @@ public partial class Explorer : Form {
 
     private void lvwFiles_KeyUp(object sender, KeyEventArgs e) {
         switch (e.KeyCode) {
-            case Keys.Left when e is {Control: false, Alt: true, Shift: false}:
-            case Keys.Back when e is {Control: false, Alt: false, Shift: false}:
+            case Keys.Left when e is { Control: false, Alt: true, Shift: false }:
+            case Keys.Back when e is { Control: false, Alt: false, Shift: false }:
             case Keys.BrowserBack:
                 NavigateBack();
                 break;
-            case Keys.Right when e is {Control: false, Alt: true, Shift: false}:
+            case Keys.Right when e is { Control: false, Alt: true, Shift: false }:
             case Keys.BrowserForward:
                 NavigateForward();
                 break;
-            case Keys.Up when e is {Control: false, Alt: true, Shift: false}:
+            case Keys.Up when e is { Control: false, Alt: true, Shift: false }:
                 NavigateUp();
                 break;
         }
@@ -869,7 +877,7 @@ public partial class Explorer : Form {
         }
 
         private void ReleaseUnmanagedResources() {
-            if (_lookup is {IsValueCreated: true}) {
+            if (_lookup is { IsValueCreated: true }) {
                 _lookup.Value.Dispose();
                 _lookup = null;
             }
@@ -897,7 +905,7 @@ public partial class Explorer : Form {
         public VirtualFileLookup Lookup => _lookup?.Value ?? throw new InvalidOperationException();
 
         public uint Hash1Value => IsFolder ? Folder.FolderHash : File.FileHash;
-        
+
         public uint Hash2Value => _hash2.Value;
 
         [UsedImplicitly] public bool Checked { get; set; }

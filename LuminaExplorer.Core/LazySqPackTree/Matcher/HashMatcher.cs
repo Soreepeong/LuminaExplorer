@@ -2,7 +2,7 @@
 
 namespace LuminaExplorer.Core.LazySqPackTree.Matcher;
 
-public class HashMatcher : IMatcher {
+public class HashMatcher : IMatcherComponent {
     private uint[]? _values;
 
     public void ParseQuery(Span<uint> span, ref int i, uint[] validTerminators) {
@@ -28,8 +28,10 @@ public class HashMatcher : IMatcher {
                 foundAny = true;
             }
 
-            if (foundAny)
+            if (foundAny) {
                 values.Add(n);
+                i--;
+            }
         }
 
         _values = values.ToArray();
@@ -38,4 +40,6 @@ public class HashMatcher : IMatcher {
     public bool IsEmpty() => _values?.Any() is not true;
 
     public bool Matches(uint hash) => _values?.Contains(hash) ?? throw new InvalidOperationException();
+
+    public override string ToString() => $"Hash({string.Join(", ", _values ?? Array.Empty<uint>())})";
 }

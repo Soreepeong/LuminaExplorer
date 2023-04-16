@@ -6,7 +6,7 @@ namespace LuminaExplorer.Core.LazySqPackTree.Matcher.TextMatchers;
 public class RegexMatcher : ITextMatcher {
     protected string? _regex;
 
-    public void ParseQuery(Span<uint> span, ref int i, uint[] validTerminators) {
+    public virtual void ParseQuery(Span<uint> span, ref int i, uint[] validTerminators) {
         validTerminators = validTerminators.Append('*').Append('?').ToArray();
         var rsm = new RawStringMatcher(false);
         rsm.ParseQuery(span, ref i, validTerminators);
@@ -14,6 +14,8 @@ public class RegexMatcher : ITextMatcher {
     }
 
     public bool IsEmpty() => string.IsNullOrEmpty(_regex);
+
+    public override string ToString() => $"Regex({_regex})";
 
     // injectable but who cares
     

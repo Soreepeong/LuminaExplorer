@@ -3,7 +3,7 @@ using LuminaExplorer.Core.LazySqPackTree.Matcher.TextMatchers;
 
 namespace LuminaExplorer.Core.LazySqPackTree.Matcher;
 
-public class TextMatcher : IMatcher {
+public class TextMatcher : IMatcherComponent {
     private bool _negative;
     private SearchEqualityType _equalityType = SearchEqualityType.Contains;
     private ITextMatcher? _matcher;
@@ -72,6 +72,11 @@ public class TextMatcher : IMatcher {
                         SearchMatchType.PlainText => new RawStringMatcher(!noEscape),
                         _ => throw new InvalidOperationException()
                     };
+                    _matcher.ParseQuery(span, ref i, validTerminators);
+                    if (_matcher.IsEmpty())
+                        _matcher = null;
+                    else
+                        return;
                     break;
             }
         }
@@ -88,6 +93,8 @@ public class TextMatcher : IMatcher {
             SearchEqualityType.EndsWith => _matcher.EndsWith(haystack, stopwatch, timeout),
             _ => throw new InvalidOperationException(),
         } ^ _negative;
+
+    public override string ToString() => $"Text({(_negative ? "Not " : "")}{_equalityType} {_matcher})";
 
     public enum SearchEqualityType {
         Contains,

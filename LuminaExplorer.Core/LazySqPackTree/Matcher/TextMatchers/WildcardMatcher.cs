@@ -10,7 +10,7 @@ public class WildcardMatcher : RegexMatcher {
         _useEscapeSequence = useEscapeSequence;
     }
 
-    public void ParseQuery(Span<uint> span, ref int i, uint[] validTerminators) {
+    public override void ParseQuery(Span<uint> span, ref int i, uint[] validTerminators) {
         validTerminators = validTerminators.Append('*').Append('?').ToArray();
 
         var rsm = new RawStringMatcher(_useEscapeSequence);
@@ -36,10 +36,13 @@ public class WildcardMatcher : RegexMatcher {
                 default:
                     rsm.ParseQuery(span, ref i, validTerminators);
                     re.Append(Regex.Escape(rsm.Sequence));
+                    i--;
                     break;
             }
         }
 
         _regex = re.ToString();
     }
+
+    public override string ToString() => $"Wildcard({_regex})";
 }

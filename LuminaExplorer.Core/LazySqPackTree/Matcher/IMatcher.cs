@@ -1,6 +1,10 @@
-﻿namespace LuminaExplorer.Core.LazySqPackTree.Matcher; 
+using System.Diagnostics;
 
-public interface IMatcher {
-    void ParseQuery(Span<uint> span, ref int i, uint[] validTerminators);
-    bool IsEmpty();
+namespace LuminaExplorer.Core.LazySqPackTree.Matcher;
+
+public interface IMatcher : IMatcherComponent {
+    public bool Matches(VirtualSqPackTree tree, VirtualFolder folder, Stopwatch stopwatch, TimeSpan timeout);
+
+    public bool Matches(VirtualSqPackTree tree, VirtualFile file, ref VirtualFileLookup? lookup, Lazy<string> data,
+        Stopwatch stopwatch, TimeSpan timeout);
 }

@@ -202,7 +202,6 @@ partial class Explorer {
         colFilesRawSize.IsEditable = false;
         colFilesRawSize.Text = "Size";
         colFilesRawSize.TextAlign = HorizontalAlignment.Right;
-        colFilesRawSize.Width = 60;
         // 
         // colFilesStoredSize
         // 
@@ -210,7 +209,6 @@ partial class Explorer {
         colFilesStoredSize.IsEditable = false;
         colFilesStoredSize.Text = "Stored";
         colFilesStoredSize.TextAlign = HorizontalAlignment.Right;
-        colFilesStoredSize.Width = 60;
         // 
         // colFilesReservedSize
         // 
@@ -218,7 +216,6 @@ partial class Explorer {
         colFilesReservedSize.IsEditable = false;
         colFilesReservedSize.Text = "Reserved";
         colFilesReservedSize.TextAlign = HorizontalAlignment.Right;
-        colFilesReservedSize.Width = 60;
         // 
         // splPreview
         // 
@@ -382,6 +379,7 @@ partial class Explorer {
         txtSearch.Alignment = ToolStripItemAlignment.Right;
         txtSearch.Name = "txtSearch";
         txtSearch.Size = new Size(160, 25);
+        txtSearch.KeyUp += txtSearch_KeyUp;
         // 
         // toolStripContainer1
         // 

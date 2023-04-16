@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Core.LazySqPackTree.Matcher.TextMatchers;
 
@@ -86,6 +87,8 @@ public class RawStringMatcher : ITextMatcher {
     }
 
     public bool IsEmpty() => string.IsNullOrEmpty(_sequence);
+
+    public override string ToString() => $"Raw({_sequence})";
 
     public bool Contains(string haystack, Stopwatch stopwatch, TimeSpan timeout) => _sequence is not null
         ? haystack.Contains(_sequence)
@@ -365,7 +368,7 @@ public class RawStringMatcher : ITextMatcher {
                 var isValidSep =
                     (span[i] == ',' && decimalSeparatorIsDot) ||
                     (span[i] == '.' && !decimalSeparatorIsDot) ||
-                    (span[i] < 0x10000 && char.IsWhiteSpace((char) span[i])) ||
+                    span[i].IsWhiteSpace() ||
                     span[i] switch {
                         ':' or ';' or '/' or '\\' or '^' or '|' or '!' or '~' => true,
                         _ => false,
