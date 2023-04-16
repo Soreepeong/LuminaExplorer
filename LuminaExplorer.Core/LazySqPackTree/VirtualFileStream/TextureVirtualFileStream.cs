@@ -1,12 +1,12 @@
+using System.Buffers;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Lumina.Data;
 using Lumina.Data.Files;
-using Lumina.Data.Parsing.Tex.Buffers;
 using Lumina.Data.Structs;
-using Lumina.Extensions;
 using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
@@ -16,21 +16,20 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
 
     private int _bufferLodIndex = -1, _bufferBlockIndex = -1;
     private uint _bufferValidSize;
-    private readonly byte[] _readBuffer = new byte[16384];
-    private readonly byte[] _blockBuffer = new byte[16000];
+    private byte[]? _blockBuffer;
 
-    public TextureVirtualFileStream(PlatformId platformId, LuminaBinaryReader reader, long baseOffset, uint headerSize,
-        uint numBlocks, uint length, uint reservedSpaceUnits, uint occupiedSpaceUnits)
-        : base(platformId, length, reservedSpaceUnits, occupiedSpaceUnits) {
-        _offsetManager = new(reader, baseOffset, headerSize, numBlocks);
+    public TextureVirtualFileStream(LuminaBinaryReader reader, long baseOffset, SqPackFileInfo info)
+        : base(reader.PlatformId, info.RawFileSize) {
+        _offsetManager = new(reader, baseOffset, info);
     }
 
     public TextureVirtualFileStream(TextureVirtualFileStream cloneFrom)
-        : base(cloneFrom.PlatformId, (uint) cloneFrom.Length, cloneFrom.ReservedSpaceUnits, cloneFrom.OccupiedSpaceUnits) {
+        : base(cloneFrom.PlatformId, (uint) cloneFrom.Length) {
         _offsetManager = cloneFrom._offsetManager;
     }
 
-    public override unsafe int Read(byte[] buffer, int offset, int count) {
+    public override async Task<int>
+        ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) {
         if (count == 0)
             return 0;
 
@@ -51,8 +50,7 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
         }
 
         // 1. Drain previous read
-        if (0 <= _bufferLodIndex && _bufferLodIndex < _offsetManager.NumLods &&
-            0 <= _bufferBlockIndex && _bufferBlockIndex < _offsetManager.Lods[_bufferLodIndex].Summary.BlockCount) {
+        if (_blockBuffer is not null) {
             var blockGroup = _offsetManager.Lods[_bufferLodIndex];
             if (blockGroup.RequestOffsets[_bufferBlockIndex] <= PositionUint &&
                 PositionUint < blockGroup.RequestOffsets[_bufferBlockIndex + 1]) {
@@ -65,8 +63,12 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
                     count -= available;
                     Position += available;
                     totalRead += available;
-                    if (available == bufferRemaining)
-                        _bufferLodIndex = _bufferBlockIndex = -1;
+                    if (available == bufferRemaining) {
+                        _bufferBlockIndex = _bufferLodIndex = -1;
+                        _bufferValidSize = 0;
+                        ArrayPool<byte>.Shared.Return(ref _blockBuffer);
+                    }
+
                     if (count == 0)
                         return totalRead;
                 }
@@ -74,12 +76,12 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
         }
 
         // 2. New blocks!
-        fixed (void* p = _readBuffer) {
-            var dbh = (DatBlockHeader*) p;
-            var dbhSize = sizeof(DatBlockHeader);
-
+        byte[]? readBuffer = null;
+        try {
             // There will never be more than 16 mipmaps (width and height are u16 values,) so just count it.
             for (var i = 0; i < _offsetManager.NumLods && count > 0; i++) {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var lod = _offsetManager.Lods[i];
 
                 if (PositionUint >= lod.RequestOffsets[0] + lod.Summary.DecompressedSize)
@@ -98,16 +100,24 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
                 }
 
                 for (; j < lod.Summary.BlockCount; j++) {
+                    cancellationToken.ThrowIfCancellationRequested();
                     if (lod.RequestOffsets[j + 1] <= PositionUint && lod.RequestOffsets[j] != uint.MaxValue)
                         continue;
+                    
+                    await _offsetManager.ReaderLock.WaitAsync(cancellationToken);
+                    readBuffer = ArrayPool<byte>.Shared.RentAsNecessary(readBuffer, 16384);
+                    await _offsetManager.Reader
+                        .WithSeek(_offsetManager.BaseOffset + lod.Offsets[j])
+                        .BaseStream.ReadExactlyAsync(new(readBuffer, 0, lod.Sizes[j]), cancellationToken);
+                    _offsetManager.ReaderLock.Release();
 
-                    lock (_offsetManager.Reader) {
-                        _offsetManager.Reader
-                            .WithSeek(_offsetManager.BaseOffset + lod.Offsets[j])
-                            .ReadFully(new(_readBuffer, 0, lod.Sizes[j]));
+                    DatBlockHeader dbh;
+                    unsafe {
+                        fixed (void* p = readBuffer)
+                            dbh = *(DatBlockHeader*) p;
                     }
 
-                    lod.DecompressedSizes[j] = checked((ushort) dbh->DecompressedSize);
+                    lod.DecompressedSizes[j] = checked((ushort) dbh.DecompressedSize);
                     lod.RequestOffsets[j + 1] = lod.RequestOffsets[j] + lod.DecompressedSizes[j];
 
                     if (lod.RequestOffsets[j + 1] <= PositionUint)
@@ -116,18 +126,21 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
                     var bufferConsumed = PositionUint - lod.RequestOffsets[j];
                     var bufferRemaining = lod.RequestOffsets[j + 1] - PositionUint;
 
-                    if (dbh->IsCompressed) {
-                        using var zlibStream = new DeflateStream(
-                            new MemoryStream(_readBuffer, dbhSize, (int) dbh->CompressedSize),
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    _blockBuffer = ArrayPool<byte>.Shared.RentAsNecessary(_blockBuffer, (int)dbh.DecompressedSize);
+                    if (dbh.IsCompressed) {
+                        await using var zlibStream = new DeflateStream(
+                            new MemoryStream(readBuffer, Unsafe.SizeOf<DatBlockHeader>(), (int) dbh.CompressedSize),
                             CompressionMode.Decompress);
-                        zlibStream.ReadFully(new(_blockBuffer, 0, (int) dbh->DecompressedSize));
+                        zlibStream.ReadExactly(new(_blockBuffer, 0, (int) dbh.DecompressedSize));
                     } else {
-                        Array.Copy(_readBuffer, 0, _blockBuffer, 0, dbh->DecompressedSize);
+                        Array.Copy(readBuffer, 0, _blockBuffer, 0, dbh.DecompressedSize);
                     }
 
                     _bufferLodIndex = i;
                     _bufferBlockIndex = j;
-                    _bufferValidSize = dbh->DecompressedSize;
+                    _bufferValidSize = dbh.DecompressedSize;
 
                     if (bufferConsumed < _bufferValidSize) {
                         var available = Math.Min((int) bufferRemaining, count);
@@ -146,55 +159,24 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
                     }
                 }
             }
+        } finally {
+            ArrayPool<byte>.Shared.Return(ref readBuffer);
+            if (_bufferValidSize == 0)
+                ArrayPool<byte>.Shared.Return(ref _blockBuffer);
         }
 
         // 3. Pad.
-        totalRead += ReadImplPadTo(buffer, ref offset, ref count, (uint)Length);
+        totalRead += ReadImplPadTo(buffer, ref offset, ref count, (uint) Length);
 
         return totalRead;
     }
 
-    public override FileType Type => FileType.Texture;
-
     public override object Clone() => new TextureVirtualFileStream(this);
 
     public TexFile.TexHeader TexHeader => _offsetManager.Header;
-    
-    public TextureBuffer ExtractMipmapOfSizeAtLeast(int minEdgeLength) {
-        var header = _offsetManager.Header;
-        var level = 0;
-        while (level < header.MipLevels - 1 &&
-               (header.Width >> (level + 1)) >= minEdgeLength &&
-               (header.Height >> (level + 1)) >= minEdgeLength)
-            level++;
-        return ExtractMipmap(level);
-    }
-
-    public unsafe TextureBuffer ExtractMipmap(int level) {
-        var header = _offsetManager.Header;
-        if (level < 0 || level >= header.MipLevels)
-            throw new ArgumentOutOfRangeException(nameof(level), level, null);
-        
-        var offset = header.OffsetToSurface[level];
-        var length = (int)((level == header.MipLevels - 1 ? Length : header.OffsetToSurface[level + 1]) - offset);
-        var buffer = new byte[length];
-        new TextureVirtualFileStream(this).WithSeek(offset).ReadFully(new(buffer));
-        
-        var mipWidth = Math.Max(1, header.Width >> level);
-        var mipHeight = Math.Max(1, header.Height >> level);
-        var mipDepth = Math.Max(1, header.Depth >> level);
-        return TextureBuffer.FromTextureFormat(
-            header.Type,
-            header.Format,
-            mipWidth,
-            mipHeight,
-            mipDepth,
-            new[] {length},
-            buffer,
-            PlatformId);
-    }
 
     private class OffsetManager {
+        public readonly SemaphoreSlim ReaderLock = new(1, 1);
         public readonly LuminaBinaryReader Reader;
         public readonly long BaseOffset;
         public readonly int NumLods;
@@ -202,10 +184,10 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
         public readonly TexFile.TexHeader Header;
         public readonly byte[] HeaderBytes;
 
-        public unsafe OffsetManager(LuminaBinaryReader reader, long baseOffset, uint headerSize, uint numBlocks) {
+        public unsafe OffsetManager(LuminaBinaryReader reader, long baseOffset, SqPackFileInfo info) {
             Reader = reader;
             BaseOffset = baseOffset;
-            NumLods = (int) numBlocks;
+            NumLods = (int) info.NumberOfBlocks;
 
             var locators = reader
                 .WithSeek(BaseOffset + (uint) Unsafe.SizeOf<SqPackFileInfo>())
@@ -218,12 +200,12 @@ public class TextureVirtualFileStream : BaseVirtualFileStream {
                 var baseRequestOffset = i == 0 ? texHeaderLength : Lods[i - 1].RequestOffsets[^1];
                 var blockSizes = reader.ReadStructuresAsArray<ushort>((int) locators[i].BlockCount);
 
-                Lods[i] = new(locators[i], blockSizes, baseRequestOffset, headerSize);
+                Lods[i] = new(locators[i], blockSizes, baseRequestOffset, info.Size);
             }
 
-            HeaderBytes = reader.WithSeek(BaseOffset + headerSize).ReadBytes((int) texHeaderLength);
+            HeaderBytes = reader.WithSeek(BaseOffset + info.Size).ReadBytes((int) texHeaderLength);
             fixed (void* p = HeaderBytes)
-                Header = *(TexFile.TexHeader*)p;
+                Header = *(TexFile.TexHeader*) p;
         }
     }
 

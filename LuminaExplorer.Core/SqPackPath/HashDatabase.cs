@@ -36,9 +36,9 @@ public class HashDatabase {
             _files = new FileStruct[(endOffset - fileOffset) / Unsafe.SizeOf<FileStruct>()];
             unsafe {
                 fixed (void* b = _folders)
-                    reader.ReadFully(new(b, fileOffset - folderOffset));
+                    reader.BaseStream.ReadExactly(new(b, fileOffset - folderOffset));
                 fixed (void* b = _files)
-                    reader.ReadFully(new(b, endOffset - fileOffset));
+                    reader.BaseStream.ReadExactly(new(b, endOffset - fileOffset));
             }
 
             _strings = _strings[..folderOffset];

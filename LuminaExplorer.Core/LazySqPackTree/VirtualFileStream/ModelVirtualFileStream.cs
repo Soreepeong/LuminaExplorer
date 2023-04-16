@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
@@ -5,7 +6,6 @@ using System.Runtime.InteropServices;
 using Lumina.Data;
 using Lumina.Data.Parsing;
 using Lumina.Data.Structs;
-using Lumina.Extensions;
 using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
@@ -17,20 +17,20 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
 
     private int _bufferBlockIndex = -1;
     private uint _bufferValidSize;
-    private readonly byte[] _readBuffer = new byte[16384];
-    private readonly byte[] _blockBuffer = new byte[16000];
+    private byte[]? _blockBuffer;
 
-    public ModelVirtualFileStream(PlatformId platformId, LuminaBinaryReader reader, long baseOffset, ModelBlock modelBlock)
-        : base(platformId, modelBlock.RawFileSize, modelBlock.NumberOfBlocks, modelBlock.UsedNumberOfBlocks) {
+    public ModelVirtualFileStream(LuminaBinaryReader reader, long baseOffset, ModelBlock modelBlock)
+        : base(reader.PlatformId, modelBlock.RawFileSize) {
         _offsetManager = new(reader, baseOffset, modelBlock);
     }
 
     public ModelVirtualFileStream(ModelVirtualFileStream cloneFrom)
-        : base(cloneFrom.PlatformId, (uint) cloneFrom.Length, cloneFrom.ReservedSpaceUnits, cloneFrom.OccupiedSpaceUnits) {
+        : base(cloneFrom.PlatformId, (uint) cloneFrom.Length) {
         _offsetManager = cloneFrom._offsetManager;
     }
 
-    public override unsafe int Read(byte[] buffer, int offset, int count) {
+    public override async Task<int>
+        ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) {
         if (count == 0)
             return 0;
 
@@ -51,7 +51,7 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
         }
 
         // 1. Drain previous read
-        if (0 <= _bufferBlockIndex && _bufferBlockIndex < _offsetManager.NumBlocks) {
+        if (_blockBuffer is not null) {
             if (_offsetManager.RequestOffsets[_bufferBlockIndex] <= PositionUint &&
                 PositionUint < _offsetManager.RequestOffsets[_bufferBlockIndex + 1]) {
                 var bufferConsumed = (int) (Position - _offsetManager.RequestOffsets[_bufferBlockIndex]);
@@ -63,8 +63,12 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
                     count -= available;
                     Position += available;
                     totalRead += available;
-                    if (available == bufferRemaining)
+                    if (available == bufferRemaining) {
                         _bufferBlockIndex = -1;
+                        _bufferValidSize = 0;
+                        ArrayPool<byte>.Shared.Return(ref _blockBuffer);
+                    }
+
                     if (count == 0)
                         return totalRead;
                 }
@@ -76,34 +80,44 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
         if (i < 0)
             i = ~i - 1;
 
-        fixed (void* p = _readBuffer) {
-            var dbh = (DatBlockHeader*) p;
-            var dbhSize = sizeof(DatBlockHeader);
-
+        byte[]? readBuffer = null;
+        try {
             for (; i < _offsetManager.NumBlocks; i++) {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (_offsetManager.RequestOffsets[i + 1] <= PositionUint)
                     continue;
 
                 var bufferConsumed = PositionUint - _offsetManager.RequestOffsets[i];
                 var bufferRemaining = _offsetManager.RequestOffsets[i + 1] - PositionUint;
 
-                lock (_offsetManager.Reader) {
-                    _offsetManager.Reader
-                        .WithSeek(_offsetManager.BaseOffset + _offsetManager.BlockOffsets[i])
-                        .ReadFully(new(_readBuffer, 0, _offsetManager.BlockSizes[i]));
+                await _offsetManager.ReaderLock.WaitAsync(cancellationToken);
+                readBuffer = ArrayPool<byte>.Shared.RentAsNecessary(readBuffer, 16384);
+                await _offsetManager.Reader
+                    .WithSeek(_offsetManager.BaseOffset + _offsetManager.BlockOffsets[i])
+                    .BaseStream.ReadExactlyAsync(new(readBuffer, 0, _offsetManager.BlockSizes[i]), cancellationToken);
+                _offsetManager.ReaderLock.Release();
+
+                DatBlockHeader dbh;
+                unsafe {
+                    fixed (void* p = readBuffer)
+                        dbh = *(DatBlockHeader*) p;
                 }
 
-                if (dbh->IsCompressed) {
-                    using var zlibStream = new DeflateStream(
-                        new MemoryStream(_readBuffer, dbhSize, (int) dbh->CompressedSize),
+                cancellationToken.ThrowIfCancellationRequested();
+
+                _blockBuffer = ArrayPool<byte>.Shared.RentAsNecessary(_blockBuffer, (int)dbh.DecompressedSize);
+                if (dbh.IsCompressed) {
+                    await using var zlibStream = new DeflateStream(
+                        new MemoryStream(readBuffer, Unsafe.SizeOf<DatBlockHeader>(), (int) dbh.CompressedSize),
                         CompressionMode.Decompress);
-                    zlibStream.ReadFully(new(_blockBuffer, 0, (int) dbh->DecompressedSize));
+                    zlibStream.ReadExactly(new(_blockBuffer, 0, (int) dbh.DecompressedSize));
                 } else {
-                    Array.Copy(_readBuffer, 0, _blockBuffer, 0, dbh->DecompressedSize);
+                    Array.Copy(readBuffer, 0, _blockBuffer, 0, dbh.DecompressedSize);
                 }
 
                 _bufferBlockIndex = i;
-                _bufferValidSize = dbh->DecompressedSize;
+                _bufferValidSize = dbh.DecompressedSize;
 
                 if (bufferConsumed < _bufferValidSize) {
                     var available = Math.Min((int) bufferRemaining, count);
@@ -121,19 +135,22 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
                         break;
                 }
             }
+        } finally {
+            ArrayPool<byte>.Shared.Return(ref readBuffer);
+            if (_bufferValidSize == 0)
+                ArrayPool<byte>.Shared.Return(ref _blockBuffer);
         }
 
         // 3. Pad.
-        totalRead += ReadImplPadTo(buffer, ref offset, ref count, (uint)Length);
+        totalRead += ReadImplPadTo(buffer, ref offset, ref count, (uint) Length);
 
         return totalRead;
     }
 
-    public override FileType Type => FileType.Model;
-
     public override object Clone() => new ModelVirtualFileStream(this);
 
     private class OffsetManager {
+        public readonly SemaphoreSlim ReaderLock = new(1, 1);
         public readonly LuminaBinaryReader Reader;
         public readonly long BaseOffset;
         public readonly int NumBlocks;
@@ -149,7 +166,7 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
             var fileInfo = *(SqPackFileInfo*) &modelBlock;
             var locator = *(ModelBlockLocator*) ((byte*) &modelBlock + Unsafe.SizeOf<SqPackFileInfo>());
 
-            var underlyingSize = (long)fileInfo.__unknown[0] << 7;
+            var underlyingSize = (long) fileInfo.__unknown[0] << 7;
 
             NumBlocks = locator.FirstBlockIndices.Index[2] + locator.BlockCount.Index[2];
             RequestOffsets = new uint[NumBlocks + 1];
@@ -181,6 +198,7 @@ public class ModelVirtualFileStream : BaseVirtualFileStream {
                     var blockHeader = reader.WithSeek(BaseOffset + BlockOffsets[i]).ReadStructure<DatBlockHeader>();
                     blockDecompressedSizes[i] = checked((ushort) blockHeader.DecompressedSize);
                 }
+
                 RequestOffsets[i] = i == 0
                     ? ModelFileHeaderSize
                     : RequestOffsets[i - 1] + blockDecompressedSizes[i - 1];

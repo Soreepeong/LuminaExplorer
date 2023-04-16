@@ -83,15 +83,15 @@ public class AnimationSet : IAnimation {
             foreach (var mask in masks) {
                 var translations = VectorTrackFromSplineData(reader, mask.Translation, mask.TranslationQuantization,
                     numBlockFrames, frameDuration, blockDuration, false);
-                reader.AlignTo(4);
+                reader.WithAlign(4);
 
                 var rotations = QuaternionTrackFromSplineData(reader, mask.Rotation, mask.RotationQuantization,
                     numBlockFrames, frameDuration, blockDuration);
-                reader.AlignTo(4);
+                reader.WithAlign(4);
 
                 var scales = VectorTrackFromSplineData(reader, mask.Scale, mask.ScaleQuantization, numBlockFrames,
                     frameDuration, blockDuration, true);
-                reader.AlignTo(4);
+                reader.WithAlign(4);
 
                 tracks.Add(new(translations, rotations, scales));
             }
@@ -114,7 +114,7 @@ public class AnimationSet : IAnimation {
             reader.ReadInto(out ushort numItems);
             reader.ReadInto(out byte degree);
             var knots = reader.ReadBytes(numItems + degree + 2);
-            reader.AlignTo(4);
+            reader.WithAlign(4);
 
             float minx = 0, maxx = 0, miny = 0, maxy = 0, minz = 0, maxz = 0;
             float staticx = 0, staticy = 0, staticz = 0;
@@ -202,7 +202,7 @@ public class AnimationSet : IAnimation {
             reader.ReadInto(out byte degree);
             var knots = reader.ReadBytes(numItems + degree + 2);
             
-            reader.AlignTo(quantType switch {
+            reader.WithAlign(quantType switch {
                 QuaternionQuantization.Quat32 => 4,
                 QuaternionQuantization.Quat48 => 2,
                 _ => 1

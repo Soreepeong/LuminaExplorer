@@ -37,7 +37,15 @@ partial class Explorer {
         colFilesPackType = new BrightIdeasSoftware.OLVColumn();
         colFilesHash1 = new BrightIdeasSoftware.OLVColumn();
         colFilesHash2 = new BrightIdeasSoftware.OLVColumn();
+        colFilesRawSize = new BrightIdeasSoftware.OLVColumn();
+        colFilesStoredSize = new BrightIdeasSoftware.OLVColumn();
+        colFilesReservedSize = new BrightIdeasSoftware.OLVColumn();
         splPreview = new SplitContainer();
+        tabPreview = new TabControl();
+        tabPreviewFileResource = new TabPage();
+        ppgPreview = new PropertyGrid();
+        tabPreviewRawBytes = new TabPage();
+        hbxPreview = new Be.Windows.Forms.HexBox();
         picPreview = new PictureBox();
         tspNavigation = new ToolStrip();
         btnNavBack = new ToolStripButton();
@@ -50,7 +58,6 @@ partial class Explorer {
         toolStripContainer1 = new ToolStripContainer();
         tspActions = new ToolStrip();
         cboView = new ToolStripComboBox();
-        fvcPreview = new Controls.FileViewControl();
         menuStrip1.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize) splMain).BeginInit();
         splMain.Panel1.SuspendLayout();
@@ -65,6 +72,9 @@ partial class Explorer {
         splPreview.Panel1.SuspendLayout();
         splPreview.Panel2.SuspendLayout();
         splPreview.SuspendLayout();
+        tabPreview.SuspendLayout();
+        tabPreviewFileResource.SuspendLayout();
+        tabPreviewRawBytes.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize) picPreview).BeginInit();
         tspNavigation.SuspendLayout();
         toolStripContainer1.ContentPanel.SuspendLayout();
@@ -149,7 +159,7 @@ partial class Explorer {
         // 
         // lvwFiles
         // 
-        lvwFiles.Columns.AddRange(new ColumnHeader[] { colFilesName, colFilesPackType, colFilesHash1, colFilesHash2 });
+        lvwFiles.Columns.AddRange(new ColumnHeader[] { colFilesName, colFilesPackType, colFilesHash1, colFilesHash2, colFilesRawSize, colFilesStoredSize, colFilesReservedSize });
         lvwFiles.Dock = DockStyle.Fill;
         lvwFiles.FullRowSelect = true;
         lvwFiles.Location = new Point(0, 0);
@@ -162,8 +172,8 @@ partial class Explorer {
         lvwFiles.UseTranslucentSelection = true;
         lvwFiles.View = View.Details;
         lvwFiles.VirtualMode = true;
+        lvwFiles.SelectionChanged += lvwFiles_SelectionChanged;
         lvwFiles.ItemDrag += lvwFiles_ItemDrag;
-        lvwFiles.SelectedIndexChanged += lvwFiles_SelectedIndexChanged;
         lvwFiles.DoubleClick += lvwFiles_DoubleClick;
         lvwFiles.KeyPress += lvwFiles_KeyPress;
         lvwFiles.KeyUp += lvwFiles_KeyUp;
@@ -199,6 +209,30 @@ partial class Explorer {
         colFilesHash2.Text = "Hash 2";
         colFilesHash2.Width = 80;
         // 
+        // colFilesRawSize
+        // 
+        colFilesRawSize.AspectName = "RawSize";
+        colFilesRawSize.IsEditable = false;
+        colFilesRawSize.Text = "Size";
+        colFilesRawSize.TextAlign = HorizontalAlignment.Right;
+        colFilesRawSize.Width = 60;
+        // 
+        // colFilesStoredSize
+        // 
+        colFilesStoredSize.AspectName = "StoredSize";
+        colFilesStoredSize.IsEditable = false;
+        colFilesStoredSize.Text = "Stored";
+        colFilesStoredSize.TextAlign = HorizontalAlignment.Right;
+        colFilesStoredSize.Width = 60;
+        // 
+        // colFilesReservedSize
+        // 
+        colFilesReservedSize.AspectName = "ReservedSize";
+        colFilesReservedSize.IsEditable = false;
+        colFilesReservedSize.Text = "Reserved";
+        colFilesReservedSize.TextAlign = HorizontalAlignment.Right;
+        colFilesReservedSize.Width = 60;
+        // 
         // splPreview
         // 
         splPreview.Dock = DockStyle.Fill;
@@ -208,7 +242,7 @@ partial class Explorer {
         // 
         // splPreview.Panel1
         // 
-        splPreview.Panel1.Controls.Add(fvcPreview);
+        splPreview.Panel1.Controls.Add(tabPreview);
         // 
         // splPreview.Panel2
         // 
@@ -216,6 +250,65 @@ partial class Explorer {
         splPreview.Size = new Size(320, 687);
         splPreview.SplitterDistance = 486;
         splPreview.TabIndex = 0;
+        // 
+        // tabPreview
+        // 
+        tabPreview.Controls.Add(tabPreviewFileResource);
+        tabPreview.Controls.Add(tabPreviewRawBytes);
+        tabPreview.Dock = DockStyle.Fill;
+        tabPreview.Location = new Point(0, 0);
+        tabPreview.Name = "tabPreview";
+        tabPreview.SelectedIndex = 0;
+        tabPreview.Size = new Size(320, 486);
+        tabPreview.TabIndex = 0;
+        // 
+        // tabPreviewFileResource
+        // 
+        tabPreviewFileResource.Controls.Add(ppgPreview);
+        tabPreviewFileResource.Location = new Point(4, 24);
+        tabPreviewFileResource.Name = "tabPreviewFileResource";
+        tabPreviewFileResource.Padding = new Padding(3);
+        tabPreviewFileResource.Size = new Size(312, 458);
+        tabPreviewFileResource.TabIndex = 0;
+        tabPreviewFileResource.Text = "FileResource";
+        tabPreviewFileResource.UseVisualStyleBackColor = true;
+        // 
+        // ppgPreview
+        // 
+        ppgPreview.Dock = DockStyle.Fill;
+        ppgPreview.Location = new Point(3, 3);
+        ppgPreview.Name = "ppgPreview";
+        ppgPreview.PropertySort = PropertySort.Categorized;
+        ppgPreview.Size = new Size(306, 452);
+        ppgPreview.TabIndex = 1;
+        ppgPreview.ToolbarVisible = false;
+        // 
+        // tabPreviewRawBytes
+        // 
+        tabPreviewRawBytes.Controls.Add(hbxPreview);
+        tabPreviewRawBytes.Location = new Point(4, 24);
+        tabPreviewRawBytes.Name = "tabPreviewRawBytes";
+        tabPreviewRawBytes.Padding = new Padding(3);
+        tabPreviewRawBytes.Size = new Size(312, 458);
+        tabPreviewRawBytes.TabIndex = 1;
+        tabPreviewRawBytes.Text = "Raw Bytes";
+        tabPreviewRawBytes.UseVisualStyleBackColor = true;
+        // 
+        // hbxPreview
+        // 
+        hbxPreview.ColumnInfoVisible = true;
+        hbxPreview.Dock = DockStyle.Fill;
+        hbxPreview.Font = new Font("Consolas", 12F, FontStyle.Regular, GraphicsUnit.Point);
+        hbxPreview.GroupSeparatorVisible = true;
+        hbxPreview.LineInfoVisible = true;
+        hbxPreview.Location = new Point(3, 3);
+        hbxPreview.Name = "hbxPreview";
+        hbxPreview.ReadOnly = true;
+        hbxPreview.ShadowSelectionColor = Color.FromArgb(  100,   60,   188,   255);
+        hbxPreview.Size = new Size(306, 452);
+        hbxPreview.StringViewVisible = true;
+        hbxPreview.TabIndex = 0;
+        hbxPreview.VScrollBarVisible = true;
         // 
         // picPreview
         // 
@@ -345,14 +438,6 @@ partial class Explorer {
         cboView.Size = new Size(160, 25);
         cboView.SelectedIndexChanged += cboView_SelectedIndexChanged;
         // 
-        // fvcPreview
-        // 
-        fvcPreview.Dock = DockStyle.Fill;
-        fvcPreview.Location = new Point(0, 0);
-        fvcPreview.Name = "fvcPreview";
-        fvcPreview.Size = new Size(320, 486);
-        fvcPreview.TabIndex = 0;
-        // 
         // Explorer
         // 
         AutoScaleDimensions = new SizeF(7F, 15F);
@@ -364,6 +449,7 @@ partial class Explorer {
         Name = "Explorer";
         Text = "Form1";
         FormClosed += Explorer_FormClosed;
+        Shown += Explorer_Shown;
         menuStrip1.ResumeLayout(false);
         menuStrip1.PerformLayout();
         splMain.Panel1.ResumeLayout(false);
@@ -379,6 +465,9 @@ partial class Explorer {
         splPreview.Panel2.ResumeLayout(false);
         ((System.ComponentModel.ISupportInitialize) splPreview).EndInit();
         splPreview.ResumeLayout(false);
+        tabPreview.ResumeLayout(false);
+        tabPreviewFileResource.ResumeLayout(false);
+        tabPreviewRawBytes.ResumeLayout(false);
         ((System.ComponentModel.ISupportInitialize) picPreview).EndInit();
         tspNavigation.ResumeLayout(false);
         tspNavigation.PerformLayout();
@@ -405,6 +494,9 @@ partial class Explorer {
     private BrightIdeasSoftware.OLVColumn colFilesPackType;
     private BrightIdeasSoftware.OLVColumn colFilesHash1;
     private BrightIdeasSoftware.OLVColumn colFilesHash2;
+    private BrightIdeasSoftware.OLVColumn colFilesRawSize;
+    private BrightIdeasSoftware.OLVColumn colFilesStoredSize;
+    private BrightIdeasSoftware.OLVColumn colFilesReservedSize;
     private ToolStrip tspNavigation;
     private ToolStripButton btnNavBack;
     private ToolStripButton btnNavForward;
@@ -418,5 +510,9 @@ partial class Explorer {
     private ToolStripComboBox cboView;
     private SplitContainer splPreview;
     private PictureBox picPreview;
-    private Controls.FileViewControl fvcPreview;
+    private TabControl tabPreview;
+    private TabPage tabPreviewFileResource;
+    private PropertyGrid ppgPreview;
+    private TabPage tabPreviewRawBytes;
+    private Be.Windows.Forms.HexBox hbxPreview;
 }

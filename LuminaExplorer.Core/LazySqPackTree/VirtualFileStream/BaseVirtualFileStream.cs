@@ -3,21 +3,14 @@
 namespace LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
 
 public abstract class BaseVirtualFileStream : Stream, ICloneable {
-    protected uint PositionUint = 0;
+    protected uint PositionUint;
 
     public readonly PlatformId PlatformId;
-    public readonly uint ReservedSpaceUnits;
-    public readonly uint OccupiedSpaceUnits;
 
-    protected BaseVirtualFileStream(PlatformId platformId, uint length, uint reservedSpaceUnits, uint occupiedSpaceUnits) {
+    protected BaseVirtualFileStream(PlatformId platformId, uint length) {
         PlatformId = platformId;
         Length = length;
-        ReservedSpaceUnits = reservedSpaceUnits;
-        OccupiedSpaceUnits = occupiedSpaceUnits;
     }
-
-    public long ReservedBlockBytes => (long)ReservedSpaceUnits << 7;
-    public long OccupiedBlockBytes => (long)OccupiedSpaceUnits << 7;
 
     public override void Flush() { }
 
@@ -35,9 +28,14 @@ public abstract class BaseVirtualFileStream : Stream, ICloneable {
 
     public override void SetLength(long value) => throw new NotSupportedException();
 
+    public override int Read(byte[] buffer, int offset, int count) {
+        var t = ReadAsync(buffer, offset, count, default);
+        t.Wait();
+        return t.Result;
+    }
+
     public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 
-    public abstract FileType Type { get; }
     public override bool CanRead => true;
     public override bool CanSeek => true;
     public override bool CanWrite => true;

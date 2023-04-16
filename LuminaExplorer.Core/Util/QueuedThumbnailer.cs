@@ -1,6 +1,6 @@
 ﻿using System.Drawing.Imaging;
 using Lumina.Data.Files;
-using LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
+using Lumina.Data.Structs;
 
 namespace LuminaExplorer.Core.Util;
 
@@ -13,12 +13,12 @@ public class QueuedThumbnailer {
 
     private QueuedThumbnailer() { }
 
-    public Task<Bitmap> LoadFrom(int w, int h, BaseVirtualFileStream vfs) {
+    public Task<Bitmap> LoadFromTexStream(int w, int h, Stream stream, PlatformId platformId) {
         Task<Bitmap> task;
         lock (_taskQueue) {
             _taskQueue.Enqueue(task = new(() => {
-                var f = vfs
-                    .ExtractMipmapOfSizeAtLeast(Math.Max(w, h))
+                var f = stream
+                    .ExtractMipmapOfSizeAtLeast(Math.Max(w, h), platformId)
                     .Filter(format: TexFile.TextureFormat.B8G8R8A8);
 
                 Bitmap sourceBitmap;

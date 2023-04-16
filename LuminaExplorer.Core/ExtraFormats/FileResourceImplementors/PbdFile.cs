@@ -93,7 +93,7 @@ public class PbdFile : FileResource {
             reader.ReadInto(out BoneCount);
 
             var nameOffsets = reader.ReadStructuresAsArray<ushort>(BoneCount);
-            reader.AlignTo(4);
+            reader.WithAlign(4);
 
             Translations = new Vector3[BoneCount];
             Rotations = new Quaternion[BoneCount];

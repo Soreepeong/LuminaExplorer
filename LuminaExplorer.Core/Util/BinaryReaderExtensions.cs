@@ -1,42 +1,64 @@
 ﻿using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
+using Lumina.Data;
+using Lumina.Data.Files;
+using Lumina.Data.Parsing.Tex.Buffers;
+using Lumina.Data.Structs;
+using LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
 
 namespace LuminaExplorer.Core.Util;
 
-public static class StreamAndBinaryReaderExtensions {
+public static class BinaryReaderExtensions {
     private const float QuaternionComponentRange = 0.707106781186f; // 1 / sqrt(2)
 
-    public static void ReadFully(this Stream stream, Span<byte> buffer) {
-        var i = 0;
-        while (i < buffer.Length) {
-            var r = stream.Read(buffer[i..]);
-            if (r == 0)
-                throw new IOException("Failed to read fully");
-            i += r;
-        }
-    }
+    #region Utilities for chaining calls
 
-    public static void ReadFully(this BinaryReader stream, Span<byte> buffer) {
-        ReadFully(stream.BaseStream, buffer);
-    }
-
-    public static Stream WithSeek(this Stream stream, long offset, SeekOrigin origin = SeekOrigin.Begin) {
+    public static T WithSeek<T>(this T reader, long offset, SeekOrigin origin = SeekOrigin.Begin)
+        where T : BinaryReader {
+        var position = reader.BaseStream.Position;
         var newOffset = origin switch {
             SeekOrigin.Begin => offset,
-            SeekOrigin.Current => stream.Position + offset,
-            SeekOrigin.End => stream.Length + offset,
+            SeekOrigin.Current => position + offset,
+            SeekOrigin.End => position + offset,
             _ => throw new ArgumentOutOfRangeException(nameof(origin), origin, null)
         };
-        if (stream.Position != newOffset)
-            stream.Position = newOffset;
-        return stream;
-    }
-
-    public static BinaryReader WithSeek(this BinaryReader reader, long offset, SeekOrigin origin = SeekOrigin.Begin) {
-        reader.BaseStream.WithSeek(offset, origin);
+        if (position != newOffset)
+            reader.BaseStream.Position = newOffset;
         return reader;
     }
+
+    public static T WithAlign<T>(this T reader, int unit) where T : BinaryReader {
+        reader.BaseStream.Position = (reader.BaseStream.Position + unit - 1) / unit * unit;
+        return reader;
+    }
+
+    #endregion
+
+    #region Utilties for reading into out parameter
+
+    public static void ReadInto(this BinaryReader reader, out byte value) => value = reader.ReadByte();
+    public static void ReadInto(this BinaryReader reader, out sbyte value) => value = reader.ReadSByte();
+    public static void ReadInto(this BinaryReader reader, out ushort value) => value = reader.ReadUInt16();
+    public static void ReadInto(this BinaryReader reader, out short value) => value = reader.ReadInt16();
+    public static void ReadInto(this BinaryReader reader, out uint value) => value = reader.ReadUInt32();
+    public static void ReadInto(this BinaryReader reader, out int value) => value = reader.ReadInt32();
+    public static void ReadInto(this BinaryReader reader, out ulong value) => value = reader.ReadUInt64();
+    public static void ReadInto(this BinaryReader reader, out long value) => value = reader.ReadInt64();
+    public static void ReadInto(this BinaryReader reader, out float value) => value = reader.ReadSingle();
+    public static void ReadInto(this BinaryReader reader, out double value) => value = reader.ReadDouble();
+
+    public static void ReadInto(this BinaryReader reader, out Quaternion value) =>
+        value = reader.ReadSingleQuaternion();
+
+    public static void ReadInto(this BinaryReader reader, out Vector3 value) => value = reader.ReadSingleVector3();
+
+    public static void ReadInto<T>(this BinaryReader reader, out T value) where T : unmanaged, Enum
+        => value = reader.ReadEnum<T>();
+
+    # endregion
+
+    #region Utilities for reading extra types
 
     public static unsafe T ReadEnum<T>(this BinaryReader reader) where T : unmanaged, Enum {
         switch (Marshal.SizeOf(Enum.GetUnderlyingType(typeof(T)))) {
@@ -73,28 +95,6 @@ public static class StreamAndBinaryReaderExtensions {
         var n = Array.IndexOf(b, (byte) 0);
         return Encoding.UTF8.GetString(b, 0, n >= 0 ? n : b.Length);
     }
-
-    public static void ReadInto(this BinaryReader reader, out byte value) => value = reader.ReadByte();
-    public static void ReadInto(this BinaryReader reader, out sbyte value) => value = reader.ReadSByte();
-    public static void ReadInto(this BinaryReader reader, out ushort value) => value = reader.ReadUInt16();
-    public static void ReadInto(this BinaryReader reader, out short value) => value = reader.ReadInt16();
-    public static void ReadInto(this BinaryReader reader, out uint value) => value = reader.ReadUInt32();
-    public static void ReadInto(this BinaryReader reader, out int value) => value = reader.ReadInt32();
-    public static void ReadInto(this BinaryReader reader, out ulong value) => value = reader.ReadUInt64();
-    public static void ReadInto(this BinaryReader reader, out long value) => value = reader.ReadInt64();
-    public static void ReadInto(this BinaryReader reader, out float value) => value = reader.ReadSingle();
-    public static void ReadInto(this BinaryReader reader, out double value) => value = reader.ReadDouble();
-
-    public static void ReadInto(this BinaryReader reader, out Quaternion value) =>
-        value = reader.ReadSingleQuaternion();
-
-    public static void ReadInto(this BinaryReader reader, out Vector3 value) => value = reader.ReadSingleVector3();
-
-    public static void ReadInto<T>(this BinaryReader reader, out T value) where T : unmanaged, Enum
-        => value = reader.ReadEnum<T>();
-
-    public static void AlignTo(this BinaryReader reader, int unit) =>
-        reader.BaseStream.Position = (reader.BaseStream.Position + unit - 1) / unit * unit;
 
     public static Vector3 ReadSingleVector3(this BinaryReader reader) =>
         new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
@@ -194,4 +194,47 @@ public static class StreamAndBinaryReaderExtensions {
 
         return new(tmp[0], tmp[1], tmp[2], tmp[3]);
     }
+
+    #endregion
+
+    #region Utilities for extracting previews
+
+    public static unsafe TextureBuffer ExtractMipmapOfSizeAtLeast(
+        this Stream stream,
+        int minEdgeLength,
+        PlatformId platformId) {
+        var s = new LuminaBinaryReader(stream, platformId).WithSeek(0);
+
+        var header = stream switch {
+            BufferedStream {UnderlyingStream: TextureVirtualFileStream utvfs} => utvfs.TexHeader,
+            TextureVirtualFileStream tvfs => tvfs.TexHeader,
+            _ => s.ReadStructure<TexFile.TexHeader>(),
+        };
+
+        var level = 0;
+        while (level < header.MipLevels - 1 &&
+               (header.Width >> (level + 1)) >= minEdgeLength &&
+               (header.Height >> (level + 1)) >= minEdgeLength)
+            level++;
+
+        var offset = header.OffsetToSurface[level];
+        var length =
+            (int) ((level == header.MipLevels - 1 ? stream.Length : header.OffsetToSurface[level + 1]) - offset);
+        var buffer = s.WithSeek(offset).ReadBytes(length);
+
+        var mipWidth = Math.Max(1, header.Width >> level);
+        var mipHeight = Math.Max(1, header.Height >> level);
+        var mipDepth = Math.Max(1, header.Depth >> level);
+        return TextureBuffer.FromTextureFormat(
+            header.Type,
+            header.Format,
+            mipWidth,
+            mipHeight,
+            mipDepth,
+            new[] {length},
+            buffer,
+            platformId);
+    }
+
+    #endregion
 }

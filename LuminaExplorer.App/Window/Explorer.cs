@@ -2,13 +2,13 @@ using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using BrightIdeasSoftware;
 using JetBrains.Annotations;
 using Lumina.Data.Structs;
 using Lumina.Misc;
+using LuminaExplorer.App.Utils;
 using LuminaExplorer.Core.LazySqPackTree;
-using LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
+using LuminaExplorer.Core.ObjectRepresentationWrapper;
 using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.App.Window;
@@ -22,6 +22,8 @@ public partial class Explorer : Form {
     private readonly List<VirtualFolder> _navigationHistory = new();
     private int _navigationHistoryPosition = -1;
     private VirtualFolder _explorerFolder = null!;
+
+    private CancellationTokenSource? _previewCancellationTokenSource;
 
     public Explorer(VirtualSqPackTree vspTree) {
         _vspTree = vspTree;
@@ -43,8 +45,8 @@ public partial class Explorer : Form {
 
         _treeViewImageList = new();
         _treeViewImageList.ColorDepth = ColorDepth.Depth32Bit;
-        _treeViewImageList.Images.Add(Extract("shell32.dll", 0, false)!);
-        _treeViewImageList.Images.Add(Extract("shell32.dll", 4, false)!);
+        _treeViewImageList.Images.Add(UiUtils.ExtractPeIcon("shell32.dll", 0, false)!);
+        _treeViewImageList.Images.Add(UiUtils.ExtractPeIcon("shell32.dll", 4, false)!);
 
         tvwFiles.ImageList = _treeViewImageList;
         tvwFiles.Nodes.Add(new FolderTreeNode(vspTree.RootFolder, @"(root)", true));
@@ -59,8 +61,10 @@ public partial class Explorer : Form {
         // TryNavigateTo("/chara/monster/m0361/obj/body/b0003/texture/");
 
         // construct 14
-        TryNavigateTo("/chara/monster/m0489/animation/a0001/bt_common/loop_sp/");
+        // TryNavigateTo("/chara/monster/m0489/animation/a0001/bt_common/loop_sp/");
     }
+
+    #region Event Handlers
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData) {
         switch (keyData) {
@@ -81,29 +85,6 @@ public partial class Explorer : Form {
                 return base.ProcessCmdKey(ref msg, keyData);
         }
     }
-
-    private bool NavigateBack() {
-        if (_navigationHistoryPosition <= 0)
-            return false;
-        NavigateTo(_navigationHistory[--_navigationHistoryPosition], false);
-        return true;
-    }
-
-    private bool NavigateForward() {
-        if (_navigationHistoryPosition + 1 >= _navigationHistory.Count)
-            return false;
-        NavigateTo(_navigationHistory[++_navigationHistoryPosition], false);
-        return true;
-    }
-
-    private bool NavigateUp() {
-        if (_explorerFolder.Parent is not { } parent)
-            return false;
-        NavigateTo(parent, true);
-        return true;
-    }
-
-    #region Event Handlers
 
     private void btnNavBack_Click(object sender, EventArgs e) => NavigateBack();
 
@@ -183,15 +164,19 @@ public partial class Explorer : Form {
                     return;
 
                 lvwFiles.SelectedObjects = source
-                    .Select(x => selectedFolders.Any(y => y == x.Folder || y == x.Folder))
+                    .Select(x => (x.IsFolder && selectedFolders.Any(y => y == x.Folder)) ||
+                                 (!x.IsFolder && selectedFiles.Any(y => y == x.File)))
                     .ToList();
-
             }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
     private void Explorer_FormClosed(object sender, FormClosedEventArgs e) {
         _treeViewImageList.Dispose();
         _listViewImageList.Dispose();
+    }
+
+    private void Explorer_Shown(object sender, EventArgs e) {
+        lvwFiles.Focus();
     }
 
     private void txtPath_KeyUp(object? sender, KeyEventArgs keyEventArgs) {
@@ -333,7 +318,10 @@ public partial class Explorer : Form {
             virtualFileDataObject.SetData(files.Select(x => new VirtualFileDataObject.FileDescriptor {
                 Name = x.Name,
                 Length = _vspTree.GetLookup(x).Size,
-                StreamContents = stream => _vspTree.GetLookup(x).DataStream.CopyTo(stream),
+                StreamContents = dstStream => {
+                    using var srcStream = _vspTree.GetLookup(x).CreateStream();
+                    srcStream.CopyTo(dstStream);
+                },
             }).ToArray());
 
             DoDragDrop(virtualFileDataObject, DragDropEffects.Copy);
@@ -368,24 +356,58 @@ public partial class Explorer : Form {
         }
     }
 
-    private void lvwFiles_SelectedIndexChanged(object sender, EventArgs e) {
+    private void lvwFiles_SelectionChanged(object sender, EventArgs e) {
         if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
             return;
 
-        if (lvwFiles.SelectedIndices.Count is > 1 or 0) {
-            fvcPreview.ClearFile();
+        _previewCancellationTokenSource?.Cancel();
+        ppgPreview.SelectedObject = null;
+        hbxPreview.ByteProvider = null;
+
+        if (lvwFiles.SelectedIndices.Count is > 1 or 0)
             return;
-        }
 
         if (source[lvwFiles.SelectedIndices[0]].File is { } file) {
-            var isFocused = lvwFiles.Focused;
-            fvcPreview.SetFile(_vspTree, file);
-            if (isFocused)
-                lvwFiles.Focus();
+            _previewCancellationTokenSource = new();
+            _vspTree.GetLookup(file)
+                .AsFileResource(_previewCancellationTokenSource.Token)
+                .ContinueWith(fr => {
+                    if (!fr.IsCompletedSuccessfully)
+                        return;
+                    ppgPreview.SelectedObject = new WrapperTypeConverter().ConvertFrom(fr.Result);
+                    hbxPreview.ByteProvider = new FileResourceByteProvider(fr.Result);
+                }, TaskScheduler.FromCurrentSynchronizationContext());
+
+            // var isFocused = lvwFiles.Focused;
+            // if (isFocused)
+            //     lvwFiles.Focus();
         }
     }
 
     #endregion
+
+    #region Navigation
+
+    private bool NavigateBack() {
+        if (_navigationHistoryPosition <= 0)
+            return false;
+        NavigateTo(_navigationHistory[--_navigationHistoryPosition], false);
+        return true;
+    }
+
+    private bool NavigateForward() {
+        if (_navigationHistoryPosition + 1 >= _navigationHistory.Count)
+            return false;
+        NavigateTo(_navigationHistory[++_navigationHistoryPosition], false);
+        return true;
+    }
+
+    private bool NavigateUp() {
+        if (_explorerFolder.Parent is not { } parent)
+            return false;
+        NavigateTo(parent, true);
+        return true;
+    }
 
     private Task<FolderTreeNode> TryNavigateTo(params string[] pathComponents) =>
         TryNavigateToImpl(
@@ -491,18 +513,19 @@ public partial class Explorer : Form {
                 return;
 
             _listViewImageList.Images.Clear();
-            _listViewImageList.Images.Add(Extract("shell32.dll", 0)!);
-            _listViewImageList.Images.Add(Extract("shell32.dll", 4)!);
+            _listViewImageList.Images.Add(UiUtils.ExtractPeIcon("shell32.dll", 0)!);
+            _listViewImageList.Images.Add(UiUtils.ExtractPeIcon("shell32.dll", 4)!);
 
             lvwFiles.SelectedIndex = -1;
             lvwFiles.SetObjects(folder.Folders.Select(x => (object) new VirtualObject(x.Value, x.Key))
                 .Concat(folder.Files.Select(x => (object) new VirtualObject(
                     _vspTree,
                     x,
-                    (vobj, vfs) => QueuedThumbnailer.Instance.LoadFrom(
+                    (vobj, stream, platformId) => QueuedThumbnailer.Instance.LoadFromTexStream(
                         _listViewImageList.ImageSize.Width,
                         _listViewImageList.ImageSize.Height,
-                        vfs
+                        stream,
+                        platformId
                     ).ContinueWith(img => {
                         if (!img.IsCompletedSuccessfully)
                             return (object?) null;
@@ -522,6 +545,8 @@ public partial class Explorer : Form {
                 .ToArray());
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
+
+    #endregion
 
     private class FolderTreeNode : TreeNode {
         public readonly VirtualFolder Folder;
@@ -640,16 +665,21 @@ public partial class Explorer : Form {
         private readonly Lazy<Task<object?>> _imageKeyTask;
         private readonly Lazy<string> _hash1;
         private readonly Lazy<string> _hash2;
+        private readonly Lazy<long> _rawSize;
+        private readonly Lazy<long> _storedSize;
+        private readonly Lazy<long> _reservedSize;
 
         public VirtualObject(VirtualSqPackTree tree, VirtualFile file,
-            Func<VirtualObject, BaseVirtualFileStream, Task<object?>> imageKeyGetter) {
+            Func<VirtualObject, Stream, PlatformId, Task<object?>> imageKeyGetter) {
             File = file;
             Name = file.Name;
             _lookup = new(() => tree.GetLookup(File));
             _imageKeyFallback = 0;
             _imageKeyTask = new(() => {
+                Debug.Assert(Lookup != null);
+
                 var canBeTexture = false;
-                canBeTexture |= Lookup!.Type == FileType.Texture;
+                canBeTexture |= Lookup.Type == FileType.Texture;
                 canBeTexture |= File.Name.EndsWith(".atex", StringComparison.OrdinalIgnoreCase);
 
                 try {
@@ -660,7 +690,7 @@ public partial class Explorer : Form {
                     if (!canBeTexture)
                         return Task.FromResult((object?) 0);
 
-                    return imageKeyGetter(this, Lookup.DataStream);
+                    return imageKeyGetter(this, Lookup.CreateStream(), Lookup.DataStream.PlatformId);
                 } catch (Exception e) {
                     Debug.WriteLine(e);
                 }
@@ -669,6 +699,9 @@ public partial class Explorer : Form {
             });
             _hash1 = new($"{File.FileHash:X08}");
             _hash2 = new(() => $"{Crc32.Get(File!.FullPath.Trim('/').ToLowerInvariant()):X08}");
+            _rawSize = new(() => Lookup!.Size);
+            _storedSize = new(() => Lookup!.OccupiedBlockBytes);
+            _reservedSize = new(() => Lookup!.ReservedBlockBytes);
         }
 
         public VirtualObject(VirtualFolder folder, string? preferredName) {
@@ -678,6 +711,7 @@ public partial class Explorer : Form {
             _imageKeyTask = new(() => Task.FromResult((object?) 1));
             _hash1 = new(() => $"{Crc32.Get(Folder!.FullPath.Trim('/').ToLowerInvariant()):X08}");
             _hash2 = new("");
+            _rawSize = _storedSize = _reservedSize = new(0L);
         }
 
         public bool IsFolder => _lookup is null;
@@ -690,7 +724,7 @@ public partial class Explorer : Form {
 
         [UsedImplicitly]
         public string PackTypeString => _lookup is null
-            ? "(Folder)"
+            ? ""
             : _lookup.Value.Type is var x
                 ? x switch {
                     FileType.Empty => "Placeholder",
@@ -704,6 +738,12 @@ public partial class Explorer : Form {
         [UsedImplicitly] public string Hash1 => _hash1.Value;
 
         [UsedImplicitly] public string Hash2 => _hash2.Value;
+
+        [UsedImplicitly] public string RawSize => IsFolder ? "" : UiUtils.FormatSize(_rawSize.Value);
+
+        [UsedImplicitly] public string StoredSize => IsFolder ? "" : UiUtils.FormatSize(_storedSize.Value);
+
+        [UsedImplicitly] public string ReservedSize => IsFolder ? "" : UiUtils.FormatSize(_reservedSize.Value);
 
         [UsedImplicitly]
         public object Image => _imageKeyTask.Value.IsCompletedSuccessfully
@@ -727,25 +767,4 @@ public partial class Explorer : Form {
 
         #endregion
     }
-
-    public static Icon? Extract(string filePath, int index, bool largeIcon = true) {
-        if (filePath == null)
-            throw new ArgumentNullException(nameof(filePath));
-
-        nint hIcon;
-        if (largeIcon)
-            ExtractIconEx(filePath, index, out hIcon, IntPtr.Zero, 1);
-        else
-            ExtractIconEx(filePath, index, IntPtr.Zero, out hIcon, 1);
-
-        return hIcon != IntPtr.Zero ? Icon.FromHandle(hIcon) : null;
-    }
-
-    [DllImport("shell32", CharSet = CharSet.Unicode)]
-    private static extern int ExtractIconEx(string lpszFile, int nIconIndex, out IntPtr phiconLarge, IntPtr phiconSmall,
-        int nIcons);
-
-    [DllImport("shell32", CharSet = CharSet.Unicode)]
-    private static extern int ExtractIconEx(string lpszFile, int nIconIndex, IntPtr phiconLarge, out IntPtr phiconSmall,
-        int nIcons);
 }

@@ -3,7 +3,6 @@ using Lumina;
 using Lumina.Data;
 using Lumina.Data.Attributes;
 using Lumina.Data.Structs;
-using Lumina.Extensions;
 using LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
 using LuminaExplorer.Core.Util;
 
@@ -27,14 +26,6 @@ public sealed class VirtualFileLookup : IDisposable {
         VirtualFile = virtualFile;
         reader.Position = virtualFile.Offset;
 
-        // TODO: figure out why does it AVEs without these 
-        var fileResourceType = typeof(FileResource);
-        _ = AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(x => x.GetTypes())
-            .Where(x => fileResourceType.IsAssignableFrom(x) && x != fileResourceType)
-            .ToArray();
-        
-        // Note: do not use ReadStructure/ReadFully.
         _fileInfo = reader.WithSeek(virtualFile.Offset).ReadStructure<SqPackFileInfo>();
         _modelBlock = _fileInfo.Type == FileType.Model
             ? reader.WithSeek(virtualFile.Offset).ReadStructure<ModelBlock>()
@@ -48,127 +39,135 @@ public sealed class VirtualFileLookup : IDisposable {
         }
 
         _dataStream = new(() => Type switch {
-            FileType.Empty => new EmptyVirtualFileStream(_tree.PlatformId, ReservedSpaceUnits, OccupiedSpaceUnits),
-            FileType.Standard => new StandardVirtualFileStream(_tree.PlatformId, reader, virtualFile.Offset, _fileInfo.Size,
-                _fileInfo.NumberOfBlocks, Size, ReservedSpaceUnits, OccupiedSpaceUnits),
-            FileType.Model => new ModelVirtualFileStream(_tree.PlatformId, reader, virtualFile.Offset, _modelBlock!.Value),
-            FileType.Texture => new TextureVirtualFileStream(_tree.PlatformId, reader, virtualFile.Offset, _fileInfo.Size, _fileInfo.NumberOfBlocks, Size, ReservedSpaceUnits, OccupiedSpaceUnits),
+            FileType.Empty => new EmptyVirtualFileStream(_tree.PlatformId),
+            FileType.Standard => new StandardVirtualFileStream(reader, virtualFile.Offset, _fileInfo),
+            FileType.Model => new ModelVirtualFileStream(reader, virtualFile.Offset, _modelBlock!.Value),
+            FileType.Texture => new TextureVirtualFileStream(reader, virtualFile.Offset, _fileInfo),
             _ => throw new NotSupportedException()
         });
     }
 
+    public long ReservedBlockBytes => (long) ReservedSpaceUnits << 7;
+    public long OccupiedBlockBytes => (long) OccupiedSpaceUnits << 7;
+
     public BaseVirtualFileStream DataStream => _dataStream.Value;
-    
-    public Task<FileResource> AsFileResource(Type type) {
+
+    public Stream CreateStream() => new BufferedStream((Stream) DataStream.Clone());
+
+    public async Task<byte[]> ReadAll(CancellationToken cancellationToken = default) {
+        await using var clonedStream = CreateStream();
+        var buffer = new byte[clonedStream.Length];
+        await clonedStream.ReadExactlyAsync(new(buffer), cancellationToken);
+        return buffer;
+    }
+
+    private FileResource AsFileResourceImpl(LuminaBinaryReader reader, byte[] buffer, Type type) {
         const BindingFlags bindingFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
         if (!type.IsAssignableTo(typeof(FileResource)))
             throw new ArgumentException(null, nameof(type));
 
-        return Task.Run(() => {
-            byte[] buffer;
-
-            using (var clonedStream = (Stream) _dataStream.Value.Clone()) {
-                buffer = new byte[clonedStream.Length];
-                clonedStream.WithSeek(0).ReadFully(new(buffer));
-            }
-
-            var file = (FileResource) Activator.CreateInstance(type)!;
-            var luminaFileInfo = new LuminaFileInfo {
-                HeaderSize = _fileInfo.Size,
-                Type = _fileInfo.Type,
-                BlockCount = Type == FileType.Model
-                    ? _modelBlock!.Value.UsedNumberOfBlocks
-                    : _fileInfo.NumberOfBlocks,
-            };
-            typeof(LuminaFileInfo)
-                .GetProperty("Offset", bindingFlags)
-                !.SetValue(luminaFileInfo, VirtualFile.Offset);
-            if (Type == FileType.Model) {
-                typeof(LuminaFileInfo)
-                    .GetProperty("ModelBlock", bindingFlags)
-                    !.SetValue(luminaFileInfo, _modelBlock);
-            }
-
-            typeof(FileResource)
-                .GetProperty("FilePath", bindingFlags)
-                !.SetValue(file, GameData.ParseFilePath(VirtualFile.FullPath));
-            typeof(FileResource)
-                .GetProperty("Data", bindingFlags)
-                !.SetValue(file, buffer);
-            typeof(FileResource)
-                .GetProperty("Reader", bindingFlags)
-                !.SetValue(file, new LuminaBinaryReader(buffer, _tree.PlatformId));
-            typeof(FileResource)
-                .GetMethod("LoadFile", bindingFlags)
-                !.Invoke(file, null);
-            return file;
-        });
-    }
-
-    public async Task<FileResource> AsFileResource() {
-        var fileResourceType = typeof(FileResource);
-        var allResourceTypes = AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(x => x.GetTypes())
-            .Where(x => fileResourceType.IsAssignableFrom(x) && x != fileResourceType)
-            .ToArray();
-
-        var typeByExt = allResourceTypes.ToDictionary(
-            x => (x.GetCustomAttribute<FileExtensionAttribute>()?.Extension ?? $".{x.Name[..^4]}")
-                .ToLowerInvariant(),
-            x => x);
-
-        typeByExt[".atex"] = typeByExt[".tex"];
-
-        var typeByMagic = new Dictionary<uint, Type> {
-            {
-                0x42444553u, typeByExt[".scd"]
-            },
+        var file = (FileResource) Activator.CreateInstance(type)!;
+        var luminaFileInfo = new LuminaFileInfo {
+            HeaderSize = _fileInfo.Size,
+            Type = _fileInfo.Type,
+            BlockCount = Type == FileType.Model
+                ? _modelBlock!.Value.UsedNumberOfBlocks
+                : _fileInfo.NumberOfBlocks,
         };
-        var possibleTypes = new List<Type>();
-
-        switch (Type) {
-            case FileType.Empty:
-                // TODO: deal with hidden files
-                throw new FileNotFoundException();
-
-            case FileType.Standard:
-                if (VirtualFile.NameResolveAttempted) {
-                    if (typeByExt.TryGetValue(Path.GetExtension(VirtualFile.Name).ToLowerInvariant(),
-                            out var type))
-                        possibleTypes.Add(type);
-                }
-
-                if (Size >= 4) {
-                    if (typeByMagic.TryGetValue(
-                            new BinaryReader(_dataStream.Value.WithSeek(0)).ReadUInt32(), out var type))
-                        possibleTypes.Add(type);
-                }
-
-                break;
-
-            case FileType.Model:
-                possibleTypes.Add(typeByExt[".mdl"]);
-                break;
-
-            case FileType.Texture:
-                possibleTypes.Add(typeByExt[".tex"]);
-                break;
-
-            default:
-                throw new NotSupportedException();
+        typeof(LuminaFileInfo)
+            .GetProperty("Offset", bindingFlags)
+            !.SetValue(luminaFileInfo, VirtualFile.Offset);
+        if (Type == FileType.Model) {
+            typeof(LuminaFileInfo)
+                .GetProperty("ModelBlock", bindingFlags)
+                !.SetValue(luminaFileInfo, _modelBlock);
         }
 
-        possibleTypes.Reverse();
-        foreach (var f in possibleTypes) {
-            try {
-                return await AsFileResource(f);
-            } catch (Exception) {
-                // pass 
-            }
-        }
-
-        return await AsFileResource(typeof(FileResource));
+        typeof(FileResource)
+            .GetProperty("FilePath", bindingFlags)
+            !.SetValue(file, GameData.ParseFilePath(VirtualFile.FullPath));
+        typeof(FileResource)
+            .GetProperty("Data", bindingFlags)
+            !.SetValue(file, buffer);
+        typeof(FileResource)
+            .GetProperty("Reader", bindingFlags)
+            !.SetValue(file, reader);
+        typeof(FileResource)
+            .GetMethod("LoadFile", bindingFlags)
+            !.Invoke(file, null);
+        return file;
     }
+
+    public Task<FileResource> AsFileResource(CancellationToken cancellationToken = default) =>
+        Task.Run(() => ReadAll(cancellationToken), cancellationToken)
+            .ContinueWith(buffer => {
+                var reader = new LuminaBinaryReader(buffer.Result, _tree.PlatformId);
+
+                var magic = Size >= 4 ? reader.ReadUInt32() : 0;
+
+                var fileResourceType = typeof(FileResource);
+                var allResourceTypes = AppDomain.CurrentDomain.GetAssemblies()
+                    .SelectMany(x => x.GetTypes())
+                    .Where(x => fileResourceType.IsAssignableFrom(x) && x != fileResourceType)
+                    .ToArray();
+
+                var typeByExt = allResourceTypes.ToDictionary(
+                    x => (x.GetCustomAttribute<FileExtensionAttribute>()?.Extension ?? $".{x.Name[..^4]}")
+                        .ToLowerInvariant(),
+                    x => x);
+
+                typeByExt[".atex"] = typeByExt[".tex"];
+
+                var typeByMagic = new Dictionary<uint, Type> {
+                    {
+                        0x42444553u, typeByExt[".scd"]
+                    },
+                };
+                var possibleTypes = new List<Type>();
+
+                switch (Type) {
+                    case FileType.Empty:
+                        break;
+
+                    case FileType.Standard: {
+                        if (VirtualFile.NameResolveAttempted) {
+                            if (typeByExt.TryGetValue(Path.GetExtension(VirtualFile.Name).ToLowerInvariant(),
+                                    out var type))
+                                possibleTypes.Add(type);
+                        }
+
+                        {
+                            if (typeByMagic.TryGetValue(magic, out var type))
+                                possibleTypes.Add(type);
+                        }
+
+                        break;
+                    }
+
+                    case FileType.Model:
+                        possibleTypes.Add(typeByExt[".mdl"]);
+                        break;
+
+                    case FileType.Texture:
+                        possibleTypes.Add(typeByExt[".tex"]);
+                        break;
+
+                    default:
+                        throw new NotSupportedException();
+                }
+
+                foreach (var f in Enumerable.Reverse(possibleTypes)) {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try {
+                        return AsFileResourceImpl(reader.WithSeek(0), buffer.Result, f);
+                    } catch (Exception) {
+                        // pass 
+                    }
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                return AsFileResourceImpl(reader.WithSeek(0), buffer.Result, typeof(FileResource));
+            }, cancellationToken);
 
     public void Dispose() {
         if (_dataStream.IsValueCreated)
