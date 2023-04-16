@@ -80,6 +80,13 @@ public class VirtualFolder {
 
     public override string ToString() => Name;
 
+    public VirtualFolder[] GetTreeFromRoot() {
+        var res = new List<VirtualFolder> {this};
+        while (res[^1].Parent is { } parent)
+            res.Add(parent);
+        return Enumerable.Reverse(res).ToArray();
+    } 
+
     internal static VirtualFolder CreateRoot() => new("", Crc32.Get(Array.Empty<byte>()), null);
 
     internal static VirtualFolder CreateUnknownContainer(VirtualFolder? parent)

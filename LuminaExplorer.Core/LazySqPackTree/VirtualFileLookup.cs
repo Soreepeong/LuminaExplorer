@@ -189,7 +189,7 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
                             0x42444553u, typeByExt[".scd"]
                         },
                     };
-                    var possibleTypes = new List<Type>();
+                    var possibleTypes = new HashSet<Type>();
 
                     switch (Type) {
                         case FileType.Empty:
@@ -223,7 +223,7 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
                             throw new NotSupportedException();
                     }
 
-                    foreach (var f in Enumerable.Reverse(possibleTypes)) {
+                    foreach (var f in possibleTypes) {
                         cancellationToken.ThrowIfCancellationRequested();
                         try {
                             return AsFileResourceImpl(reader.WithSeek(0), buffer.Result, f);

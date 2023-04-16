@@ -1,6 +1,6 @@
 ﻿namespace LuminaExplorer.Core.Util;
 
-public class CountingStream : Stream {
+public sealed class CountingStream : Stream {
     private readonly Stream _innerStream;
 
     public CountingStream(Stream innerStream) {
@@ -56,10 +56,7 @@ public class CountingStream : Stream {
 
     protected override void Dispose(bool disposing) => _innerStream.Dispose();
 
-    public override ValueTask DisposeAsync() {
-        GC.SuppressFinalize(this);
-        return _innerStream.DisposeAsync();
-    }
+    public override ValueTask DisposeAsync() => _innerStream.DisposeAsync();
 
     public override Task FlushAsync(CancellationToken cancellationToken) => _innerStream.FlushAsync(cancellationToken);
 

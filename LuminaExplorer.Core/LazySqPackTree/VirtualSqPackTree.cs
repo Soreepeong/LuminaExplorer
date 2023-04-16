@@ -21,8 +21,8 @@ public sealed class VirtualSqPackTree : IDisposable {
 
     private readonly LruCache<VirtualFile, VirtualFileLookup> _fileLookups = new(128);
 
-    public event Action<VirtualFolder>? FolderResolved;
-    public event Action<VirtualFile>? FileResolved;
+    public event FolderChangedDelegate? FolderChanged;
+    public event FileChangedDelegate? FileChanged;
 
     public VirtualSqPackTree(HashDatabase hashDatabase, GameData gameData) {
         InstallationSqPackDirectory = gameData.DataPath;
@@ -55,6 +55,12 @@ public sealed class VirtualSqPackTree : IDisposable {
         })));
     }
 
+    public void Dispose() {
+        _fileLookups.Dispose();
+        FolderChanged = null;
+        FileChanged = null;
+    }
+
     public Task SuggestFullPath(string name) =>
         Task.Run(async () => {
             name = NormalizePath(name);
@@ -78,7 +84,7 @@ public sealed class VirtualSqPackTree : IDisposable {
                 if (string.Compare(folder.FullPath, folderName, StringComparison.InvariantCultureIgnoreCase) == 0) {
                     foreach (var f in folder.Files.Where(x => !x.NameResolved && x.FileHash == nameHash).ToArray())
                         if (f.TryResolve(name))
-                            FileResolved?.Invoke(f);
+                            FileChanged?.Invoke(f);
                 }
 
                 if (folder.Folders.Values.FirstOrDefault(x => x.IsUnknownContainer) is { } unknownFolder) {
@@ -87,8 +93,9 @@ public sealed class VirtualSqPackTree : IDisposable {
                     foreach (var (_, f) in unknownFolder.Folders
                                  .Where(x => x.Key != VirtualFolder.UpFolderKey && x.Value.FolderHash == folderNameHash)
                                  .ToArray()) {
+                        var previousTree = f.GetTreeFromRoot();
                         if (f.TryResolve(folderName))
-                            FolderResolved?.Invoke(f);
+                            FolderChanged?.Invoke(f, previousTree);
                     }
                 }
 
@@ -101,7 +108,7 @@ public sealed class VirtualSqPackTree : IDisposable {
 
     public VirtualFileLookup GetLookup(VirtualFile file) {
         if (_fileLookups.TryGet(file, out var data))
-            return data;
+            return (VirtualFileLookup) data.Clone();
 
         var cat = unchecked((byte) (file.IndexId >> 16));
         var ex = unchecked((byte) (file.IndexId >> 8));
@@ -115,7 +122,7 @@ public sealed class VirtualSqPackTree : IDisposable {
         data = new(this, file, new(File.OpenRead(datPath), PlatformId));
 
         _fileLookups.Add(file, data);
-        return data;
+        return (VirtualFileLookup) data.Clone();
     }
 
     public bool WillFolderNeverHaveSubfolders(VirtualFolder folder) =>
@@ -304,6 +311,10 @@ public sealed class VirtualSqPackTree : IDisposable {
     public static string NormalizePath(params string[] pathComponents) =>
         Path.Join(pathComponents).Replace('\\', '/').Trim('/');
 
+    public delegate void FileChangedDelegate(VirtualFile changedFile);
+    
+    public delegate void FolderChangedDelegate(VirtualFolder changedFolder, VirtualFolder[]? previousPathFromRoot);
+
     [SuppressMessage("ReSharper", "FieldCanBeMadeReadOnly.Local")]
     [SuppressMessage("ReSharper", "MemberCanBePrivate.Local")]
     [SuppressMessage("ReSharper", "UnusedMember.Local")]
@@ -318,11 +329,5 @@ public sealed class VirtualSqPackTree : IDisposable {
         public byte DataFileId => (byte) ((Data & 0b1110) >> 1);
 
         public long Offset => (Data & ~0xF) * 0x08;
-    }
-
-    public void Dispose() {
-        _fileLookups.Dispose();
-        FolderResolved = null;
-        FileResolved = null;
     }
 }

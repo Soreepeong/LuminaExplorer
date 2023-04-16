@@ -199,10 +199,11 @@ public static class BinaryReaderExtensions {
 
     #region Utilities for extracting previews
 
-    public static unsafe TextureBuffer ExtractMipmapOfSizeAtLeast(
+    public static async Task<TextureBuffer> ExtractMipmapOfSizeAtLeast(
         this Stream stream,
         int minEdgeLength,
-        PlatformId platformId) {
+        PlatformId platformId,
+        CancellationToken cancellationToken = default) {
         var s = new LuminaBinaryReader(stream, platformId).WithSeek(0);
 
         var header = stream switch {
@@ -211,16 +212,28 @@ public static class BinaryReaderExtensions {
             _ => s.ReadStructure<TexFile.TexHeader>(),
         };
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         var level = 0;
         while (level < header.MipLevels - 1 &&
                (header.Width >> (level + 1)) >= minEdgeLength &&
                (header.Height >> (level + 1)) >= minEdgeLength)
             level++;
 
-        var offset = header.OffsetToSurface[level];
-        var length =
-            (int) ((level == header.MipLevels - 1 ? stream.Length : header.OffsetToSurface[level + 1]) - offset);
-        var buffer = s.WithSeek(offset).ReadBytes(length);
+        uint offset;
+        int length;
+        unsafe {
+            offset = header.OffsetToSurface[level];
+            length = (int) ((level == header.MipLevels - 1
+                ? stream.Length
+                : header.OffsetToSurface[level + 1]) - offset);
+        }
+
+        var buffer = new byte[length];
+
+        await s.WithSeek(offset).BaseStream.ReadExactlyAsync(buffer, cancellationToken);
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         var mipWidth = Math.Max(1, header.Width >> level);
         var mipHeight = Math.Max(1, header.Height >> level);

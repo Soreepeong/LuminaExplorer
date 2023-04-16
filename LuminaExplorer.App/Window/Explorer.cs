@@ -14,10 +14,14 @@ using LuminaExplorer.Core.Util;
 namespace LuminaExplorer.App.Window;
 
 public partial class Explorer : Form {
+    private const int ImageListIndexFile = 0;
+    private const int ImageListIndexFolder = 1;
+
     private readonly VirtualSqPackTree _vspTree;
 
     private readonly ImageList _treeViewImageList;
     private readonly ImageList _listViewImageList;
+    private readonly Dictionary<VirtualObject, Task> _listViewImageLoadTasks = new();
 
     private readonly List<VirtualFolder> _navigationHistory = new();
     private int _navigationHistoryPosition = -1;
@@ -35,7 +39,6 @@ public partial class Explorer : Form {
 
         _listViewImageList = new();
         _listViewImageList.ColorDepth = ColorDepth.Depth32Bit;
-        _listViewImageList.ImageSize = new(64, 64);
 
         lvwFiles.SmallImageList = lvwFiles.LargeImageList = _listViewImageList;
         lvwFiles.VirtualListDataSource = new ExplorerListViewDataSource(lvwFiles);
@@ -45,25 +48,99 @@ public partial class Explorer : Form {
 
         _treeViewImageList = new();
         _treeViewImageList.ColorDepth = ColorDepth.Depth32Bit;
-        _treeViewImageList.Images.Add(UiUtils.ExtractPeIcon("shell32.dll", 0, false)!);
-        _treeViewImageList.Images.Add(UiUtils.ExtractPeIcon("shell32.dll", 4, false)!);
 
         tvwFiles.ImageList = _treeViewImageList;
         tvwFiles.Nodes.Add(new FolderTreeNode(vspTree.RootFolder, @"(root)", true));
         tvwFiles.Nodes[0].Expand();
         tvwFiles.SelectedNode = tvwFiles.Nodes[0];
 
-        cboView.SelectedIndex = 5;
+        ChangeTreeViewImageListDimensions(16);
+        ChangeListViewImageListDimensions(16);
+        cboView.SelectedIndex = 5;  // detail view
 
-        _vspTree.FileResolved += _vspTree_FileResolved;
-        _vspTree.FolderResolved += _vspTree_FolderResolved;
+        _vspTree.FileChanged += _vspTree_FileChanged;
+        _vspTree.FolderChanged += _vspTree_FolderChanged;
         NavigateTo(vspTree.RootFolder, true);
+
+        // random folder with a lot of images
+        TryNavigateTo("/common/graphics/texture");
 
         // mustadio
         // TryNavigateTo("/chara/monster/m0361/obj/body/b0003/texture/");
 
         // construct 14
         // TryNavigateTo("/chara/monster/m0489/animation/a0001/bt_common/loop_sp/");
+    }
+
+    protected override void Dispose(bool disposing) {
+        if (disposing) {
+            _treeViewImageList.Dispose();
+            _listViewImageList.Dispose();
+            _vspTree.FileChanged -= _vspTree_FileChanged;
+            _vspTree.FolderChanged -= _vspTree_FolderChanged;
+            lvwFiles.ClearObjects();
+            tvwFiles.Nodes.Clear();
+
+            components?.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
+
+    private void ChangeTreeViewImageListDimensions(int dimension) {
+        if (!_treeViewImageList.Images.Empty &&
+            _treeViewImageList.ImageSize.Width == dimension &&
+            _treeViewImageList.ImageSize.Height == dimension)
+            return;
+        
+        _treeViewImageList.Images.Clear();
+        _treeViewImageList.ImageSize = new(dimension, dimension);
+        
+        var largeIcon = dimension > 16;
+        for (var i = 0; i < 2; i++) {
+            switch (i) {
+                case ImageListIndexFile:
+                    using (var icon = UiUtils.ExtractPeIcon("shell32.dll", 0, largeIcon)!)
+                        _treeViewImageList.Images.Add(icon);
+                    break;
+                case ImageListIndexFolder:
+                    using (var icon = UiUtils.ExtractPeIcon("shell32.dll", 4, largeIcon)!)
+                        _treeViewImageList.Images.Add(icon);
+                    break;
+                default:
+                    throw new InvalidOperationException();
+            }
+        }
+    }
+
+    private void ChangeListViewImageListDimensions(int dimension) {
+        if (!_listViewImageList.Images.Empty &&
+            _listViewImageList.ImageSize.Width == dimension &&
+            _listViewImageList.ImageSize.Height == dimension)
+            return;
+
+        foreach (var k in _listViewImageLoadTasks.Keys)
+            k.Image = null;
+        
+        _listViewImageLoadTasks.Clear();
+        _listViewImageList.Images.Clear();
+        _listViewImageList.ImageSize = new(dimension, dimension);
+        
+        var largeIcon = dimension > 16;
+        for (var i = 0; i < 2; i++) {
+            switch (i) {
+                case ImageListIndexFile:
+                    using (var icon = UiUtils.ExtractPeIcon("shell32.dll", 0, largeIcon)!)
+                        _listViewImageList.Images.Add(icon);
+                    break;
+                case ImageListIndexFolder:
+                    using (var icon = UiUtils.ExtractPeIcon("shell32.dll", 4, largeIcon)!)
+                        _listViewImageList.Images.Add(icon);
+                    break;
+                default:
+                    throw new InvalidOperationException();
+            }
+        }
     }
 
     #region Event Handlers
@@ -88,12 +165,104 @@ public partial class Explorer : Form {
         }
     }
 
-    private void _vspTree_FileResolved(VirtualFile file) {
-        // TODO
+    private void VirtualObject_ImageRequested(VirtualObject virtualObject, CancellationToken cancellationToken) {
+        if (_listViewImageLoadTasks.ContainsKey(virtualObject))
+            return;
+
+        _listViewImageLoadTasks.Add(virtualObject, Task.Run(async () => {
+            var lookup = virtualObject.Lookup;
+            var file = virtualObject.File;
+
+            var canBeTexture = false;
+            canBeTexture |= lookup.Type == FileType.Texture;
+            canBeTexture |= file.Name.EndsWith(".atex", StringComparison.InvariantCultureIgnoreCase);
+
+            try {
+                // may be an .atex file
+                if (!canBeTexture && !file.NameResolved && lookup is {Type: FileType.Standard, Size: > 256})
+                    canBeTexture = true;
+
+                if (!canBeTexture)
+                    return;
+
+                using var bitmap = await QueuedThumbnailer.Instance.LoadFromTexStream(
+                    _listViewImageList.ImageSize.Width,
+                    _listViewImageList.ImageSize.Height,
+                    lookup.CreateStream(),
+                    _vspTree.PlatformId,
+                    cancellationToken).ConfigureAwait(false);
+                
+                cancellationToken.ThrowIfCancellationRequested();
+
+                await Task.Factory.FromAsync(BeginInvoke(() => {
+                    if (_explorerFolder != file.Parent)
+                        return;
+
+                    _listViewImageList.Images.Add(bitmap);
+                    virtualObject.Image = _listViewImageList.Images.Count - 1;
+                    lvwFiles.RefreshObject(virtualObject);
+                }), _ => {
+                    // bitmap.Dispose();
+                }).ConfigureAwait(false);
+            } catch (Exception e) {
+                Debug.WriteLine(e);
+            }
+        }, cancellationToken));
     }
-    
-    private void _vspTree_FolderResolved(VirtualFolder folder) {
-        // TODO
+
+    private void _vspTree_FileChanged(VirtualFile changedFile) {
+        while (_explorerFolder == changedFile.Parent) {
+            if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
+                break;
+
+            if (source.FirstOrDefault(x => x.File == changedFile) is { } modelObject)
+                modelObject.Name = changedFile.Name;
+
+            break;
+        }
+    }
+
+    private void _vspTree_FolderChanged(VirtualFolder changedFolder, VirtualFolder[]? previousPathFromRoot) {
+        while (previousPathFromRoot is not null) {
+            if (tvwFiles.Nodes[0] is not FolderTreeNode node)
+                break;
+
+            foreach (var folder in previousPathFromRoot.Skip(1)) {
+                if (node.TryFindChildNode(folder, out node) is not true)
+                    break;
+            }
+
+            if (node.Folder != changedFolder)
+                break;
+
+            node.Remove();
+            // TODO: node.Parent.Nodes.Remo
+
+            if (tvwFiles.Nodes[0] is not FolderTreeNode newParentNode)
+                break;
+
+            foreach (var folder in changedFolder.GetTreeFromRoot().Skip(1)) {
+                if (folder == changedFolder.Parent) {
+                    newParentNode.Nodes.Add(node);
+                    break;
+                }
+
+                if (newParentNode.TryFindChildNode(folder, out newParentNode))
+                    break;
+            }
+
+            break;
+        }
+
+        while (_explorerFolder == changedFolder) {
+            if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
+                break;
+
+            if (source.FirstOrDefault(x => x.Folder == changedFolder) is { } modelObject)
+                modelObject.Name = changedFolder.Name;
+
+            break;
+        }
     }
 
     private void btnNavBack_Click(object sender, EventArgs e) => NavigateBack();
@@ -152,49 +321,51 @@ public partial class Explorer : Form {
             _ => 16,
         };
 
-        _listViewImageList.ImageSize = new(imageDimension, imageDimension);
-
-        var folder = _explorerFolder;
-        var selectedFolders = new List<VirtualFolder>();
-        var selectedFiles = new List<VirtualFile>();
-        foreach (var selobj in lvwFiles.SelectedObjects) {
-            if (selobj is not VirtualObject obj)
-                continue;
-            if (obj.Folder is { } selectedFolder)
-                selectedFolders.Add(selectedFolder);
-            if (obj.File is { } selectedFile)
-                selectedFiles.Add(selectedFile);
-        }
-
-        _explorerFolder = null!;
-        _listViewImageList.Images.Clear();
-        NavigateTo(folder, false)
-            .ContinueWith(_ => {
-                if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
-                    return;
-
-                lvwFiles.SelectedObjects = source
-                    .Select(x => (x.IsFolder && selectedFolders.Any(y => y == x.Folder)) ||
-                                 (!x.IsFolder && selectedFiles.Any(y => y == x.File)))
-                    .ToList();
-            }, TaskScheduler.FromCurrentSynchronizationContext());
-    }
-
-    private void Explorer_FormClosed(object sender, FormClosedEventArgs e) {
-        _treeViewImageList.Dispose();
-        _listViewImageList.Dispose();
-        _vspTree.FileResolved -= _vspTree_FileResolved;
-        _vspTree.FolderResolved -= _vspTree_FolderResolved;
+        ChangeListViewImageListDimensions(imageDimension);
     }
 
     private void Explorer_Shown(object sender, EventArgs e) {
         lvwFiles.Focus();
     }
 
+    private void txtPath_KeyDown(object sender, KeyEventArgs e) {
+        switch (e.KeyCode) {
+            case Keys.Enter: {
+                var prevText = txtPath.Text;
+                TryNavigateTo(txtPath.Text)
+                    .ContinueWith(_ => {
+                        var exactMatchFound = 0 == string.Compare(
+                            _explorerFolder.FullPath.TrimEnd('/'),
+                            prevText.Trim().TrimEnd('/'),
+                            StringComparison.InvariantCultureIgnoreCase);
+                        txtPath.Text = prevText;
+
+                        if (exactMatchFound) {
+                            lvwFiles.Focus();
+                            return;
+                        }
+
+                        var currentFullPathLength = _explorerFolder.FullPath.Length;
+                        var sharedLength = 0;
+                        while (sharedLength < currentFullPathLength && sharedLength < prevText.Length)
+                            sharedLength++;
+                        txtPath.ComboBox!.SelectionStart = sharedLength;
+                        txtPath.ComboBox!.SelectionLength = prevText.Length - sharedLength;
+                    }, TaskScheduler.FromCurrentSynchronizationContext());
+                break;
+            }
+
+            case Keys.Escape:
+                txtPath.Text = _explorerFolder.FullPath;
+                lvwFiles.Focus();
+                break;
+        }
+    }
+
     private void txtPath_KeyUp(object? sender, KeyEventArgs keyEventArgs) {
         var searchedText = txtPath.Text;
         _vspTree.SuggestFullPath(searchedText);
-        
+
         var cleanerPath = searchedText.Split('/', StringSplitOptions.TrimEntries);
         if (cleanerPath.Any())
             cleanerPath = cleanerPath[..^1];
@@ -220,40 +391,6 @@ public partial class Explorer : Form {
                 txtPath.ComboBox.SelectionStart = selectionStart;
                 txtPath.ComboBox.SelectionLength = selectionLength;
             }, TaskScheduler.FromCurrentSynchronizationContext());
-    }
-
-    private void txtPath_KeyDown(object sender, KeyEventArgs e) {
-        switch (e.KeyCode) {
-            case Keys.Enter: {
-                    var prevText = txtPath.Text;
-                    TryNavigateTo(txtPath.Text)
-                        .ContinueWith(_ => {
-                            var exactMatchFound = 0 == string.Compare(
-                                _explorerFolder.FullPath.TrimEnd('/'),
-                                prevText.Trim().TrimEnd('/'),
-                                StringComparison.InvariantCultureIgnoreCase);
-                            txtPath.Text = prevText;
-
-                            if (exactMatchFound) {
-                                lvwFiles.Focus();
-                                return;
-                            }
-
-                            var currentFullPathLength = _explorerFolder.FullPath.Length;
-                            var sharedLength = 0;
-                            while (sharedLength < currentFullPathLength && sharedLength < prevText.Length)
-                                sharedLength++;
-                            txtPath.ComboBox!.SelectionStart = sharedLength;
-                            txtPath.ComboBox!.SelectionLength = prevText.Length - sharedLength;
-                        }, TaskScheduler.FromCurrentSynchronizationContext());
-                    break;
-                }
-
-            case Keys.Escape:
-                txtPath.Text = _explorerFolder.FullPath;
-                lvwFiles.Focus();
-                break;
-        }
     }
 
     private void tvwFiles_AfterExpand(object sender, TreeViewEventArgs e) {
@@ -355,16 +492,16 @@ public partial class Explorer : Form {
 
     private void lvwFiles_KeyUp(object sender, KeyEventArgs e) {
         switch (e.KeyCode) {
-            case Keys.Left when e is { Control: false, Alt: true, Shift: false }:
-            case Keys.Back when e is { Control: false, Alt: false, Shift: false }:
+            case Keys.Left when e is {Control: false, Alt: true, Shift: false}:
+            case Keys.Back when e is {Control: false, Alt: false, Shift: false}:
             case Keys.BrowserBack:
                 NavigateBack();
                 break;
-            case Keys.Right when e is { Control: false, Alt: true, Shift: false }:
+            case Keys.Right when e is {Control: false, Alt: true, Shift: false}:
             case Keys.BrowserForward:
                 NavigateForward();
                 break;
-            case Keys.Up when e is { Control: false, Alt: true, Shift: false }:
+            case Keys.Up when e is {Control: false, Alt: true, Shift: false}:
                 NavigateUp();
                 break;
         }
@@ -381,21 +518,19 @@ public partial class Explorer : Form {
         if (lvwFiles.SelectedIndices.Count is > 1 or 0)
             return;
 
-        if (source[lvwFiles.SelectedIndices[0]].File is { } file) {
-            _previewCancellationTokenSource = new();
-            _vspTree.GetLookup(file)
-                .AsFileResource(_previewCancellationTokenSource.Token)
-                .ContinueWith(fr => {
-                    if (!fr.IsCompletedSuccessfully)
-                        return;
-                    ppgPreview.SelectedObject = new WrapperTypeConverter().ConvertFrom(fr.Result);
-                    hbxPreview.ByteProvider = new FileResourceByteProvider(fr.Result);
-                }, TaskScheduler.FromCurrentSynchronizationContext());
+        var vo = source[lvwFiles.SelectedIndices[0]];
+        if (vo.IsFolder)
+            return;
 
-            // var isFocused = lvwFiles.Focused;
-            // if (isFocused)
-            //     lvwFiles.Focus();
-        }
+        _previewCancellationTokenSource = new();
+        _vspTree.GetLookup(vo.File)
+            .AsFileResource(_previewCancellationTokenSource.Token)
+            .ContinueWith(fr => {
+                if (!fr.IsCompletedSuccessfully)
+                    return;
+                ppgPreview.SelectedObject = new WrapperTypeConverter().ConvertFrom(fr.Result);
+                hbxPreview.ByteProvider = new FileResourceByteProvider(fr.Result);
+            }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
     #endregion
@@ -526,37 +661,21 @@ public partial class Explorer : Form {
             if (_explorerFolder != folder)
                 return;
 
-            _listViewImageList.Images.Clear();
-            _listViewImageList.Images.Add(UiUtils.ExtractPeIcon("shell32.dll", 0)!);
-            _listViewImageList.Images.Add(UiUtils.ExtractPeIcon("shell32.dll", 4)!);
+            while (_listViewImageList.Images.Count > 2)
+                _listViewImageList.Images.RemoveAt(_listViewImageList.Images.Count - 1);
 
             lvwFiles.SelectedIndex = -1;
-            lvwFiles.SetObjects(folder.Folders.Select(x => (object) new VirtualObject(x.Value, x.Key))
-                .Concat(folder.Files.Select(x => (object) new VirtualObject(
-                    _vspTree,
-                    x,
-                    (vobj, stream, platformId) => QueuedThumbnailer.Instance.LoadFromTexStream(
-                        _listViewImageList.ImageSize.Width,
-                        _listViewImageList.ImageSize.Height,
-                        stream,
-                        platformId
-                    ).ContinueWith(img => {
-                        if (!img.IsCompletedSuccessfully)
-                            return (object?) null;
 
-                        if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
-                            return null;
+            var objects = folder.Folders.Select(x => (object) new VirtualObject(x.Value, x.Key))
+                .Concat(folder.Files.Select(x => (object) new VirtualObject(_vspTree, x)))
+                .ToArray();
 
-                        if (!source.Contains(vobj))
-                            return null;
+            foreach (var o in objects) {
+                var vo = (VirtualObject) o;
+                vo.ImageRequested += VirtualObject_ImageRequested;
+            }
 
-                        _listViewImageList.Images.Add(img.Result);
-                        img.Result.Dispose();
-
-                        BeginInvoke(() => lvwFiles.RefreshObject(vobj));
-                        return _listViewImageList.Images.Count - 1;
-                    }, TaskScheduler.FromCurrentSynchronizationContext()))))
-                .ToArray());
+            lvwFiles.SetObjects(objects);
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
@@ -572,6 +691,21 @@ public partial class Explorer : Form {
             SelectedImageIndex = ImageIndex = 1;
             if (mayHaveChildren)
                 Nodes.Add(new TreeNode(@"Expanding..."));
+        }
+
+        public bool TryFindChildNode(VirtualFolder folder, out FolderTreeNode childNode) {
+            foreach (var node in Nodes) {
+                if (node is not FolderTreeNode n)
+                    continue;
+
+                if (n.Folder == folder) {
+                    childNode = n;
+                    return true;
+                }
+            }
+
+            childNode = null!;
+            return false;
         }
 
         public bool CallerMustPopulate() {
@@ -629,7 +763,7 @@ public partial class Explorer : Form {
                         true when !b.IsFolder => -1,
                         true when b.IsFolder => 0,
                         false when b.IsFolder => 1,
-                        _ => a.Lookup!.Type.CompareTo(b.Lookup!.Type),
+                        _ => a.Lookup.Type.CompareTo(b.Lookup.Type),
                     };
                     return order switch {
                         SortOrder.None or SortOrder.Ascending => r,
@@ -670,69 +804,69 @@ public partial class Explorer : Form {
     }
 
     // ReSharper disable once ClassWithVirtualMembersNeverInherited.Local
-    private class VirtualObject : INotifyPropertyChanged {
-        public readonly VirtualFile? File;
-        public readonly VirtualFolder? Folder;
-
+    private sealed class VirtualObject : IDisposable, INotifyPropertyChanged {
+        private readonly VirtualFile? _file;
+        private readonly VirtualFolder? _folder;
         private readonly string? _preferredName;
-        
-        private readonly Lazy<VirtualFileLookup>? _lookup;
-        private readonly object _imageKeyFallback;
-        private readonly Lazy<Task<object?>> _imageKeyTask;
         private readonly Lazy<string> _hash2;
-        private readonly Lazy<long> _rawSize;
-        private readonly Lazy<long> _storedSize;
-        private readonly Lazy<long> _reservedSize;
 
-        public VirtualObject(VirtualSqPackTree tree, VirtualFile file,
-            Func<VirtualObject, Stream, PlatformId, Task<object?>> imageKeyGetter) {
-            File = file;
+        public readonly object ImageFallback;
+
+        private CancellationTokenSource? _imageCancellationTokenSource;
+        private Lazy<string> _name;
+        private Lazy<VirtualFileLookup>? _lookup;
+        private object? _imageKey;
+
+        public VirtualObject(VirtualSqPackTree tree, VirtualFile file) {
+            ImageFallback = ImageListIndexFile;
+            _file = file;
+            _name = new(() => file.Name);
             _lookup = new(() => tree.GetLookup(File));
-            _imageKeyFallback = 0;
-            _imageKeyTask = new(() => {
-                Debug.Assert(Lookup != null);
-
-                var canBeTexture = false;
-                canBeTexture |= Lookup.Type == FileType.Texture;
-                canBeTexture |= File.Name.EndsWith(".atex", StringComparison.InvariantCultureIgnoreCase);
-
-                try {
-                    // may be an .atex file
-                    if (!canBeTexture && !File.NameResolved && Lookup.Type == FileType.Standard && Lookup.Size > 256)
-                        canBeTexture = true;
-
-                    if (!canBeTexture)
-                        return Task.FromResult((object?) 0);
-
-                    return imageKeyGetter(this, Lookup.CreateStream(), Lookup.DataStream.PlatformId);
-                } catch (Exception e) {
-                    Debug.WriteLine(e);
-                }
-
-                return Task.FromResult((object?) 0);
-            });
-            _hash2 = new(() => $"{Crc32.Get(File!.FullPath.Trim('/').ToLowerInvariant()):X08}");
-            _rawSize = new(() => Lookup!.Size);
-            _storedSize = new(() => Lookup!.OccupiedBlockBytes);
-            _reservedSize = new(() => Lookup!.ReservedBlockBytes);
+            _hash2 = new(() => $"{Crc32.Get(File.FullPath.Trim('/').ToLowerInvariant()):X08}");
         }
 
         public VirtualObject(VirtualFolder folder, string? preferredName) {
-            Folder = folder;
-            _preferredName = preferredName;
-            _imageKeyFallback = 1;
-            _imageKeyTask = new(() => Task.FromResult((object?) 1));
+            ImageFallback = ImageListIndexFolder;
+            _folder = folder;
+            _name = new((_preferredName = preferredName) ?? folder.Name);
             _hash2 = new("");
-            _rawSize = _storedSize = _reservedSize = new(0L);
         }
+
+        private void ReleaseUnmanagedResources() {
+            if (_lookup is {IsValueCreated: true}) {
+                _lookup.Value.Dispose();
+                _lookup = null;
+            }
+        }
+
+        public void Dispose() {
+            _imageCancellationTokenSource?.Cancel();
+            _imageCancellationTokenSource = null;
+            ReleaseUnmanagedResources();
+            GC.SuppressFinalize(this);
+        }
+
+        ~VirtualObject() {
+            ReleaseUnmanagedResources();
+        }
+
+        public event Action<VirtualObject, CancellationToken>? ImageRequested;
 
         public bool IsFolder => _lookup is null;
 
-        public VirtualFileLookup? Lookup => _lookup?.Value;
+        public VirtualFile File => _file ?? throw new InvalidOperationException();
+
+        public VirtualFolder Folder => _folder ?? throw new InvalidOperationException();
+
+        public VirtualFileLookup Lookup => _lookup?.Value ?? throw new InvalidOperationException();
 
         [UsedImplicitly] public bool Checked { get; set; }
 
-        [UsedImplicitly] public string Name => _preferredName ?? (IsFolder ? Folder!.Name : File!.Name);
+        [UsedImplicitly]
+        public string Name {
+            get => _preferredName ?? _name.Value;
+            set => SetField(ref _name, new(value));
+        }
 
         [UsedImplicitly]
         public string PackTypeString => _lookup is null
@@ -747,30 +881,43 @@ public partial class Explorer : Form {
                 }
                 : "<error>";
 
-        [UsedImplicitly] public string Hash1 => $"{(IsFolder ? Folder!.FolderHash : File!.FileHash):X08}";
+        [UsedImplicitly] public string Hash1 => $"{(IsFolder ? Folder.FolderHash : File.FileHash):X08}";
 
         [UsedImplicitly] public string Hash2 => _hash2.Value;
 
-        [UsedImplicitly] public string RawSize => IsFolder ? "" : UiUtils.FormatSize(_rawSize.Value);
+        [UsedImplicitly] public string RawSize => IsFolder ? "" : UiUtils.FormatSize(Lookup.Size);
 
-        [UsedImplicitly] public string StoredSize => IsFolder ? "" : UiUtils.FormatSize(_storedSize.Value);
+        [UsedImplicitly] public string StoredSize => IsFolder ? "" : UiUtils.FormatSize(Lookup.OccupiedBlockBytes);
 
-        [UsedImplicitly] public string ReservedSize => IsFolder ? "" : UiUtils.FormatSize(_reservedSize.Value);
+        [UsedImplicitly] public string ReservedSize => IsFolder ? "" : UiUtils.FormatSize(Lookup.ReservedBlockBytes);
 
         [UsedImplicitly]
-        public object Image => _imageKeyTask.Value.IsCompletedSuccessfully
-            ? _imageKeyTask.Value.Result ?? _imageKeyFallback
-            : _imageKeyFallback;
+        public object? Image {
+            get {
+                if (_imageKey is not null)
+                    return _imageKey;
+
+                _imageCancellationTokenSource ??= new();
+                ImageRequested?.Invoke(this, _imageCancellationTokenSource.Token);
+                return ImageFallback;
+            }
+            set {
+                if (SetField(ref _imageKey, value)) {
+                    _imageCancellationTokenSource?.Cancel();
+                    _imageCancellationTokenSource = null;
+                }
+            }
+        }
 
         #region Implementation of INotifyPropertyChanged
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
+        private void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
             PropertyChanged?.Invoke(this, new(propertyName));
         }
 
-        protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null) {
+        private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null) {
             if (EqualityComparer<T>.Default.Equals(field, value)) return false;
             field = value;
             OnPropertyChanged(propertyName);
