@@ -151,7 +151,7 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
 
             typeof(FileResource)
                 .GetProperty("FilePath", bindingFlags)
-                !.SetValue(file, GameData.ParseFilePath(VirtualFile.FullPath));
+                !.SetValue(file, GameData.ParseFilePath(_tree.GetFullPath(VirtualFile)));
             typeof(FileResource)
                 .GetProperty("Data", bindingFlags)
                 !.SetValue(file, buffer);

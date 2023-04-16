@@ -50,17 +50,17 @@ public partial class Explorer : Form {
         _treeViewImageList.ColorDepth = ColorDepth.Depth32Bit;
 
         tvwFiles.ImageList = _treeViewImageList;
-        tvwFiles.Nodes.Add(new FolderTreeNode(vspTree.RootFolder, @"(root)", true));
+        tvwFiles.Nodes.Add(new FolderTreeNode(_vspTree));
         tvwFiles.Nodes[0].Expand();
         tvwFiles.SelectedNode = tvwFiles.Nodes[0];
 
         ChangeTreeViewImageListDimensions(16);
         ChangeListViewImageListDimensions(16);
-        cboView.SelectedIndex = 5;  // detail view
+        cboView.SelectedIndex = 5; // detail view
 
         _vspTree.FileChanged += _vspTree_FileChanged;
         _vspTree.FolderChanged += _vspTree_FolderChanged;
-        NavigateTo(vspTree.RootFolder, true);
+        NavigateTo(_vspTree.RootFolder, true);
 
         // random folder with a lot of images
         TryNavigateTo("/common/graphics/texture");
@@ -93,10 +93,10 @@ public partial class Explorer : Form {
             _treeViewImageList.ImageSize.Width == dimension &&
             _treeViewImageList.ImageSize.Height == dimension)
             return;
-        
+
         _treeViewImageList.Images.Clear();
         _treeViewImageList.ImageSize = new(dimension, dimension);
-        
+
         var largeIcon = dimension > 16;
         for (var i = 0; i < 2; i++) {
             switch (i) {
@@ -146,6 +146,7 @@ public partial class Explorer : Form {
         }
     }
 
+    // ReSharper disable once UnusedMember.Local
     private List<VirtualFolder> GetSelectedFolders() {
         var folders = new List<VirtualFolder>();
         if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
@@ -222,10 +223,11 @@ public partial class Explorer : Form {
                     h = _listViewImageList.ImageSize.Height;
                 }
 
+                await using var stream = lookup.CreateStream();
                 using var bitmap = await QueuedThumbnailer.Instance.LoadFromTexStream(
                     w,
                     h,
-                    lookup.CreateStream(),
+                    stream,
                     _vspTree.PlatformId,
                     cancellationToken).ConfigureAwait(false);
 
@@ -236,7 +238,7 @@ public partial class Explorer : Form {
                         return;
                     if (file.Parent != _explorerFolder)
                         return;
-                
+
                     _listViewImageList.Images.Add(bitmap);
                     virtualObject.Image = _listViewImageList.Images.Count - 1;
                 }
@@ -276,6 +278,7 @@ public partial class Explorer : Form {
     }
 
     private void _vspTree_FolderChanged(VirtualFolder changedFolder, VirtualFolder[]? previousPathFromRoot) {
+        btnNavUp.Enabled = _explorerFolder.Parent is not null;
         while (previousPathFromRoot is not null) {
             if (tvwFiles.Nodes[0] is not FolderTreeNode node)
                 break;
@@ -294,7 +297,7 @@ public partial class Explorer : Form {
             if (tvwFiles.Nodes[0] is not FolderTreeNode newParentNode)
                 break;
 
-            foreach (var folder in changedFolder.GetTreeFromRoot().Skip(1)) {
+            foreach (var folder in _vspTree.GetTreeFromRoot(changedFolder).Skip(1)) {
                 if (folder == changedFolder.Parent) {
                     newParentNode.Nodes.Add(node);
                     break;
@@ -331,7 +334,7 @@ public partial class Explorer : Form {
              i = iTo;
              i >= iFrom;
              i--, counter++) {
-            var path = _navigationHistory[i].FullPath;
+            var path = _vspTree.GetFullPath(_navigationHistory[i]);
 
             if (btnsHistory.DropDownItems.Count <= counter) {
                 btnsHistory.DropDownItems.Add(new ToolStripButton() {
@@ -387,8 +390,9 @@ public partial class Explorer : Form {
                 var prevText = txtPath.Text;
                 TryNavigateTo(txtPath.Text)
                     .ContinueWith(_ => {
+                        var fullPath = _vspTree.GetFullPath(_explorerFolder);
                         var exactMatchFound = 0 == string.Compare(
-                            _explorerFolder.FullPath.TrimEnd('/'),
+                            fullPath.TrimEnd('/'),
                             prevText.Trim().TrimEnd('/'),
                             StringComparison.InvariantCultureIgnoreCase);
                         txtPath.Text = prevText;
@@ -398,7 +402,7 @@ public partial class Explorer : Form {
                             return;
                         }
 
-                        var currentFullPathLength = _explorerFolder.FullPath.Length;
+                        var currentFullPathLength = fullPath.Length;
                         var sharedLength = 0;
                         while (sharedLength < currentFullPathLength && sharedLength < prevText.Length)
                             sharedLength++;
@@ -409,7 +413,7 @@ public partial class Explorer : Form {
             }
 
             case Keys.Escape:
-                txtPath.Text = _explorerFolder.FullPath;
+                txtPath.Text = _vspTree.GetFullPath(_explorerFolder);
                 lvwFiles.Focus();
                 break;
         }
@@ -435,9 +439,10 @@ public partial class Explorer : Form {
                 var selectionStart = txtPath.ComboBox!.SelectionStart;
                 var selectionLength = txtPath.ComboBox!.SelectionLength;
 
-                var parentFolder = res.Result.FullPath;
+                var parentFolder = _vspTree.GetFullPath(res.Result);
                 var src = new AutoCompleteStringCollection();
-                foreach (var f in res.Result.Folders.Values.Where(x => x != res.Result.Parent))
+
+                foreach (var f in _vspTree.GetFolders(res.Result).Where(x => x != res.Result.Parent))
                     src.Add($"{parentFolder}{f.Name[..^1]}");
                 txtPath.AutoCompleteCustomSource = src;
 
@@ -447,17 +452,6 @@ public partial class Explorer : Form {
     }
 
     private void tvwFiles_AfterExpand(object sender, TreeViewEventArgs e) {
-        if (e.Node is FolderTreeNode ln) {
-            if (ln.ShouldExpandRecursively()) {
-                BeginInvoke(() => {
-                    foreach (var n in e.Node.Nodes)
-                        ((TreeNode) n).Expand();
-                });
-            }
-        }
-    }
-
-    private void tvwFiles_BeforeExpand(object? sender, TreeViewCancelEventArgs e) {
         if (e.Node is FolderTreeNode ln)
             ExpandFolderTreeNode(ln, true);
     }
@@ -493,7 +487,7 @@ public partial class Explorer : Form {
             return;
         if (lvwFiles.SelectedIndices.Count == 0)
             return;
-        
+
         var vo = source[lvwFiles.SelectedIndices[0]];
         if (vo.IsFolder)
             NavigateTo(vo.Folder, true);
@@ -641,32 +635,27 @@ public partial class Explorer : Form {
         if (!expandingNow)
             ln.Expand();
 
-        if (!ln.CallerMustPopulate()) {
-            return _vspTree.AsFoldersResolved(ln.Folder)
-                .ContinueWith(_ => {
-                    if (!neverExpandRecursively && ln.ShouldExpandRecursively()) {
-                        foreach (var n in ln.Nodes)
-                            ((TreeNode) n).Expand();
-                    }
+        var resolvedFolder = _vspTree.AsFoldersResolved(ln.Folder);
+
+        if (ln.CallerMustPopulate()) {
+            resolvedFolder = resolvedFolder
+                .ContinueWith(f => {
+                    ln.Nodes.Clear();
+                    ln.Nodes.AddRange(_vspTree.GetFolders(ln.Folder)
+                        .OrderBy(x => x.Name.ToLowerInvariant())
+                        .Select(x => (TreeNode) new FolderTreeNode(_vspTree, x))
+                        .ToArray());
+
+                    return f.Result;
                 }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
-        return _vspTree.AsFoldersResolved(ln.Folder)
-            .ContinueWith(_ => {
-                ln.Nodes.Clear();
-                ln.Nodes.AddRange(ln.Folder.Folders
-                    .Where(x => x.Value != ln.Folder.Parent)
-                    .OrderBy(x => x.Key.ToLowerInvariant())
-                    .Select(x =>
-                        (TreeNode) new FolderTreeNode(x.Value, x.Key,
-                            !_vspTree.WillFolderNeverHaveSubfolders(x.Value)))
-                    .ToArray());
-
-                if (!neverExpandRecursively && ln.ShouldExpandRecursively()) {
-                    foreach (var n in ln.Nodes)
-                        ((TreeNode) n).Expand();
-                }
-            }, TaskScheduler.FromCurrentSynchronizationContext());
+        return resolvedFolder.ContinueWith(_ => {
+            if (!neverExpandRecursively && _vspTree.GetKnownFolderCount(ln.Folder) == 1) {
+                foreach (var n in ln.Nodes)
+                    ((TreeNode) n).Expand();
+            }
+        }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
     private Task NavigateTo(VirtualFolder folder, bool addToHistory) {
@@ -698,7 +687,7 @@ public partial class Explorer : Form {
         if (!resolveTask.IsCompleted)
             lvwFiles.SetObjects(Array.Empty<object>());
 
-        txtPath.Text = folder.FullPath;
+        txtPath.Text = _vspTree.GetFullPath(folder);
 
         return resolveTask.ContinueWith(_ => {
             if (_explorerFolder != folder)
@@ -711,7 +700,7 @@ public partial class Explorer : Form {
 
             lvwFiles.SelectedIndex = -1;
 
-            var objects = folder.Folders.Select(x => (object) new VirtualObject(x.Value, x.Key))
+            var objects = _vspTree.GetFolders(folder).Select(x => (object) new VirtualObject(x))
                 .Concat(folder.Files.Select(x => (object) new VirtualObject(_vspTree, x)))
                 .ToArray();
 
@@ -728,12 +717,18 @@ public partial class Explorer : Form {
 
     private class FolderTreeNode : TreeNode {
         public readonly VirtualFolder Folder;
+
         private bool _populateTriggered;
 
-        public FolderTreeNode(VirtualFolder folder, string displayName, bool mayHaveChildren) {
+        public FolderTreeNode(VirtualSqPackTree tree) : this(tree.RootFolder, @"(root)", true) { }
+
+        public FolderTreeNode(VirtualSqPackTree tree, VirtualFolder folder)
+            : this(folder, folder.Name.Trim('/'), !tree.WillFolderNeverHaveSubfolders(folder)) { }
+
+        private FolderTreeNode(VirtualFolder folder, string displayName, bool mayHaveChildren) {
             Text = displayName;
             Folder = folder;
-            SelectedImageIndex = ImageIndex = 1;
+            SelectedImageIndex = ImageIndex = ImageListIndexFolder;
             if (mayHaveChildren)
                 Nodes.Add(new TreeNode(@"Expanding..."));
         }
@@ -759,14 +754,6 @@ public partial class Explorer : Form {
 
             _populateTriggered = true;
             return true;
-        }
-
-        public bool ShouldExpandRecursively() {
-            if (Folder.Folders.Count == 1)
-                return true;
-            if (Folder.Folders.Count == 2 && Folder.Folders.Any(x => x.Value.Name.StartsWith('~')))
-                return true;
-            return false;
         }
     }
 
@@ -852,10 +839,8 @@ public partial class Explorer : Form {
     private sealed class VirtualObject : IDisposable, INotifyPropertyChanged {
         private readonly VirtualFile? _file;
         private readonly VirtualFolder? _folder;
-        private readonly string? _preferredName;
         private readonly Lazy<string> _hash2;
-
-        public readonly object ImageFallback;
+        private readonly object _imageFallback;
 
         private CancellationTokenSource? _imageCancellationTokenSource;
         private Lazy<string> _name;
@@ -863,17 +848,17 @@ public partial class Explorer : Form {
         private object? _imageKey;
 
         public VirtualObject(VirtualSqPackTree tree, VirtualFile file) {
-            ImageFallback = ImageListIndexFile;
+            _imageFallback = ImageListIndexFile;
             _file = file;
             _name = new(() => file.Name);
             _lookup = new(() => tree.GetLookup(File));
-            _hash2 = new(() => $"{Crc32.Get(File.FullPath.Trim('/').ToLowerInvariant()):X08}");
+            _hash2 = new(() => $"{Crc32.Get(tree.GetFullPath(File).Trim('/').ToLowerInvariant()):X08}");
         }
 
-        public VirtualObject(VirtualFolder folder, string? preferredName) {
-            ImageFallback = ImageListIndexFolder;
+        public VirtualObject(VirtualFolder folder) {
+            _imageFallback = ImageListIndexFolder;
             _folder = folder;
-            _name = new((_preferredName = preferredName) ?? folder.Name);
+            _name = new(folder.Name.Trim('/'));
             _hash2 = new("");
         }
 
@@ -909,7 +894,7 @@ public partial class Explorer : Form {
 
         [UsedImplicitly]
         public string Name {
-            get => _preferredName ?? _name.Value;
+            get => _name.Value;
             set => SetField(ref _name, new(value));
         }
 
@@ -944,7 +929,7 @@ public partial class Explorer : Form {
 
                 _imageCancellationTokenSource ??= new();
                 ImageRequested?.Invoke(this, _imageCancellationTokenSource.Token);
-                return ImageFallback;
+                return _imageFallback;
             }
             set {
                 if (SetField(ref _imageKey, value)) {

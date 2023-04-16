@@ -122,7 +122,6 @@ partial class Explorer {
         tvwFiles.PathSeparator = "/";
         tvwFiles.Size = new Size(266, 687);
         tvwFiles.TabIndex = 1;
-        tvwFiles.BeforeExpand += tvwFiles_BeforeExpand;
         tvwFiles.AfterExpand += tvwFiles_AfterExpand;
         tvwFiles.AfterSelect += tvwFiles_AfterSelect;
         // 
