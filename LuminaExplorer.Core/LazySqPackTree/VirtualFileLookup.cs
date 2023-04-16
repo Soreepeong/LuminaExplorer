@@ -39,7 +39,7 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
 
     public object Clone() => new VirtualFileLookup(_core);
 
-    public VirtualFile VirtualFile => Core.VirtualFile;
+    public VirtualFile File => Core.File;
 
     public FileType Type => Core.Type;
 
@@ -49,9 +49,9 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
 
     public uint OccupiedSpaceUnits => Core.OccupiedSpaceUnits;
 
-    public long ReservedBlockBytes => Core.ReservedBlockBytes;
+    public long ReservedBytes => Core.ReservedBytes;
 
-    public long OccupiedBlockBytes => Core.OccupiedBlockBytes;
+    public long OccupiedBytes => Core.OccupiedBytes;
 
     public BaseVirtualFileStream DataStream => Core.DataStream;
 
@@ -68,7 +68,7 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
         private readonly VirtualSqPackTree _tree;
         private readonly Lazy<BaseVirtualFileStream> _dataStream;
 
-        public readonly VirtualFile VirtualFile;
+        public readonly VirtualFile File;
         public readonly FileType Type;
         public readonly uint Size;
         public readonly uint ReservedSpaceUnits;
@@ -77,14 +77,14 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
         private readonly SqPackFileInfo _fileInfo;
         private readonly ModelBlock? _modelBlock;
 
-        internal VirtualFileLookupCore(VirtualSqPackTree tree, VirtualFile virtualFile, LuminaBinaryReader reader) {
+        internal VirtualFileLookupCore(VirtualSqPackTree tree, VirtualFile file, LuminaBinaryReader reader) {
             _tree = tree;
-            VirtualFile = virtualFile;
-            reader.Position = virtualFile.Offset;
+            File = file;
+            reader.Position = file.Offset;
 
-            _fileInfo = reader.WithSeek(virtualFile.Offset).ReadStructure<SqPackFileInfo>();
+            _fileInfo = reader.WithSeek(file.Offset).ReadStructure<SqPackFileInfo>();
             _modelBlock = _fileInfo.Type == FileType.Model
-                ? reader.WithSeek(virtualFile.Offset).ReadStructure<ModelBlock>()
+                ? reader.WithSeek(file.Offset).ReadStructure<ModelBlock>()
                 : null;
 
             Type = _fileInfo.Type;
@@ -96,15 +96,15 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
 
             _dataStream = new(() => Type switch {
                 FileType.Empty => new EmptyVirtualFileStream(_tree.PlatformId),
-                FileType.Standard => new StandardVirtualFileStream(reader, virtualFile.Offset, _fileInfo),
-                FileType.Model => new ModelVirtualFileStream(reader, virtualFile.Offset, _modelBlock!.Value),
-                FileType.Texture => new TextureVirtualFileStream(reader, virtualFile.Offset, _fileInfo),
+                FileType.Standard => new StandardVirtualFileStream(reader, file.Offset, _fileInfo),
+                FileType.Model => new ModelVirtualFileStream(reader, file.Offset, _modelBlock!.Value),
+                FileType.Texture => new TextureVirtualFileStream(reader, file.Offset, _fileInfo),
                 _ => throw new NotSupportedException()
             });
         }
 
-        public long ReservedBlockBytes => (long) ReservedSpaceUnits << 7;
-        public long OccupiedBlockBytes => (long) OccupiedSpaceUnits << 7;
+        public long ReservedBytes => (long) ReservedSpaceUnits << 7;
+        public long OccupiedBytes => (long) OccupiedSpaceUnits << 7;
 
         public BaseVirtualFileStream DataStream => _dataStream.Value;
 
@@ -142,7 +142,7 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
             };
             typeof(LuminaFileInfo)
                 .GetProperty("Offset", bindingFlags)
-                !.SetValue(luminaFileInfo, VirtualFile.Offset);
+                !.SetValue(luminaFileInfo, File.Offset);
             if (Type == FileType.Model) {
                 typeof(LuminaFileInfo)
                     .GetProperty("ModelBlock", bindingFlags)
@@ -151,7 +151,7 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
 
             typeof(FileResource)
                 .GetProperty("FilePath", bindingFlags)
-                !.SetValue(file, GameData.ParseFilePath(_tree.GetFullPath(VirtualFile)));
+                !.SetValue(file, GameData.ParseFilePath(_tree.GetFullPath(File)));
             typeof(FileResource)
                 .GetProperty("Data", bindingFlags)
                 !.SetValue(file, buffer);
@@ -196,9 +196,9 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
                             break;
 
                         case FileType.Standard: {
-                            if (VirtualFile.NameResolveAttempted) {
+                            if (File.NameResolveAttempted) {
                                 if (typeByExt.TryGetValue(
-                                        Path.GetExtension(VirtualFile.Name).ToLowerInvariant(),
+                                        Path.GetExtension(File.Name).ToLowerInvariant(),
                                         out var type))
                                     possibleTypes.Add(type);
                             }

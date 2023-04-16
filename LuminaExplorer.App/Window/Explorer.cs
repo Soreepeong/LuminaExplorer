@@ -63,10 +63,10 @@ public partial class Explorer : Form {
         NavigateTo(_vspTree.RootFolder, true);
 
         // random folder with a lot of images
-        TryNavigateTo("/common/graphics/texture");
+        // TryNavigateTo("/common/graphics/texture");
 
         // mustadio
-        // TryNavigateTo("/chara/monster/m0361/obj/body/b0003/texture/");
+        TryNavigateTo("/chara/monster/m0361/obj/body/b0003/texture/");
 
         // construct 14
         // TryNavigateTo("/chara/monster/m0489/animation/a0001/bt_common/loop_sp/");
@@ -776,34 +776,41 @@ public partial class Explorer : Form {
             => DefaultSearchText(value, first, last, column, this);
 
         public override void Sort(OLVColumn column, SortOrder order) {
-            if (column.AspectName == "Name") {
-                _objects.Sort((a, b) => {
-                    var r = a.IsFolder switch {
-                        true when !b.IsFolder => -1,
-                        false when b.IsFolder => 1,
-                        _ => string.Compare(a.Name, b.Name, StringComparison.InvariantCultureIgnoreCase)
-                    };
-                    return order switch {
-                        SortOrder.None or SortOrder.Ascending => r,
-                        SortOrder.Descending => -r,
-                        _ => throw new InvalidOperationException(),
-                    };
-                });
-            } else if (column.AspectName == "PackType") {
-                _objects.Sort((a, b) => {
-                    var r = a.IsFolder switch {
-                        true when !b.IsFolder => -1,
-                        true when b.IsFolder => 0,
-                        false when b.IsFolder => 1,
-                        _ => a.Lookup.Type.CompareTo(b.Lookup.Type),
-                    };
-                    return order switch {
-                        SortOrder.None or SortOrder.Ascending => r,
-                        SortOrder.Descending => -r,
-                        _ => throw new InvalidOperationException(),
-                    };
-                });
-            }
+            _objects.Sort((a, b) => {
+                var r = a.IsFolder switch {
+                    true when !b.IsFolder => -1,
+                    false when b.IsFolder => 1,
+                    // Case when both are folders:
+                    true when b.IsFolder => column.AspectName switch {
+                        nameof(VirtualObject.Name) =>
+                            string.Compare(a.Name, b.Name, StringComparison.InvariantCultureIgnoreCase),
+                        nameof(VirtualObject.PackTypeString) => 0,
+                        nameof(VirtualObject.Hash1) => a.Hash1Value.CompareTo(b.Hash1Value),
+                        nameof(VirtualObject.Hash2) => 0,
+                        nameof(VirtualObject.RawSize) => 0,
+                        nameof(VirtualObject.StoredSize) => 0,
+                        nameof(VirtualObject.ReservedSize) => 0,
+                        _ => 0,
+                    },
+                    // Case when both are files:
+                    _ => column.AspectName switch {
+                        nameof(VirtualObject.Name) =>
+                            string.Compare(a.Name, b.Name, StringComparison.InvariantCultureIgnoreCase),
+                        nameof(VirtualObject.PackTypeString) => a.Lookup.Type.CompareTo(b.Lookup.Type),
+                        nameof(VirtualObject.Hash1) => a.Hash1Value.CompareTo(b.Hash1Value),
+                        nameof(VirtualObject.Hash2) => a.Hash2Value.CompareTo(b.Hash2Value),
+                        nameof(VirtualObject.RawSize) => a.Lookup.Size.CompareTo(b.Lookup.Size),
+                        nameof(VirtualObject.StoredSize) => a.Lookup.OccupiedBytes.CompareTo(b.Lookup.OccupiedBytes),
+                        nameof(VirtualObject.ReservedSize) => a.Lookup.ReservedBytes.CompareTo(b.Lookup.ReservedBytes),
+                        _ => 0,
+                    },
+                };
+                return order switch {
+                    SortOrder.None or SortOrder.Ascending => r,
+                    SortOrder.Descending => -r,
+                    _ => throw new InvalidOperationException(),
+                };
+            });
         }
 
         public override void AddObjects(ICollection modelObjects)
@@ -839,7 +846,7 @@ public partial class Explorer : Form {
     private sealed class VirtualObject : IDisposable, INotifyPropertyChanged {
         private readonly VirtualFile? _file;
         private readonly VirtualFolder? _folder;
-        private readonly Lazy<string> _hash2;
+        private readonly Lazy<uint> _hash2;
         private readonly object _imageFallback;
 
         private CancellationTokenSource? _imageCancellationTokenSource;
@@ -852,14 +859,14 @@ public partial class Explorer : Form {
             _file = file;
             _name = new(() => file.Name);
             _lookup = new(() => tree.GetLookup(File));
-            _hash2 = new(() => $"{Crc32.Get(tree.GetFullPath(File).Trim('/').ToLowerInvariant()):X08}");
+            _hash2 = new(() => Crc32.Get(tree.GetFullPath(File).Trim('/').ToLowerInvariant()));
         }
 
         public VirtualObject(VirtualFolder folder) {
             _imageFallback = ImageListIndexFolder;
             _folder = folder;
             _name = new(folder.Name.Trim('/'));
-            _hash2 = new("");
+            _hash2 = new(0u);
         }
 
         private void ReleaseUnmanagedResources() {
@@ -890,15 +897,17 @@ public partial class Explorer : Form {
 
         public VirtualFileLookup Lookup => _lookup?.Value ?? throw new InvalidOperationException();
 
+        public uint Hash1Value => IsFolder ? Folder.FolderHash : File.FileHash;
+        
+        public uint Hash2Value => _hash2.Value;
+
         [UsedImplicitly] public bool Checked { get; set; }
 
-        [UsedImplicitly]
         public string Name {
             get => _name.Value;
             set => SetField(ref _name, new(value));
         }
 
-        [UsedImplicitly]
         public string PackTypeString => _lookup is null
             ? ""
             : _lookup.Value.Type is var x
@@ -911,15 +920,15 @@ public partial class Explorer : Form {
                 }
                 : "<error>";
 
-        [UsedImplicitly] public string Hash1 => $"{(IsFolder ? Folder.FolderHash : File.FileHash):X08}";
+        public string Hash1 => $"{Hash1Value:X08}";
 
-        [UsedImplicitly] public string Hash2 => _hash2.Value;
+        public string Hash2 => IsFolder ? "" : $"{Hash2Value:X08}";
 
-        [UsedImplicitly] public string RawSize => IsFolder ? "" : UiUtils.FormatSize(Lookup.Size);
+        public string RawSize => IsFolder ? "" : UiUtils.FormatSize(Lookup.Size);
 
-        [UsedImplicitly] public string StoredSize => IsFolder ? "" : UiUtils.FormatSize(Lookup.OccupiedBlockBytes);
+        public string StoredSize => IsFolder ? "" : UiUtils.FormatSize(Lookup.OccupiedBytes);
 
-        [UsedImplicitly] public string ReservedSize => IsFolder ? "" : UiUtils.FormatSize(Lookup.ReservedBlockBytes);
+        public string ReservedSize => IsFolder ? "" : UiUtils.FormatSize(Lookup.ReservedBytes);
 
         [UsedImplicitly]
         public object? Image {
