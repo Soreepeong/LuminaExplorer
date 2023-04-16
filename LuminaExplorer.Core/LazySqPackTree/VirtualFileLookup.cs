@@ -49,9 +49,9 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
 
     public uint OccupiedSpaceUnits => Core.OccupiedSpaceUnits;
 
-    public long ReservedBytes => Core.ReservedBytes;
+    public ulong ReservedBytes => Core.ReservedBytes;
 
-    public long OccupiedBytes => Core.OccupiedBytes;
+    public ulong OccupiedBytes => Core.OccupiedBytes;
 
     public BaseVirtualFileStream DataStream => Core.DataStream;
 
@@ -103,8 +103,8 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
             });
         }
 
-        public long ReservedBytes => (long) ReservedSpaceUnits << 7;
-        public long OccupiedBytes => (long) OccupiedSpaceUnits << 7;
+        public ulong ReservedBytes => (ulong) ReservedSpaceUnits << 7;
+        public ulong OccupiedBytes => (ulong) OccupiedSpaceUnits << 7;
 
         public BaseVirtualFileStream DataStream => _dataStream.Value;
 

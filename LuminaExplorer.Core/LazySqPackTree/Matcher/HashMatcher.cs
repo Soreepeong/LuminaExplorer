@@ -6,6 +6,8 @@ public class HashMatcher : IMatcher {
     private uint[]? _values;
 
     public void ParseQuery(Span<uint> span, ref int i, uint[] validTerminators) {
+        _values = null;
+        
         var values = new List<uint>();
         for (; i < span.Length; i++) {
             if (validTerminators.Contains(span[i]))
@@ -34,4 +36,6 @@ public class HashMatcher : IMatcher {
     }
 
     public bool IsEmpty() => _values?.Any() is not true;
+
+    public bool Matches(uint hash) => _values?.Contains(hash) ?? throw new InvalidOperationException();
 }

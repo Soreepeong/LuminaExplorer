@@ -4,18 +4,25 @@ using LuminaExplorer.Core.LazySqPackTree.Matcher.TextMatchers;
 namespace LuminaExplorer.Core.LazySqPackTree.Matcher;
 
 public class TextMatcher : IMatcher {
-    private bool Negative;
-    private SearchEqualityType EqualityType = SearchEqualityType.Contains;
-    private ITextMatcher? Matcher;
+    private bool _negative;
+    private SearchEqualityType _equalityType = SearchEqualityType.Contains;
+    private ITextMatcher? _matcher;
 
     public void ParseQuery(Span<uint> span, ref int i, uint[] validTerminators) {
         var isParsingOptions = false;
         var optionsParsed = false;
         var noEscape = false;
-        SearchMatchType MatchType = SearchMatchType.Wildcard;
+        var matchType = SearchMatchType.Wildcard;
+
+        _negative = false;
+        _equalityType = SearchEqualityType.Contains;
+        _matcher = null;
 
         for (; i < span.Length; i++) {
             if (validTerminators.Contains(span[i]))
+                break;
+
+            if (!IsEmpty())
                 break;
 
             switch (span[i]) {
@@ -24,28 +31,28 @@ public class TextMatcher : IMatcher {
                     optionsParsed = true;
                     break;
                 case '!' or '^' or '~' when isParsingOptions:
-                    Negative ^= true;
+                    _negative ^= true;
                     break;
                 case 'c' when isParsingOptions:
-                    EqualityType = SearchEqualityType.Contains;
+                    _equalityType = SearchEqualityType.Contains;
                     break;
                 case 'e' or '=' when isParsingOptions:
-                    EqualityType = SearchEqualityType.Equals;
+                    _equalityType = SearchEqualityType.Equals;
                     break;
                 case 's' or '<' when isParsingOptions:
-                    EqualityType = SearchEqualityType.StartsWith;
+                    _equalityType = SearchEqualityType.StartsWith;
                     break;
                 case 'e' or '>' when isParsingOptions:
-                    EqualityType = SearchEqualityType.EndsWith;
+                    _equalityType = SearchEqualityType.EndsWith;
                     break;
                 case 'w' or '*' or '?' when isParsingOptions:
-                    MatchType = SearchMatchType.Wildcard;
+                    matchType = SearchMatchType.Wildcard;
                     break;
                 case 'x' or '/' or '%' when isParsingOptions:
-                    MatchType = SearchMatchType.Regex;
+                    matchType = SearchMatchType.Regex;
                     break;
                 case 'p' or 't' when isParsingOptions:
-                    MatchType = SearchMatchType.PlainText;
+                    matchType = SearchMatchType.PlainText;
                     break;
                 case 'r' or '@' when isParsingOptions:
                     noEscape = true;
@@ -59,7 +66,7 @@ public class TextMatcher : IMatcher {
 
                     optionsParsed = true;
 
-                    Matcher = MatchType switch {
+                    _matcher = matchType switch {
                         SearchMatchType.Wildcard => new WildcardMatcher(!noEscape),
                         SearchMatchType.Regex => new RegexMatcher(),
                         SearchMatchType.PlainText => new RawStringMatcher(!noEscape),
@@ -70,17 +77,17 @@ public class TextMatcher : IMatcher {
         }
     }
 
-    public bool IsEmpty() => Matcher?.IsEmpty() is not false;
+    public bool IsEmpty() => _matcher?.IsEmpty() is not false;
 
-    public bool Matches(string haystack, Stopwatch stopwatch, TimeSpan timeout) => Matcher is null
+    public bool Matches(string haystack, Stopwatch stopwatch, TimeSpan timeout) => _matcher is null
         ? throw new InvalidOperationException()
-        : EqualityType switch {
-            SearchEqualityType.Contains => Matcher.Contains(haystack, stopwatch, timeout),
-            SearchEqualityType.Equals => Matcher.Equals(haystack, stopwatch, timeout),
-            SearchEqualityType.StartsWith => Matcher.StartsWith(haystack, stopwatch, timeout),
-            SearchEqualityType.EndsWith => Matcher.EndsWith(haystack, stopwatch, timeout),
+        : _equalityType switch {
+            SearchEqualityType.Contains => _matcher.Contains(haystack, stopwatch, timeout),
+            SearchEqualityType.Equals => _matcher.Equals(haystack, stopwatch, timeout),
+            SearchEqualityType.StartsWith => _matcher.StartsWith(haystack, stopwatch, timeout),
+            SearchEqualityType.EndsWith => _matcher.EndsWith(haystack, stopwatch, timeout),
             _ => throw new InvalidOperationException(),
-        } ^ Negative;
+        } ^ _negative;
 
     public enum SearchEqualityType {
         Contains,

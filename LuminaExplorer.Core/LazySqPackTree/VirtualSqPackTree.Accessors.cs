@@ -1,3 +1,5 @@
+using Lumina.Misc;
+
 namespace LuminaExplorer.Core.LazySqPackTree;
 
 public sealed partial class VirtualSqPackTree {
@@ -23,6 +25,8 @@ public sealed partial class VirtualSqPackTree {
             _treeStructureLock.ExitReadLock();
         }
     }
+
+    public uint GetFullPathHash(VirtualFile file) => Crc32.Get(GetFullPath(file).Trim('/').ToLowerInvariant());
 
     private static VirtualFolder[] UnsafeGetTreeFromRoot(VirtualFolder folder) {
         var res = new List<VirtualFolder> {folder};

@@ -5,7 +5,6 @@ using System.Runtime.CompilerServices;
 using BrightIdeasSoftware;
 using JetBrains.Annotations;
 using Lumina.Data.Structs;
-using Lumina.Misc;
 using LuminaExplorer.App.Utils;
 using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.ObjectRepresentationWrapper;
@@ -859,7 +858,7 @@ public partial class Explorer : Form {
             _file = file;
             _name = new(() => file.Name);
             _lookup = new(() => tree.GetLookup(File));
-            _hash2 = new(() => Crc32.Get(tree.GetFullPath(File).Trim('/').ToLowerInvariant()));
+            _hash2 = new(() => tree.GetFullPathHash(File));
         }
 
         public VirtualObject(VirtualFolder folder) {

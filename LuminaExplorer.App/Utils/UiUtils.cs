@@ -18,6 +18,19 @@ public static partial class UiUtils {
         return $"{size:#,##} {SizeUnits[^1]}";
     }
 
+    public static string FormatSize(ulong size) {
+        if (size == 0)
+            return "0 B";
+
+        foreach (var sizeUnit in SizeUnits.SkipLast(1)) {
+            if (size < 1024)
+                return $"{size:#,##} {sizeUnit}";
+            size /= 1024;
+        }
+
+        return $"{size:#,##} {SizeUnits[^1]}";
+    }
+
     public static Icon? ExtractPeIcon(string filePath, int index, bool largeIcon = true) {
         if (filePath == null)
             throw new ArgumentNullException(nameof(filePath));
