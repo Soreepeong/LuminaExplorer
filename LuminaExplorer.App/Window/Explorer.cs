@@ -7,7 +7,6 @@ using BrightIdeasSoftware;
 using JetBrains.Annotations;
 using Lumina.Data.Structs;
 using Lumina.Misc;
-using LuminaExplorer.Controls;
 using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
 using LuminaExplorer.Core.Util;
@@ -17,7 +16,6 @@ namespace LuminaExplorer.App.Window;
 public partial class Explorer : Form {
     private readonly VirtualSqPackTree _vspTree;
 
-    private readonly FileViewControl _fileViewControl;
     private readonly ImageList _treeViewImageList;
     private readonly ImageList _listViewImageList;
 
@@ -32,11 +30,6 @@ public partial class Explorer : Form {
 
         txtPath.AutoCompleteMode = AutoCompleteMode.Suggest;
         txtPath.AutoCompleteSource = AutoCompleteSource.CustomSource;
-
-        splSub.Panel2.Controls.Add(_fileViewControl = new() {
-            Anchor = AnchorStyles.Left | AnchorStyles.Top,
-            Dock = DockStyle.Fill,
-        });
 
         _listViewImageList = new();
         _listViewImageList.ColorDepth = ColorDepth.Depth32Bit;
@@ -269,7 +262,7 @@ public partial class Explorer : Form {
             if (ln.ShouldExpandRecursively()) {
                 BeginInvoke(() => {
                     foreach (var n in e.Node.Nodes)
-                        ((TreeNode)n).Expand();
+                        ((TreeNode) n).Expand();
                 });
             }
         }
@@ -350,7 +343,7 @@ public partial class Explorer : Form {
     private void lvwFiles_KeyPress(object sender, KeyPressEventArgs e) {
         if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
             return;
-        if (e.KeyChar == (char)Keys.Enter) {
+        if (e.KeyChar == (char) Keys.Enter) {
             if (lvwFiles.SelectedIndices.Count == 0)
                 return;
             if (source[lvwFiles.SelectedIndices[0]].Folder is { } folder)
@@ -380,13 +373,13 @@ public partial class Explorer : Form {
             return;
 
         if (lvwFiles.SelectedIndices.Count is > 1 or 0) {
-            _fileViewControl.ClearFile();
+            fvcPreview.ClearFile();
             return;
         }
 
         if (source[lvwFiles.SelectedIndices[0]].File is { } file) {
             var isFocused = lvwFiles.Focused;
-            _fileViewControl.SetFile(_vspTree, file);
+            fvcPreview.SetFile(_vspTree, file);
             if (isFocused)
                 lvwFiles.Focus();
         }
@@ -396,7 +389,7 @@ public partial class Explorer : Form {
 
     private Task<FolderTreeNode> TryNavigateTo(params string[] pathComponents) =>
         TryNavigateToImpl(
-            (FolderTreeNode)tvwFiles.Nodes[0],
+            (FolderTreeNode) tvwFiles.Nodes[0],
             Path.Join(pathComponents).Replace('\\', '/').TrimStart('/').Split('/'),
             0);
 
@@ -439,7 +432,7 @@ public partial class Explorer : Form {
                 .ContinueWith(_ => {
                     if (!neverExpandRecursively && ln.ShouldExpandRecursively()) {
                         foreach (var n in ln.Nodes)
-                            ((TreeNode)n).Expand();
+                            ((TreeNode) n).Expand();
                     }
                 }, TaskScheduler.FromCurrentSynchronizationContext());
         }
@@ -451,13 +444,13 @@ public partial class Explorer : Form {
                     .Where(x => x.Value != ln.Folder.Parent)
                     .OrderBy(x => x.Key.ToLowerInvariant())
                     .Select(x =>
-                        (TreeNode)new FolderTreeNode(x.Value, x.Key,
+                        (TreeNode) new FolderTreeNode(x.Value, x.Key,
                             !_vspTree.WillFolderNeverHaveSubfolders(x.Value)))
                     .ToArray());
 
                 if (!neverExpandRecursively && ln.ShouldExpandRecursively()) {
                     foreach (var n in ln.Nodes)
-                        ((TreeNode)n).Expand();
+                        ((TreeNode) n).Expand();
                 }
             }, TaskScheduler.FromCurrentSynchronizationContext());
     }
@@ -502,8 +495,8 @@ public partial class Explorer : Form {
             _listViewImageList.Images.Add(Extract("shell32.dll", 4)!);
 
             lvwFiles.SelectedIndex = -1;
-            lvwFiles.SetObjects(folder.Folders.Select(x => (object)new VirtualObject(x.Value, x.Key))
-                .Concat(folder.Files.Select(x => (object)new VirtualObject(
+            lvwFiles.SetObjects(folder.Folders.Select(x => (object) new VirtualObject(x.Value, x.Key))
+                .Concat(folder.Files.Select(x => (object) new VirtualObject(
                     _vspTree,
                     x,
                     (vobj, vfs) => QueuedThumbnailer.Instance.LoadFrom(
@@ -512,7 +505,7 @@ public partial class Explorer : Form {
                         vfs
                     ).ContinueWith(img => {
                         if (!img.IsCompletedSuccessfully)
-                            return (object?)null;
+                            return (object?) null;
 
                         if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
                             return null;
@@ -626,7 +619,7 @@ public partial class Explorer : Form {
         }
 
         public override void UpdateObject(int index, object modelObject) =>
-            _objects[index] = (VirtualObject)modelObject;
+            _objects[index] = (VirtualObject) modelObject;
 
         public VirtualObject this[int n] => _objects[n];
 
@@ -665,14 +658,14 @@ public partial class Explorer : Form {
                         canBeTexture = true;
 
                     if (!canBeTexture)
-                        return Task.FromResult((object?)0);
+                        return Task.FromResult((object?) 0);
 
                     return imageKeyGetter(this, Lookup.DataStream);
                 } catch (Exception e) {
                     Debug.WriteLine(e);
                 }
 
-                return Task.FromResult((object?)0);
+                return Task.FromResult((object?) 0);
             });
             _hash1 = new($"{File.FileHash:X08}");
             _hash2 = new(() => $"{Crc32.Get(File!.FullPath.Trim('/').ToLowerInvariant()):X08}");
@@ -682,7 +675,7 @@ public partial class Explorer : Form {
             Folder = folder;
             Name = preferredName ?? folder.Name;
             _imageKeyFallback = 1;
-            _imageKeyTask = new(() => Task.FromResult((object?)1));
+            _imageKeyTask = new(() => Task.FromResult((object?) 1));
             _hash1 = new(() => $"{Crc32.Get(Folder!.FullPath.Trim('/').ToLowerInvariant()):X08}");
             _hash2 = new("");
         }

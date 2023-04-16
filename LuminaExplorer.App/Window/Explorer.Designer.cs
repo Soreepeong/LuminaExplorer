@@ -25,7 +25,7 @@ partial class Explorer {
     ///  the contents of this method with the code editor.
     /// </summary>
     private void InitializeComponent() {
-        System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(Explorer));
+        var resources = new System.ComponentModel.ComponentResourceManager(typeof(Explorer));
         menuStrip1 = new MenuStrip();
         fileToolStripMenuItem = new ToolStripMenuItem();
         quitToolStripMenuItem = new ToolStripMenuItem();
@@ -37,6 +37,8 @@ partial class Explorer {
         colFilesPackType = new BrightIdeasSoftware.OLVColumn();
         colFilesHash1 = new BrightIdeasSoftware.OLVColumn();
         colFilesHash2 = new BrightIdeasSoftware.OLVColumn();
+        splPreview = new SplitContainer();
+        picPreview = new PictureBox();
         tspNavigation = new ToolStrip();
         btnNavBack = new ToolStripButton();
         btnNavForward = new ToolStripButton();
@@ -48,27 +50,27 @@ partial class Explorer {
         toolStripContainer1 = new ToolStripContainer();
         tspActions = new ToolStrip();
         cboView = new ToolStripComboBox();
-        splPreview = new SplitContainer();
-        picPreview = new PictureBox();
+        fvcPreview = new Controls.FileViewControl();
         menuStrip1.SuspendLayout();
-        ((System.ComponentModel.ISupportInitialize)splMain).BeginInit();
+        ((System.ComponentModel.ISupportInitialize) splMain).BeginInit();
         splMain.Panel1.SuspendLayout();
         splMain.Panel2.SuspendLayout();
         splMain.SuspendLayout();
-        ((System.ComponentModel.ISupportInitialize)splSub).BeginInit();
+        ((System.ComponentModel.ISupportInitialize) splSub).BeginInit();
         splSub.Panel1.SuspendLayout();
         splSub.Panel2.SuspendLayout();
         splSub.SuspendLayout();
-        ((System.ComponentModel.ISupportInitialize)lvwFiles).BeginInit();
+        ((System.ComponentModel.ISupportInitialize) lvwFiles).BeginInit();
+        ((System.ComponentModel.ISupportInitialize) splPreview).BeginInit();
+        splPreview.Panel1.SuspendLayout();
+        splPreview.Panel2.SuspendLayout();
+        splPreview.SuspendLayout();
+        ((System.ComponentModel.ISupportInitialize) picPreview).BeginInit();
         tspNavigation.SuspendLayout();
         toolStripContainer1.ContentPanel.SuspendLayout();
         toolStripContainer1.TopToolStripPanel.SuspendLayout();
         toolStripContainer1.SuspendLayout();
         tspActions.SuspendLayout();
-        ((System.ComponentModel.ISupportInitialize)splPreview).BeginInit();
-        splPreview.Panel2.SuspendLayout();
-        splPreview.SuspendLayout();
-        ((System.ComponentModel.ISupportInitialize)picPreview).BeginInit();
         SuspendLayout();
         // 
         // menuStrip1
@@ -197,6 +199,33 @@ partial class Explorer {
         colFilesHash2.Text = "Hash 2";
         colFilesHash2.Width = 80;
         // 
+        // splPreview
+        // 
+        splPreview.Dock = DockStyle.Fill;
+        splPreview.Location = new Point(0, 0);
+        splPreview.Name = "splPreview";
+        splPreview.Orientation = Orientation.Horizontal;
+        // 
+        // splPreview.Panel1
+        // 
+        splPreview.Panel1.Controls.Add(fvcPreview);
+        // 
+        // splPreview.Panel2
+        // 
+        splPreview.Panel2.Controls.Add(picPreview);
+        splPreview.Size = new Size(320, 687);
+        splPreview.SplitterDistance = 486;
+        splPreview.TabIndex = 0;
+        // 
+        // picPreview
+        // 
+        picPreview.Dock = DockStyle.Fill;
+        picPreview.Location = new Point(0, 0);
+        picPreview.Name = "picPreview";
+        picPreview.Size = new Size(320, 197);
+        picPreview.TabIndex = 0;
+        picPreview.TabStop = false;
+        // 
         // tspNavigation
         // 
         tspNavigation.AutoSize = false;
@@ -213,7 +242,7 @@ partial class Explorer {
         // btnNavBack
         // 
         btnNavBack.DisplayStyle = ToolStripItemDisplayStyle.Image;
-        btnNavBack.Image = (Image)resources.GetObject("btnNavBack.Image");
+        btnNavBack.Image = (Image) resources.GetObject("btnNavBack.Image");
         btnNavBack.ImageTransparentColor = Color.Magenta;
         btnNavBack.Name = "btnNavBack";
         btnNavBack.Size = new Size(23, 22);
@@ -223,7 +252,7 @@ partial class Explorer {
         // btnNavForward
         // 
         btnNavForward.DisplayStyle = ToolStripItemDisplayStyle.Image;
-        btnNavForward.Image = (Image)resources.GetObject("btnNavForward.Image");
+        btnNavForward.Image = (Image) resources.GetObject("btnNavForward.Image");
         btnNavForward.ImageTransparentColor = Color.Magenta;
         btnNavForward.Name = "btnNavForward";
         btnNavForward.Size = new Size(23, 22);
@@ -243,7 +272,7 @@ partial class Explorer {
         // btnNavUp
         // 
         btnNavUp.DisplayStyle = ToolStripItemDisplayStyle.Image;
-        btnNavUp.Image = (Image)resources.GetObject("btnNavUp.Image");
+        btnNavUp.Image = (Image) resources.GetObject("btnNavUp.Image");
         btnNavUp.ImageTransparentColor = Color.Magenta;
         btnNavUp.Name = "btnNavUp";
         btnNavUp.Size = new Size(23, 22);
@@ -262,7 +291,7 @@ partial class Explorer {
         // 
         btnSearch.Alignment = ToolStripItemAlignment.Right;
         btnSearch.DisplayStyle = ToolStripItemDisplayStyle.Image;
-        btnSearch.Image = (Image)resources.GetObject("btnSearch.Image");
+        btnSearch.Image = (Image) resources.GetObject("btnSearch.Image");
         btnSearch.ImageTransparentColor = Color.Magenta;
         btnSearch.Name = "btnSearch";
         btnSearch.Size = new Size(23, 22);
@@ -316,28 +345,13 @@ partial class Explorer {
         cboView.Size = new Size(160, 25);
         cboView.SelectedIndexChanged += cboView_SelectedIndexChanged;
         // 
-        // splPreview
+        // fvcPreview
         // 
-        splPreview.Dock = DockStyle.Fill;
-        splPreview.Location = new Point(0, 0);
-        splPreview.Name = "splPreview";
-        splPreview.Orientation = Orientation.Horizontal;
-        // 
-        // splPreview.Panel2
-        // 
-        splPreview.Panel2.Controls.Add(picPreview);
-        splPreview.Size = new Size(320, 687);
-        splPreview.SplitterDistance = 486;
-        splPreview.TabIndex = 0;
-        // 
-        // picPreview
-        // 
-        picPreview.Dock = DockStyle.Fill;
-        picPreview.Location = new Point(0, 0);
-        picPreview.Name = "picPreview";
-        picPreview.Size = new Size(320, 197);
-        picPreview.TabIndex = 0;
-        picPreview.TabStop = false;
+        fvcPreview.Dock = DockStyle.Fill;
+        fvcPreview.Location = new Point(0, 0);
+        fvcPreview.Name = "fvcPreview";
+        fvcPreview.Size = new Size(320, 486);
+        fvcPreview.TabIndex = 0;
         // 
         // Explorer
         // 
@@ -354,13 +368,18 @@ partial class Explorer {
         menuStrip1.PerformLayout();
         splMain.Panel1.ResumeLayout(false);
         splMain.Panel2.ResumeLayout(false);
-        ((System.ComponentModel.ISupportInitialize)splMain).EndInit();
+        ((System.ComponentModel.ISupportInitialize) splMain).EndInit();
         splMain.ResumeLayout(false);
         splSub.Panel1.ResumeLayout(false);
         splSub.Panel2.ResumeLayout(false);
-        ((System.ComponentModel.ISupportInitialize)splSub).EndInit();
+        ((System.ComponentModel.ISupportInitialize) splSub).EndInit();
         splSub.ResumeLayout(false);
-        ((System.ComponentModel.ISupportInitialize)lvwFiles).EndInit();
+        ((System.ComponentModel.ISupportInitialize) lvwFiles).EndInit();
+        splPreview.Panel1.ResumeLayout(false);
+        splPreview.Panel2.ResumeLayout(false);
+        ((System.ComponentModel.ISupportInitialize) splPreview).EndInit();
+        splPreview.ResumeLayout(false);
+        ((System.ComponentModel.ISupportInitialize) picPreview).EndInit();
         tspNavigation.ResumeLayout(false);
         tspNavigation.PerformLayout();
         toolStripContainer1.ContentPanel.ResumeLayout(false);
@@ -370,10 +389,6 @@ partial class Explorer {
         toolStripContainer1.PerformLayout();
         tspActions.ResumeLayout(false);
         tspActions.PerformLayout();
-        splPreview.Panel2.ResumeLayout(false);
-        ((System.ComponentModel.ISupportInitialize)splPreview).EndInit();
-        splPreview.ResumeLayout(false);
-        ((System.ComponentModel.ISupportInitialize)picPreview).EndInit();
         ResumeLayout(false);
     }
 
@@ -403,4 +418,5 @@ partial class Explorer {
     private ToolStripComboBox cboView;
     private SplitContainer splPreview;
     private PictureBox picPreview;
+    private Controls.FileViewControl fvcPreview;
 }
