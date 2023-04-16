@@ -75,7 +75,8 @@ public partial class Explorer : Form {
     protected override void Dispose(bool disposing) {
         if (disposing) {
             _treeViewImageList.Dispose();
-            _listViewImageList.Dispose();
+            lock (_listViewImageList)
+                _listViewImageList.Dispose();
             _vspTree.FileChanged -= _vspTree_FileChanged;
             _vspTree.FolderChanged -= _vspTree_FolderChanged;
             lvwFiles.ClearObjects();
@@ -114,33 +115,63 @@ public partial class Explorer : Form {
     }
 
     private void ChangeListViewImageListDimensions(int dimension) {
-        if (!_listViewImageList.Images.Empty &&
-            _listViewImageList.ImageSize.Width == dimension &&
-            _listViewImageList.ImageSize.Height == dimension)
-            return;
+        lock (_listViewImageList) {
+            if (!_listViewImageList.Images.Empty &&
+                _listViewImageList.ImageSize.Width == dimension &&
+                _listViewImageList.ImageSize.Height == dimension)
+                return;
 
-        foreach (var k in _listViewImageLoadTasks.Keys)
-            k.Image = null;
-        
-        _listViewImageLoadTasks.Clear();
-        _listViewImageList.Images.Clear();
-        _listViewImageList.ImageSize = new(dimension, dimension);
-        
-        var largeIcon = dimension > 16;
-        for (var i = 0; i < 2; i++) {
-            switch (i) {
-                case ImageListIndexFile:
-                    using (var icon = UiUtils.ExtractPeIcon("shell32.dll", 0, largeIcon)!)
-                        _listViewImageList.Images.Add(icon);
-                    break;
-                case ImageListIndexFolder:
-                    using (var icon = UiUtils.ExtractPeIcon("shell32.dll", 4, largeIcon)!)
-                        _listViewImageList.Images.Add(icon);
-                    break;
-                default:
-                    throw new InvalidOperationException();
+            foreach (var k in _listViewImageLoadTasks.Keys)
+                k.Image = null;
+
+            _listViewImageLoadTasks.Clear();
+            _listViewImageList.Images.Clear();
+            _listViewImageList.ImageSize = new(dimension, dimension);
+
+            var largeIcon = dimension > 16;
+            for (var i = 0; i < 2; i++) {
+                switch (i) {
+                    case ImageListIndexFile:
+                        using (var icon = UiUtils.ExtractPeIcon("shell32.dll", 0, largeIcon)!)
+                            _listViewImageList.Images.Add(icon);
+                        break;
+                    case ImageListIndexFolder:
+                        using (var icon = UiUtils.ExtractPeIcon("shell32.dll", 4, largeIcon)!)
+                            _listViewImageList.Images.Add(icon);
+                        break;
+                    default:
+                        throw new InvalidOperationException();
+                }
             }
         }
+    }
+
+    private List<VirtualFolder> GetSelectedFolders() {
+        var folders = new List<VirtualFolder>();
+        if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
+            return folders;
+
+        for (var i = 0; i < lvwFiles.SelectedIndices.Count; i++) {
+            var obj = source[lvwFiles.SelectedIndices[i]];
+            if (obj.IsFolder)
+                folders.Add(obj.Folder);
+        }
+
+        return folders;
+    }
+
+    private List<VirtualFile> GetSelectedFiles() {
+        var folders = new List<VirtualFile>();
+        if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
+            return folders;
+
+        for (var i = 0; i < lvwFiles.SelectedIndices.Count; i++) {
+            var obj = source[lvwFiles.SelectedIndices[i]];
+            if (!obj.IsFolder)
+                folders.Add(obj.File);
+        }
+
+        return folders;
     }
 
     #region Event Handlers
@@ -185,25 +216,47 @@ public partial class Explorer : Form {
                 if (!canBeTexture)
                     return;
 
+                int w, h;
+                lock (_listViewImageList) {
+                    w = _listViewImageList.ImageSize.Width;
+                    h = _listViewImageList.ImageSize.Height;
+                }
+
                 using var bitmap = await QueuedThumbnailer.Instance.LoadFromTexStream(
-                    _listViewImageList.ImageSize.Width,
-                    _listViewImageList.ImageSize.Height,
+                    w,
+                    h,
                     lookup.CreateStream(),
                     _vspTree.PlatformId,
                     cancellationToken).ConfigureAwait(false);
-                
-                cancellationToken.ThrowIfCancellationRequested();
 
-                await Task.Factory.FromAsync(BeginInvoke(() => {
-                    if (_explorerFolder != file.Parent)
+                lock (_listViewImageList) {
+                    if (w != _listViewImageList.ImageSize.Width)
                         return;
-
+                    if (h != _listViewImageList.ImageSize.Height)
+                        return;
+                    if (file.Parent != _explorerFolder)
+                        return;
+                
                     _listViewImageList.Images.Add(bitmap);
                     virtualObject.Image = _listViewImageList.Images.Count - 1;
-                    lvwFiles.RefreshObject(virtualObject);
-                }), _ => {
-                    // bitmap.Dispose();
-                }).ConfigureAwait(false);
+                }
+
+                BeginInvoke(() => lvwFiles.RefreshObject(virtualObject));
+
+                // await Task.Factory.FromAsync(BeginInvoke(() => {
+                //     if (bitmap.Width != _listViewImageList.ImageSize.Width)
+                //         return;
+                //     if (bitmap.Height != _listViewImageList.ImageSize.Height)
+                //         return;
+                //     if (file.Parent != _explorerFolder)
+                //         return;
+                //
+                //     _listViewImageList.Images.Add(bitmap);
+                //     virtualObject.Image = _listViewImageList.Images.Count - 1;
+                //     lvwFiles.RefreshObject(virtualObject);
+                // }), _ => {
+                //     bitmap.Dispose();
+                // }).ConfigureAwait(false);
             } catch (Exception e) {
                 Debug.WriteLine(e);
             }
@@ -440,28 +493,18 @@ public partial class Explorer : Form {
             return;
         if (lvwFiles.SelectedIndices.Count == 0)
             return;
-        if (source[lvwFiles.SelectedIndices[0]].Folder is { } folder)
-            NavigateTo(folder, true);
+        
+        var vo = source[lvwFiles.SelectedIndices[0]];
+        if (vo.IsFolder)
+            NavigateTo(vo.Folder, true);
     }
 
     private void lvwFiles_ItemDrag(object sender, ItemDragEventArgs e) {
-        if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
-            return;
-
-        var folders = new List<VirtualFolder>();
-        var files = new List<VirtualFile>();
-        for (var i = 0; i < lvwFiles.SelectedIndices.Count; i++) {
-            var obj = source[lvwFiles.SelectedIndices[i]];
-            if (obj.Folder is { } folder)
-                folders.Add(folder);
-            if (obj.File is { } file)
-                files.Add(file);
-        }
-
         // TODO: export using IStorage, and maybe offer concrete file contents so that it's possible to drag into external hex editors?
         // https://devblogs.microsoft.com/oldnewthing/20080320-00/?p=23063
         // https://learn.microsoft.com/en-us/windows/win32/api/objidl/nn-objidl-istorage
 
+        var files = GetSelectedFiles();
         if (files.Any()) {
             var virtualFileDataObject = new VirtualFileDataObject();
 
@@ -661,8 +704,10 @@ public partial class Explorer : Form {
             if (_explorerFolder != folder)
                 return;
 
-            while (_listViewImageList.Images.Count > 2)
-                _listViewImageList.Images.RemoveAt(_listViewImageList.Images.Count - 1);
+            lock (_listViewImageList) {
+                while (_listViewImageList.Images.Count > 2)
+                    _listViewImageList.Images.RemoveAt(_listViewImageList.Images.Count - 1);
+            }
 
             lvwFiles.SelectedIndex = -1;
 
