@@ -14,26 +14,34 @@ public class RegexMatcher : ITextMatcher {
 
     // injectable but who cares
     
-    public bool Contains(string haystack, Stopwatch stopwatch, TimeSpan timeout)
-        => DoMatch("{0}", haystack, stopwatch, timeout);
+    public Task<bool> Contains(string haystack, Stopwatch stopwatch, TimeSpan timeout,
+        CancellationToken cancellationToken)
+        => DoMatch("{0}", haystack, stopwatch, timeout, cancellationToken);
 
-    public bool Equals(string haystack, Stopwatch stopwatch, TimeSpan timeout)
-        => DoMatch("^(?:{0})$", haystack, stopwatch, timeout);
+    public Task<bool> Equals(string haystack, Stopwatch stopwatch, TimeSpan timeout,
+        CancellationToken cancellationToken)
+        => DoMatch("^(?:{0})$", haystack, stopwatch, timeout, cancellationToken);
 
-    public bool StartsWith(string haystack, Stopwatch stopwatch, TimeSpan timeout)
-        => DoMatch("^(?:{0})", haystack, stopwatch, timeout);
+    public Task<bool> StartsWith(string haystack, Stopwatch stopwatch, TimeSpan timeout,
+        CancellationToken cancellationToken)
+        => DoMatch("^(?:{0})", haystack, stopwatch, timeout, cancellationToken);
 
-    public bool EndsWith(string haystack, Stopwatch stopwatch, TimeSpan timeout)
-        => DoMatch("(?:{0})$", haystack, stopwatch, timeout);
+    public Task<bool> EndsWith(string haystack, Stopwatch stopwatch, TimeSpan timeout,
+        CancellationToken cancellationToken)
+        => DoMatch("(?:{0})$", haystack, stopwatch, timeout, cancellationToken);
     
-    private bool DoMatch(string matchFormat, string haystack, Stopwatch stopwatch, TimeSpan timeout) {
+    private Task<bool> DoMatch(string matchFormat, string haystack, Stopwatch stopwatch, TimeSpan timeout, CancellationToken cancellationToken) {
         if (_regex is null)
             throw new InvalidOperationException();
         var remainingTime = timeout - stopwatch.Elapsed;
         if (remainingTime < TimeSpan.Zero)
             throw new TimeoutException();
-        return new Regex(string.Format(matchFormat, _regex),
+        if (haystack.Length > 65536)
+            return Task.Run(() => new Regex(string.Format(matchFormat, _regex),
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace |
+                RegexOptions.Singleline, remainingTime).IsMatch(haystack), cancellationToken);
+        return Task.FromResult(new Regex(string.Format(matchFormat, _regex),
             RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace |
-            RegexOptions.Singleline, remainingTime).IsMatch(haystack);
+            RegexOptions.Singleline, remainingTime).IsMatch(haystack));
     }
 }

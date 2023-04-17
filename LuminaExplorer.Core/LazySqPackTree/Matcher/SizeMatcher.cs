@@ -8,7 +8,8 @@ public class SizeMatcher {
         _maxValue = (ulong)maxValue;
     }
 
-    public bool Matches(ulong value) => _minValue <= value && value <= _maxValue;
+    public Task<bool> Matches(ulong value, CancellationToken cancellationToken) =>
+        Task.FromResult(_minValue <= value && value <= _maxValue);
 
     public override string ToString() {
         if (_minValue == 0)

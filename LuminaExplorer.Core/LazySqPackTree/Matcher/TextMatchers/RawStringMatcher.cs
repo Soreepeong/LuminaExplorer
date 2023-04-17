@@ -9,19 +9,15 @@ public class RawStringMatcher : ITextMatcher {
 
     public override string ToString() => $"\"{_rawString}\"";
 
-    public bool Contains(string haystack, Stopwatch stopwatch, TimeSpan timeout) => _rawString is not null
-        ? haystack.Contains(_rawString)
-        : throw new InvalidOperationException();
+    public Task<bool> Contains(string haystack, Stopwatch stopwatch, TimeSpan timeout,
+        CancellationToken cancellationToken) => Task.FromResult(haystack.Contains(_rawString));
 
-    public bool Equals(string haystack, Stopwatch stopwatch, TimeSpan timeout) => _rawString is not null
-        ? haystack == _rawString
-        : throw new InvalidOperationException();
+    public Task<bool> Equals(string haystack, Stopwatch stopwatch, TimeSpan timeout,
+        CancellationToken cancellationToken) => Task.FromResult(haystack == _rawString);
 
-    public bool StartsWith(string haystack, Stopwatch stopwatch, TimeSpan timeout) => _rawString is not null
-        ? haystack.StartsWith(_rawString)
-        : throw new InvalidOperationException();
+    public Task<bool> StartsWith(string haystack, Stopwatch stopwatch, TimeSpan timeout,
+        CancellationToken cancellationToken) => Task.FromResult(haystack.StartsWith(_rawString));
 
-    public bool EndsWith(string haystack, Stopwatch stopwatch, TimeSpan timeout) => _rawString is not null
-        ? haystack.EndsWith(_rawString)
-        : throw new InvalidOperationException();
+    public Task<bool> EndsWith(string haystack, Stopwatch stopwatch, TimeSpan timeout,
+        CancellationToken cancellationToken) => Task.FromResult(haystack.EndsWith(_rawString));
 }

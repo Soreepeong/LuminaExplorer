@@ -5,7 +5,7 @@ public class HashMatcher {
 
     public HashMatcher(uint value) => _value = value;
 
-    public bool Matches(uint hash) => _value == hash;
+    public Task<bool> Matches(uint hash, CancellationToken cancellationToken) => Task.FromResult(_value == hash);
 
     public override string ToString() => $"Hash({_value:X08})";
 }

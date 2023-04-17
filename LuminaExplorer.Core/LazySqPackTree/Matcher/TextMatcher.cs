@@ -5,7 +5,7 @@ namespace LuminaExplorer.Core.LazySqPackTree.Matcher;
 
 public class TextMatcher {
     private readonly SearchEqualityType _equalityType;
-    private readonly ITextMatcher? _matcher;
+    private readonly ITextMatcher _matcher;
     private readonly bool _negate;
 
     public TextMatcher(SearchEqualityType equalityType, SearchMatchType matchType, bool negate, string query) {
@@ -19,15 +19,14 @@ public class TextMatcher {
         _negate = negate;
     }
     
-    public bool Matches(string haystack, Stopwatch stopwatch, TimeSpan timeout) => _matcher is null
-        ? throw new InvalidOperationException()
-        : _equalityType switch {
-            SearchEqualityType.Contains => _matcher.Contains(haystack, stopwatch, timeout),
-            SearchEqualityType.Equals => _matcher.Equals(haystack, stopwatch, timeout),
-            SearchEqualityType.StartsWith => _matcher.StartsWith(haystack, stopwatch, timeout),
-            SearchEqualityType.EndsWith => _matcher.EndsWith(haystack, stopwatch, timeout),
+    public async Task<bool> Matches(string haystack, Stopwatch stopwatch, TimeSpan timeout,
+        CancellationToken cancellationToken) => _negate ^ _equalityType switch {
+            SearchEqualityType.Contains => await _matcher.Contains(haystack, stopwatch, timeout, cancellationToken),
+            SearchEqualityType.Equals => await _matcher.Equals(haystack, stopwatch, timeout, cancellationToken),
+            SearchEqualityType.StartsWith => await _matcher.StartsWith(haystack, stopwatch, timeout, cancellationToken),
+            SearchEqualityType.EndsWith => await _matcher.EndsWith(haystack, stopwatch, timeout, cancellationToken),
             _ => throw new InvalidOperationException(),
-        } ^ _negate;
+        };
 
     public override string ToString() => _equalityType switch {
         SearchEqualityType.Contains => $"Text({(_negate ? "Not " : "")}...{_matcher}...)",

@@ -62,11 +62,15 @@ public partial class Explorer : Form {
         _vspTree.FolderChanged += _vspTree_FolderChanged;
         NavigateTo(_vspTree.RootFolder, true);
 
+        // txtSearch.Text = @"(0361 OR 0489 OR hash:00000000) AND (type:model OR (type:texture AND data:(t<)\@<xI[800000 3431])) size:>1.5kb size:<0x300kb";
+        txtSearch.Text = @"m0361 OR m0489";
+        TryNavigateTo("/chara/monster/");
+
         // random folder with a lot of images
         // TryNavigateTo("/common/graphics/texture");
 
         // mustadio
-        TryNavigateTo("/chara/monster/m0361/obj/body/b0003/texture/");
+        // TryNavigateTo("/chara/monster/m0361/obj/body/b0003/texture/");
 
         // construct 14
         // TryNavigateTo("/chara/monster/m0489/animation/a0001/bt_common/loop_sp/");
@@ -451,10 +455,20 @@ public partial class Explorer : Form {
             }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
+    private CancellationTokenSource? _searchCancellationTokenSource;
+    private Task? _searchTask;
     private void txtSearch_KeyUp(object sender, KeyEventArgs e) {
-        var matcher = new QueryTokenizer(txtSearch.Text).Parse();
+        // Debug.Print(new QueryTokenizer(txtSearch.Text).Parse()?.ToString());
+        // return;
+        
+        _searchCancellationTokenSource?.Cancel();
 
-        Debug.Print(matcher.ToString());
+        _searchCancellationTokenSource = new();
+        _searchTask = _vspTree.Search(_explorerFolder, txtSearch.Text,
+            folder => { Debug.Print(_vspTree.GetFullPath(folder)); },
+            file => { Debug.Print(_vspTree.GetFullPath(file)); },
+            TimeSpan.FromSeconds(100),
+            _searchCancellationTokenSource.Token);
     }
 
     private void tvwFiles_AfterExpand(object sender, TreeViewEventArgs e) {

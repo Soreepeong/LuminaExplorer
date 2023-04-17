@@ -9,11 +9,13 @@ public class NegatingMatcher : IMatcher {
         _matcher = matcher;
     }
 
-    public bool Matches(VirtualSqPackTree tree, VirtualFolder folder, Stopwatch stopwatch, TimeSpan timeout) =>
-        _matcher.Matches(tree, folder, stopwatch, timeout);
+    public Task<bool> Matches(VirtualSqPackTree tree, VirtualFolder folder, Stopwatch stopwatch, TimeSpan timeout,
+        CancellationToken cancellationToken) =>
+        _matcher.Matches(tree, folder, stopwatch, timeout, cancellationToken);
 
-    public bool Matches(VirtualSqPackTree tree, VirtualFile file, ref VirtualFileLookup? lookup, Lazy<string> data,
-        Stopwatch stopwatch, TimeSpan timeout) => _matcher.Matches(tree, file, ref lookup, data, stopwatch, timeout);
+    public Task<bool> Matches(VirtualSqPackTree tree, VirtualFile file, Lazy<VirtualFileLookup> lookup,
+        Task<Task<string>> data, Stopwatch stopwatch, TimeSpan timeout, CancellationToken cancellationToken) =>
+        _matcher.Matches(tree, file, lookup, data, stopwatch, timeout, cancellationToken);
 
     public IMatcher UnwrapIfPossible() => _matcher is NegatingMatcher nm ? nm._matcher : this;
 }

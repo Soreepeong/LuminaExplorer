@@ -11,31 +11,29 @@ public class MultipleConditionsMatcher : IMatcher {
         _operator = @operator;
     }
 
-    public bool Matches(VirtualSqPackTree tree, VirtualFolder folder, Stopwatch stopwatch, TimeSpan timeout) =>
-        _operator switch {
-            OperatorType.Or => _matchers.Any(x => x.Matches(tree, folder, stopwatch, timeout)),
-            OperatorType.Xor => _matchers.Any(x => x.Matches(tree, folder, stopwatch, timeout)),
-            OperatorType.And or OperatorType.Default =>
-                _matchers.Aggregate(false, (c, x) => c ^ x.Matches(tree, folder, stopwatch, timeout)),
+    public async Task<bool> Matches(VirtualSqPackTree tree, VirtualFolder folder, Stopwatch stopwatch, TimeSpan timeout,
+        CancellationToken cancellationToken) {
+        var results = await Task.WhenAll(_matchers.Select(x =>
+            x.Matches(tree, folder, stopwatch, timeout, cancellationToken)));
+        return _operator switch {
+            OperatorType.Or => results.Any(x => x),
+            OperatorType.Xor => results.Aggregate(false, (c, x) => c ^ x),
+            OperatorType.And or OperatorType.Default => results.All(x => x),
             _ => throw new InvalidOperationException(),
         };
+    }
 
-    public bool Matches(VirtualSqPackTree tree, VirtualFile file, ref VirtualFileLookup? lookup, Lazy<string> data, Stopwatch stopwatch,
-        TimeSpan timeout) {
-        var lookupInner = lookup;
-        try {
-            return _operator switch {
-                OperatorType.Or => _matchers.Any(x => x.Matches(tree, file, ref lookupInner, data, stopwatch, timeout)),
-                OperatorType.Xor => _matchers.Any(x =>
-                    x.Matches(tree, file, ref lookupInner, data, stopwatch, timeout)),
-                OperatorType.And or OperatorType.Default =>
-                    _matchers.Aggregate(false, (c, x) =>
-                        c ^ x.Matches(tree, file, ref lookupInner, data, stopwatch, timeout)),
-                _ => throw new InvalidOperationException(),
-            };
-        } finally {
-            lookup = lookupInner;
-        }
+    public async Task<bool> Matches(VirtualSqPackTree tree, VirtualFile file, Lazy<VirtualFileLookup> lookup,
+        Task<Task<string>> data, Stopwatch stopwatch,
+        TimeSpan timeout, CancellationToken cancellationToken) {
+        var results = await Task.WhenAll(_matchers.Select(x =>
+            x.Matches(tree, file, lookup, data, stopwatch, timeout, cancellationToken)));
+        return _operator switch {
+            OperatorType.Or => results.Any(x => x),
+            OperatorType.Xor => results.Aggregate(false, (c, x) => c ^ x),
+            OperatorType.And or OperatorType.Default => results.All(x => x),
+            _ => throw new InvalidOperationException(),
+        };
     }
 
     public IMatcher UnwrapIfPossible() => _matchers.Length == 1 ? _matchers[0] : this;
