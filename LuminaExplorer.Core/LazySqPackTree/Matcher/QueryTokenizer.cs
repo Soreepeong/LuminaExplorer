@@ -124,21 +124,21 @@ public class QueryTokenizer {
         }
 
         if (_NextExactLiteral(i, out next, "name", 1, true, true, ':', '=', ':')) {
-            if (_NextTextMatcher(next, out next, out var textMatcher, false, extraTerminatorsIfUnescaped)) {
+            if (_NextTextMatcher(next, out next, out var textMatcher, extraTerminatorsIfUnescaped)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.MatchWhat.Name, textMatcher);
                 return true;
             }
         }
 
         if (_NextExactLiteral(i, out next, "path", 1, true, true, ':', '=', ':')) {
-            if (_NextTextMatcher(next, out next, out var textMatcher, false, extraTerminatorsIfUnescaped)) {
+            if (_NextTextMatcher(next, out next, out var textMatcher, extraTerminatorsIfUnescaped)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.MatchWhat.Path, textMatcher);
                 return true;
             }
         }
 
         if (_NextExactLiteral(i, out next, "data", 1, true, true, ':', '=', ':')) {
-            if (_NextTextMatcher(next, out next, out var textMatcher, false, extraTerminatorsIfUnescaped)) {
+            if (_NextTextMatcher(next, out next, out var textMatcher, extraTerminatorsIfUnescaped)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.MatchWhat.Data, textMatcher);
                 return true;
             }
@@ -213,8 +213,10 @@ public class QueryTokenizer {
             }
         }
 
-        if (_NextTextMatcher(i, out next, out var defaultTextMatcher, true, extraTerminatorsIfUnescaped)) {
-            o = new SingleConditionMatcher(SingleConditionMatcher.MatchWhat.Name, defaultTextMatcher);
+        if (_NextTextFallbackMatcher(i, out next, out var defaultTextMatcher, out var isPath, extraTerminatorsIfUnescaped)) {
+            o = new SingleConditionMatcher(
+                isPath ? SingleConditionMatcher.MatchWhat.Path : SingleConditionMatcher.MatchWhat.Name,
+                defaultTextMatcher);
             return true;
         }
 
@@ -288,8 +290,8 @@ public class QueryTokenizer {
                 i = next;
                 if (unitMultiplier > 1) {
                     // deal with "kb" rather than "k"
-                    if (_NextValidCodepoint(i, out next, out c) && c is 'b' or 'B')
-                        i = next;
+                    if (!_NextValidCodepoint(i, out next, out c) && c is 'b' or 'B')
+                        next = i;
                 }
             }
         }
@@ -297,7 +299,7 @@ public class QueryTokenizer {
         var n = BitConverter.ToDouble(bytes);
         o = rangeSpecifier switch {
             SizeMatcher.ComparisonType.Invalid =>
-                new(n * unitMultiplier - unitMultiplier / 2, n * unitMultiplier + unitMultiplier / 2),
+                new(n * unitMultiplier - unitMultiplier / 2.0, n * unitMultiplier + unitMultiplier / 2.0),
             SizeMatcher.ComparisonType.Equals => new(n * unitMultiplier, n * unitMultiplier),
             SizeMatcher.ComparisonType.GreaterThanOrEquals => new(n * unitMultiplier, ulong.MaxValue),
             SizeMatcher.ComparisonType.GreaterThan => new(n * unitMultiplier + 1, ulong.MaxValue),
@@ -318,13 +320,13 @@ public class QueryTokenizer {
         return true;
     }
 
-    private bool _NextTextMatcher(int i, out int next, out TextMatcher o, bool skipOptions,
+    private bool _NextTextMatcher(int i, out int next, out TextMatcher o,
         params uint[] extraTerminatorsIfUnescaped) {
         o = null!;
 
         // options terminator
         var optionsEscapeTerminator = 0u;
-        if (!skipOptions && _NextValidCodepoint(i, out next, out var c)) {
+        if (_NextValidCodepoint(i, out next, out var c)) {
             var newOptionTerminator = c switch {
                 '[' => ']',
                 '(' => ')',
@@ -341,7 +343,7 @@ public class QueryTokenizer {
         var matchType = TextMatcher.SearchMatchType.Wildcard;
         var noEscape = false;
         var negate = false;
-        for (; !skipOptions && _NextValidCodepoint(i, out next, out c); i = next) {
+        for (; _NextValidCodepoint(i, out next, out c); i = next) {
             if (optionsEscapeTerminator == 0u && extraTerminatorsIfUnescaped.Contains(c))
                 return false;
 
@@ -397,6 +399,25 @@ public class QueryTokenizer {
             return false;
 
         o = new(equalityType, matchType, negate, str);
+        return true;
+    }
+
+    private bool _NextTextFallbackMatcher(int i, out int next, out TextMatcher o, out bool containsPathSeparator, 
+        params uint[] extraTerminatorsIfUnescaped) {
+        containsPathSeparator = false;
+        o = null!;
+
+        if (!_NextLiteralString(i, out next, out var str, true, extraTerminatorsIfUnescaped))
+            return false;
+
+        containsPathSeparator = str.Contains('/');
+
+        if (str.Contains('*'))
+            o = new(TextMatcher.SearchEqualityType.Equals, TextMatcher.SearchMatchType.Wildcard, false, str);
+        else if (str.Contains('?'))
+            o = new(TextMatcher.SearchEqualityType.Equals, TextMatcher.SearchMatchType.Wildcard, false, str);
+        else
+            o = new(TextMatcher.SearchEqualityType.Contains, TextMatcher.SearchMatchType.PlainText, false, str);
         return true;
     }
 

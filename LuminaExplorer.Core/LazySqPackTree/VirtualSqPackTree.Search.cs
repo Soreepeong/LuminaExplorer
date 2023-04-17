@@ -5,13 +5,24 @@ using Microsoft.Extensions.ObjectPool;
 namespace LuminaExplorer.Core.LazySqPackTree;
 
 public sealed partial class VirtualSqPackTree {
+    public class SearchProgress {
+        public readonly Stopwatch Stopwatch = new();
+        public long Total { get; internal set; }
+        public long Progress { get; internal set; }
+        public object LastObject { get; internal set; }
+        public bool Completed { get; internal set; }
+    }
+    
     public Task Search(
         VirtualFolder rootFolder,
         string query,
+        Action<SearchProgress> progressCallback,
         Action<VirtualFolder> folderFoundCallback,
         Action<VirtualFile> fileFoundCallback,
         TimeSpan timeoutPerEntry = default,
         CancellationToken cancellationToken = default) => Task.Factory.StartNew(async () => {
+        cancellationToken.ThrowIfCancellationRequested();
+        
         if (new QueryTokenizer(query).Parse() is not { } matcher)
             return;
 
@@ -24,66 +35,107 @@ public sealed partial class VirtualSqPackTree {
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var queue = new List<object> {rootFolder};
         var activeTasks = new HashSet<Task>();
+        var queue = System.Threading.Channels.Channel.CreateUnbounded<object?>();
 
-        while (queue.Any() || activeTasks.Any()) {
+        SearchProgress progress = new(){Total = 1};
+
+        async Task Traverse(VirtualFolder folder) {
             cancellationToken.ThrowIfCancellationRequested();
 
-            while (activeTasks.Count >= Environment.ProcessorCount)
-                activeTasks.Remove(await Task.WhenAny(activeTasks));
+            await AsFoldersResolved(folder);
+            var folders = GetFolders(folder);
+            progress.Total += folders.Count + folder.Files.Count;
 
-            object folderOrFile;
-            lock (queue) {
-                folderOrFile = queue[^1];
-                queue.RemoveAt(queue.Count - 1);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await Task.WhenAll(
+                folders.Select(Traverse)
+                    .Append(queue.Writer.WriteAsync(folders, cancellationToken).AsTask())
+                    .Append(AsFilesResolved(folder).ContinueWith(
+                        async _ => await queue.Writer.WriteAsync(
+                            folder.Files,
+                            cancellationToken),
+                        cancellationToken).Unwrap()));
+        }
+
+        long nextProgressReportedMilliseconds = 0;
+        progress.Stopwatch.Start();
+        
+        _ = Task.Run(async () => {
+                await queue.Writer.WriteAsync(new object[]{rootFolder}, cancellationToken);
+                await Traverse(rootFolder);
+                await queue.Writer.WriteAsync(null, cancellationToken);
+            }, cancellationToken);
+
+        var itemList = new List<object>();
+        while (true) {
+            while (activeTasks.Count >= Environment.ProcessorCount) {
+                await Task.WhenAny(activeTasks);
+                activeTasks.RemoveWhere(x => x.IsCompleted);
             }
 
-            if (folderOrFile is VirtualFolder folder) {
-                cancellationToken.ThrowIfCancellationRequested();
+            var @object = await queue.Reader.ReadAsync(cancellationToken);
+            if (@object is null)
+                break;
+
+            progress.Progress++;
+            progress.LastObject = @object;
+            if (progress.Stopwatch.ElapsedMilliseconds >= nextProgressReportedMilliseconds) {
+                progressCallback(progress);
+                nextProgressReportedMilliseconds = progress.Stopwatch.ElapsedMilliseconds + 200;
+            }
+
+            itemList.Clear();
+            switch (@object) {
+                case List<VirtualFolder> folders:
+                    itemList.AddRange(folders);
+                    break;
+                case List<VirtualFile> files:
+                    itemList.AddRange(files);
+                    break;
+            }
+
+            foreach (var item in itemList) {
+                while (activeTasks.Count >= Environment.ProcessorCount) {
+                    await Task.WhenAny(activeTasks);
+                    activeTasks.RemoveWhere(x => x.IsCompleted);
+                }
 
                 var task = Task.Run(async () => {
-                        await AsFilesResolved(folder);
-                        var folders = GetFolders(folder);
-                        lock (queue)
-                            queue.AddRange(folders);
-                        queue.AddRange(folder.Files);
-
                         var stopwatch = stopwatches.Get();
                         try {
-                            return await matcher.Matches(this, folder, stopwatch, timeoutPerEntry, cancellationToken);
+                            switch (item) {
+                                case VirtualFolder folder:
+                                    if (await matcher.Matches(this, folder, stopwatch, timeoutPerEntry,
+                                            cancellationToken))
+                                        return () => folderFoundCallback(folder);
+                                    else
+                                        return null;
+                                case VirtualFile file:
+                                    var lookup = new Lazy<VirtualFileLookup>(() => GetLookup(file));
+                                    var data = new Task<Task<string>>(
+                                        async () => new(
+                                            (await lookup.Value.ReadAll(cancellationToken))
+                                            .Select(x => (char) x)
+                                            .ToArray()),
+                                        cancellationToken);
+                                    if (await matcher.Matches(this, file, lookup, data, stopwatch, timeoutPerEntry,
+                                            cancellationToken))
+                                        return () => fileFoundCallback(file);
+                                    else
+                                        return null;
+                                default:
+                                    return (Action?) null;
+                            }
                         } finally {
                             stopwatches.Return(stopwatch);
                         }
                     },
                     cancellationToken);
                 _ = task.ContinueWith(x => {
-                    if (x is {IsCompletedSuccessfully: true, Result: true})
-                        folderFoundCallback(folder);
-                }, cancellationToken);
-                activeTasks.Add(task);
-
-            } else if (folderOrFile is VirtualFile file) {
-                var task = Task.Run(async () => {
-                        var lookup = new Lazy<VirtualFileLookup>(() => GetLookup(file));
-                        var data = new Task<Task<string>>(
-                            async () => new(
-                                (await lookup.Value.ReadAll(cancellationToken))
-                                .Select(x => (char) x)
-                                .ToArray()),
-                            cancellationToken);
-
-                        var stopwatch = stopwatches.Get();
-                        try {
-                            return await matcher.Matches(this, file, lookup, data, stopwatch, timeoutPerEntry, cancellationToken);
-                        } finally {
-                            stopwatches.Return(stopwatch);
-                        }
-                    },
-                    cancellationToken);
-                _ = task.ContinueWith(x => {
-                    if (x is {IsCompletedSuccessfully: true, Result: true})
-                        fileFoundCallback(file);
+                    if (x is {IsCompletedSuccessfully: true, Result: { } foundAction})
+                        foundAction();
                 }, cancellationToken);
                 activeTasks.Add(task);
             }
@@ -91,7 +143,10 @@ public sealed partial class VirtualSqPackTree {
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        while (activeTasks.Any())
-            activeTasks.Remove(await Task.WhenAny(activeTasks));
+        await Task.WhenAll(activeTasks);
+
+        progress.Completed = true;
+        progressCallback(progress);
+        
     }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 }

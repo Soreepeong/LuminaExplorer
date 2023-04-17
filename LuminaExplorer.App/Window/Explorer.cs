@@ -7,7 +7,6 @@ using JetBrains.Annotations;
 using Lumina.Data.Structs;
 using LuminaExplorer.App.Utils;
 using LuminaExplorer.Core.LazySqPackTree;
-using LuminaExplorer.Core.LazySqPackTree.Matcher;
 using LuminaExplorer.Core.ObjectRepresentationWrapper;
 using LuminaExplorer.Core.Util;
 
@@ -25,7 +24,8 @@ public partial class Explorer : Form {
 
     private readonly List<VirtualFolder> _navigationHistory = new();
     private int _navigationHistoryPosition = -1;
-    private VirtualFolder _explorerFolder = null!;
+    private VirtualFolder? _explorerFolder;
+    private VirtualFolder? _lastExplorerFolder;
 
     private CancellationTokenSource? _previewCancellationTokenSource;
 
@@ -62,9 +62,9 @@ public partial class Explorer : Form {
         _vspTree.FolderChanged += _vspTree_FolderChanged;
         NavigateTo(_vspTree.RootFolder, true);
 
-        // txtSearch.Text = @"(0361 OR 0489 OR hash:00000000) AND (type:model OR (type:texture AND data:(t<)\@<xI[800000 3431])) size:>1.5kb size:<0x300kb";
-        txtSearch.Text = @"m0361 OR m0489";
-        TryNavigateTo("/chara/monster/");
+        txtSearch.TextBox!.PlaceholderText = @"Search...";
+        
+        // TryNavigateTo("/chara/monster/");
 
         // random folder with a lot of images
         // TryNavigateTo("/common/graphics/texture");
@@ -215,7 +215,7 @@ public partial class Explorer : Form {
 
             try {
                 // may be an .atex file
-                if (!canBeTexture && !file.NameResolved && lookup is { Type: FileType.Standard, Size: > 256 })
+                if (!canBeTexture && !file.NameResolved && lookup is {Type: FileType.Standard, Size: > 256})
                     canBeTexture = true;
 
                 if (!canBeTexture)
@@ -240,7 +240,7 @@ public partial class Explorer : Form {
                         return;
                     if (h != _listViewImageList.ImageSize.Height)
                         return;
-                    if (file.Parent != _explorerFolder)
+                    if (file.Parent != _explorerFolder && _explorerFolder != null)
                         return;
 
                     _listViewImageList.Images.Add(bitmap);
@@ -270,19 +270,21 @@ public partial class Explorer : Form {
     }
 
     private void _vspTree_FileChanged(VirtualFile changedFile) {
-        while (_explorerFolder == changedFile.Parent) {
+        while (_explorerFolder == changedFile.Parent || _explorerFolder is null) {
             if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
                 break;
 
-            if (source.FirstOrDefault(x => x.File == changedFile) is { } modelObject)
+            if (source.FirstOrDefault(x => x.File == changedFile) is { } modelObject) {
                 modelObject.Name = changedFile.Name;
+                modelObject.FullPath = _vspTree.GetFullPath(changedFile);
+            }
 
             break;
         }
     }
 
     private void _vspTree_FolderChanged(VirtualFolder changedFolder, VirtualFolder[]? previousPathFromRoot) {
-        btnNavUp.Enabled = _explorerFolder.Parent is not null;
+        btnNavUp.Enabled = _explorerFolder?.Parent is not null;
         while (previousPathFromRoot is not null) {
             if (tvwFiles.Nodes[0] is not FolderTreeNode node)
                 break;
@@ -296,7 +298,7 @@ public partial class Explorer : Form {
                 break;
 
             node.Remove();
-            // TODO: node.Parent.Nodes.Remo
+            // TODO: does above work, or node.Parent.Nodes.Remove must be used?
 
             if (tvwFiles.Nodes[0] is not FolderTreeNode newParentNode)
                 break;
@@ -314,12 +316,14 @@ public partial class Explorer : Form {
             break;
         }
 
-        while (_explorerFolder == changedFolder) {
+        while (_explorerFolder == changedFolder || _explorerFolder is null) {
             if (lvwFiles.VirtualListDataSource is not ExplorerListViewDataSource source)
                 break;
 
-            if (source.FirstOrDefault(x => x.Folder == changedFolder) is { } modelObject)
+            if (source.FirstOrDefault(x => x.Folder == changedFolder) is { } modelObject) {
                 modelObject.Name = changedFolder.Name;
+                modelObject.FullPath = _vspTree.GetFullPath(changedFolder);
+            }
 
             break;
         }
@@ -364,6 +368,8 @@ public partial class Explorer : Form {
             NavigateTo(_navigationHistory[_navigationHistoryPosition = historyIndex], false);
     }
 
+    private void btnSearch_Click(object sender, EventArgs e) => Search(txtSearch.Text);
+
     private void cboView_SelectedIndexChanged(object sender, EventArgs e) {
         lvwFiles.View = cboView.SelectedIndex switch {
             0 or 1 or 2 => View.LargeIcon,
@@ -391,33 +397,33 @@ public partial class Explorer : Form {
     private void txtPath_KeyDown(object sender, KeyEventArgs e) {
         switch (e.KeyCode) {
             case Keys.Enter: {
-                    var prevText = txtPath.Text;
-                    TryNavigateTo(txtPath.Text)
-                        .ContinueWith(_ => {
-                            var fullPath = _vspTree.GetFullPath(_explorerFolder);
-                            var exactMatchFound = 0 == string.Compare(
-                                fullPath.TrimEnd('/'),
-                                prevText.Trim().TrimEnd('/'),
-                                StringComparison.InvariantCultureIgnoreCase);
-                            txtPath.Text = prevText;
+                var prevText = txtPath.Text;
+                TryNavigateTo(txtPath.Text)
+                    .ContinueWith(vfr => {
+                        var fullPath = _vspTree.GetFullPath(vfr.Result.Folder);
+                        var exactMatchFound = 0 == string.Compare(
+                            fullPath.TrimEnd('/'),
+                            prevText.Trim().TrimEnd('/'),
+                            StringComparison.InvariantCultureIgnoreCase);
+                        txtPath.Text = prevText;
 
-                            if (exactMatchFound) {
-                                lvwFiles.Focus();
-                                return;
-                            }
+                        if (exactMatchFound) {
+                            lvwFiles.Focus();
+                            return;
+                        }
 
-                            var currentFullPathLength = fullPath.Length;
-                            var sharedLength = 0;
-                            while (sharedLength < currentFullPathLength && sharedLength < prevText.Length)
-                                sharedLength++;
-                            txtPath.ComboBox!.SelectionStart = sharedLength;
-                            txtPath.ComboBox!.SelectionLength = prevText.Length - sharedLength;
-                        }, TaskScheduler.FromCurrentSynchronizationContext());
-                    break;
-                }
+                        var currentFullPathLength = fullPath.Length;
+                        var sharedLength = 0;
+                        while (sharedLength < currentFullPathLength && sharedLength < prevText.Length)
+                            sharedLength++;
+                        txtPath.ComboBox!.SelectionStart = sharedLength;
+                        txtPath.ComboBox!.SelectionLength = prevText.Length - sharedLength;
+                    }, TaskScheduler.FromCurrentSynchronizationContext());
+                break;
+            }
 
             case Keys.Escape:
-                txtPath.Text = _vspTree.GetFullPath(_explorerFolder);
+                txtPath.Text = _vspTree.GetFullPath(_explorerFolder ?? _lastExplorerFolder ?? _vspTree.RootFolder);
                 lvwFiles.Focus();
                 break;
         }
@@ -455,20 +461,9 @@ public partial class Explorer : Form {
             }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
-    private CancellationTokenSource? _searchCancellationTokenSource;
-    private Task? _searchTask;
     private void txtSearch_KeyUp(object sender, KeyEventArgs e) {
-        // Debug.Print(new QueryTokenizer(txtSearch.Text).Parse()?.ToString());
-        // return;
-        
-        _searchCancellationTokenSource?.Cancel();
-
-        _searchCancellationTokenSource = new();
-        _searchTask = _vspTree.Search(_explorerFolder, txtSearch.Text,
-            folder => { Debug.Print(_vspTree.GetFullPath(folder)); },
-            file => { Debug.Print(_vspTree.GetFullPath(file)); },
-            TimeSpan.FromSeconds(100),
-            _searchCancellationTokenSource.Token);
+        if (e.KeyCode == Keys.Enter)
+            Search(txtSearch.Text);
     }
 
     private void tvwFiles_AfterExpand(object sender, TreeViewEventArgs e) {
@@ -549,16 +544,16 @@ public partial class Explorer : Form {
 
     private void lvwFiles_KeyUp(object sender, KeyEventArgs e) {
         switch (e.KeyCode) {
-            case Keys.Left when e is { Control: false, Alt: true, Shift: false }:
-            case Keys.Back when e is { Control: false, Alt: false, Shift: false }:
+            case Keys.Left when e is {Control: false, Alt: true, Shift: false}:
+            case Keys.Back when e is {Control: false, Alt: false, Shift: false}:
             case Keys.BrowserBack:
                 NavigateBack();
                 break;
-            case Keys.Right when e is { Control: false, Alt: true, Shift: false }:
+            case Keys.Right when e is {Control: false, Alt: true, Shift: false}:
             case Keys.BrowserForward:
                 NavigateForward();
                 break;
-            case Keys.Up when e is { Control: false, Alt: true, Shift: false }:
+            case Keys.Up when e is {Control: false, Alt: true, Shift: false}:
                 NavigateUp();
                 break;
         }
@@ -592,6 +587,83 @@ public partial class Explorer : Form {
 
     #endregion
 
+    private CancellationTokenSource? _searchCancellationTokenSource;
+    private Task? _searchTask;
+
+    private void Search(string query) {
+        _searchCancellationTokenSource?.Cancel();
+
+        if (string.IsNullOrWhiteSpace(query)) {
+            NavigateTo(_lastExplorerFolder ?? _vspTree.RootFolder, false);
+            return;
+        }
+
+        void StartNewTask() {
+            var cancelSource = _searchCancellationTokenSource = new();
+            _explorerFolder = null;
+            lvwFiles.ClearObjects();
+
+            lock (_listViewImageList) {
+                while (_listViewImageList.Images.Count > 2)
+                    _listViewImageList.Images.RemoveAt(_listViewImageList.Images.Count - 1);
+            }
+
+            colFilesFullPath.IsVisible = true;
+
+            var pendingObjects = new List<VirtualObject>();
+            var searchBaseFolder = _lastExplorerFolder ?? _vspTree.RootFolder; 
+            _searchTask = _vspTree.Search(
+                    searchBaseFolder,
+                    txtSearch.Text,
+                    progress => {
+                        if (cancelSource.IsCancellationRequested)
+                            return;
+
+                        Debug.Print("{0:0.00}% {1:##.###} / {2:##.###}: {3}",
+                            100.0 * progress.Progress / progress.Total,
+                            progress.Progress, progress.Total, progress.LastObject);
+
+                        List<VirtualObject> objects;
+                        lock (pendingObjects) {
+                            if (!pendingObjects.Any())
+                                return;
+                            
+                            objects = new(pendingObjects);
+                            pendingObjects.Clear();
+                        }
+
+                        BeginInvoke(() => lvwFiles.AddObjects(objects));
+                    },
+                    folder => {
+                        if (cancelSource.IsCancellationRequested)
+                            return;
+
+                        var vo = new VirtualObject(_vspTree, folder);
+                        vo.ImageRequested += VirtualObject_ImageRequested;
+                        lock (pendingObjects)
+                            pendingObjects.Add(vo);
+                    },
+                    file => {
+                        if (cancelSource.IsCancellationRequested)
+                            return;
+
+                        var vo = new VirtualObject(_vspTree, file);
+                        vo.ImageRequested += VirtualObject_ImageRequested;
+                        lock (pendingObjects)
+                            pendingObjects.Add(vo);
+                    },
+                    TimeSpan.FromSeconds(1000),
+                    _searchCancellationTokenSource.Token)
+                .ContinueWith(r => { Debug.Print(r.IsCompletedSuccessfully ? "Done" : r.Exception?.ToString()); },
+                    cancelSource.Token);
+        }
+
+        if (_searchTask is not null)
+            _searchTask.ContinueWith(_ => StartNewTask(), TaskScheduler.FromCurrentSynchronizationContext());
+        else
+            StartNewTask();
+    }
+
     #region Navigation
 
     private bool NavigateBack() {
@@ -609,7 +681,12 @@ public partial class Explorer : Form {
     }
 
     private bool NavigateUp() {
-        if (_explorerFolder.Parent is not { } parent)
+        if (_explorerFolder is null && _lastExplorerFolder is not null) {
+            NavigateTo(_lastExplorerFolder, false);
+            return true;
+        }
+
+        if (_explorerFolder?.Parent is not { } parent)
             return false;
         NavigateTo(parent, true);
         return true;
@@ -682,7 +759,9 @@ public partial class Explorer : Form {
         if (_explorerFolder == folder)
             return Task.CompletedTask;
 
-        _explorerFolder = folder;
+        colFilesFullPath.IsVisible = false;
+
+        _lastExplorerFolder = _explorerFolder = folder;
         if (addToHistory) {
             _navigationHistory.RemoveRange(
                 _navigationHistoryPosition + 1,
@@ -705,7 +784,7 @@ public partial class Explorer : Form {
 
         var resolveTask = _vspTree.AsFilesResolved(_explorerFolder);
         if (!resolveTask.IsCompleted)
-            lvwFiles.SetObjects(Array.Empty<object>());
+            lvwFiles.ClearObjects();
 
         txtPath.Text = _vspTree.GetFullPath(folder);
 
@@ -720,7 +799,7 @@ public partial class Explorer : Form {
 
             lvwFiles.SelectedIndex = -1;
 
-            var objects = _vspTree.GetFolders(folder).Select(x => (object) new VirtualObject(x))
+            var objects = _vspTree.GetFolders(folder).Select(x => (object) new VirtualObject(_vspTree, x))
                 .Concat(folder.Files.Select(x => (object) new VirtualObject(_vspTree, x)))
                 .ToArray();
 
@@ -797,37 +876,45 @@ public partial class Explorer : Form {
 
         public override void Sort(OLVColumn column, SortOrder order) {
             _objects.Sort((a, b) => {
-                var r = a.IsFolder switch {
-                    true when !b.IsFolder => -1,
-                    false when b.IsFolder => 1,
-                    // Case when both are folders:
-                    true when b.IsFolder => column.AspectName switch {
-                        nameof(VirtualObject.Name) =>
-                            string.Compare(a.Name, b.Name, StringComparison.InvariantCultureIgnoreCase),
-                        nameof(VirtualObject.PackTypeString) => 0,
-                        nameof(VirtualObject.Hash1) => a.Hash1Value.CompareTo(b.Hash1Value),
-                        nameof(VirtualObject.Hash2) => 0,
-                        nameof(VirtualObject.RawSize) => 0,
-                        nameof(VirtualObject.StoredSize) => 0,
-                        nameof(VirtualObject.ReservedSize) => 0,
-                        _ => 0,
-                    },
-                    // Case when both are files:
-                    _ => column.AspectName switch {
-                        nameof(VirtualObject.Name) =>
-                            string.Compare(a.Name, b.Name, StringComparison.InvariantCultureIgnoreCase),
-                        nameof(VirtualObject.PackTypeString) => a.Lookup.Type.CompareTo(b.Lookup.Type),
-                        nameof(VirtualObject.Hash1) => a.Hash1Value.CompareTo(b.Hash1Value),
-                        nameof(VirtualObject.Hash2) => a.Hash2Value.CompareTo(b.Hash2Value),
-                        nameof(VirtualObject.RawSize) => a.Lookup.Size.CompareTo(b.Lookup.Size),
-                        nameof(VirtualObject.StoredSize) => a.Lookup.OccupiedBytes.CompareTo(b.Lookup.OccupiedBytes),
-                        nameof(VirtualObject.ReservedSize) => a.Lookup.ReservedBytes.CompareTo(b.Lookup.ReservedBytes),
-                        _ => 0,
-                    },
-                };
+                int c;
+                if (column.AspectName == nameof(VirtualObject.FullPath)) {
+                    c = string.Compare(a.FullPath, b.FullPath, StringComparison.InvariantCultureIgnoreCase);
+                } else {
+                    c = a.IsFolder switch {
+                        true when !b.IsFolder => -1,
+                        false when b.IsFolder => 1,
+                        // Case when both are folders:
+                        true when b.IsFolder => column.AspectName switch {
+                            nameof(VirtualObject.Name) =>
+                                string.Compare(a.Name, b.Name, StringComparison.InvariantCultureIgnoreCase),
+                            nameof(VirtualObject.PackTypeString) => 0,
+                            nameof(VirtualObject.Hash1) => a.Hash1Value.CompareTo(b.Hash1Value),
+                            nameof(VirtualObject.Hash2) => 0,
+                            nameof(VirtualObject.RawSize) => 0,
+                            nameof(VirtualObject.StoredSize) => 0,
+                            nameof(VirtualObject.ReservedSize) => 0,
+                            _ => 0,
+                        },
+                        // Case when both are files:
+                        _ => column.AspectName switch {
+                            nameof(VirtualObject.Name) =>
+                                string.Compare(a.Name, b.Name, StringComparison.InvariantCultureIgnoreCase),
+                            nameof(VirtualObject.PackTypeString) => a.Lookup.Type.CompareTo(b.Lookup.Type),
+                            nameof(VirtualObject.Hash1) => a.Hash1Value.CompareTo(b.Hash1Value),
+                            nameof(VirtualObject.Hash2) => a.Hash2Value.CompareTo(b.Hash2Value),
+                            nameof(VirtualObject.RawSize) => a.Lookup.Size.CompareTo(b.Lookup.Size),
+                            nameof(VirtualObject.StoredSize) =>
+                                a.Lookup.OccupiedBytes.CompareTo(b.Lookup.OccupiedBytes),
+                            nameof(VirtualObject.ReservedSize) => a.Lookup.ReservedBytes.CompareTo(
+                                b.Lookup.ReservedBytes),
+                            _ => 0,
+                        },
+                    };
+                }
+
                 return order switch {
-                    SortOrder.None or SortOrder.Ascending => r,
-                    SortOrder.Descending => -r,
+                    SortOrder.None or SortOrder.Ascending => c,
+                    SortOrder.Descending => -c,
                     _ => throw new InvalidOperationException(),
                 };
             });
@@ -872,25 +959,28 @@ public partial class Explorer : Form {
         private CancellationTokenSource? _imageCancellationTokenSource;
         private Lazy<string> _name;
         private Lazy<VirtualFileLookup>? _lookup;
+        private Lazy<string> _fullPath;
         private object? _imageKey;
 
         public VirtualObject(VirtualSqPackTree tree, VirtualFile file) {
             _imageFallback = ImageListIndexFile;
             _file = file;
             _name = new(() => file.Name);
+            _fullPath = new(() => tree.GetFullPath(file));
             _lookup = new(() => tree.GetLookup(File));
             _hash2 = new(() => tree.GetFullPathHash(File));
         }
 
-        public VirtualObject(VirtualFolder folder) {
+        public VirtualObject(VirtualSqPackTree tree, VirtualFolder folder) {
             _imageFallback = ImageListIndexFolder;
             _folder = folder;
             _name = new(folder.Name.Trim('/'));
+            _fullPath = new(() => tree.GetFullPath(folder));
             _hash2 = new(0u);
         }
 
         private void ReleaseUnmanagedResources() {
-            if (_lookup is { IsValueCreated: true }) {
+            if (_lookup is {IsValueCreated: true}) {
                 _lookup.Value.Dispose();
                 _lookup = null;
             }
@@ -913,7 +1003,7 @@ public partial class Explorer : Form {
 
         public VirtualFile File => _file ?? throw new InvalidOperationException();
 
-        public VirtualFolder Folder => _folder ?? throw new InvalidOperationException();
+        public VirtualFolder Folder => !IsFolder || _folder is null ? throw new InvalidOperationException() : _folder;
 
         public VirtualFileLookup Lookup => _lookup?.Value ?? throw new InvalidOperationException();
 
@@ -950,6 +1040,11 @@ public partial class Explorer : Form {
 
         public string ReservedSize => IsFolder ? "" : UiUtils.FormatSize(Lookup.ReservedBytes);
 
+        public string FullPath {
+            get => _fullPath.Value;
+            set => SetField(ref _fullPath, new(value));
+        }
+
         [UsedImplicitly]
         public object? Image {
             get {
@@ -967,7 +1062,7 @@ public partial class Explorer : Form {
                 }
             }
         }
-
+        
         #region Implementation of INotifyPropertyChanged
 
         public event PropertyChangedEventHandler? PropertyChanged;

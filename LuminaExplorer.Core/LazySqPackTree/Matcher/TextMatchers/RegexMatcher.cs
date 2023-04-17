@@ -33,15 +33,23 @@ public class RegexMatcher : ITextMatcher {
     private Task<bool> DoMatch(string matchFormat, string haystack, Stopwatch stopwatch, TimeSpan timeout, CancellationToken cancellationToken) {
         if (_regex is null)
             throw new InvalidOperationException();
+        
         var remainingTime = timeout - stopwatch.Elapsed;
         if (remainingTime < TimeSpan.Zero)
-            throw new TimeoutException();
-        if (haystack.Length > 65536)
-            return Task.Run(() => new Regex(string.Format(matchFormat, _regex),
-                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace |
-                RegexOptions.Singleline, remainingTime).IsMatch(haystack), cancellationToken);
-        return Task.FromResult(new Regex(string.Format(matchFormat, _regex),
-            RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace |
-            RegexOptions.Singleline, remainingTime).IsMatch(haystack));
+            return Task.FromResult(false);
+
+        bool DoSearch() {
+            try {
+                return new Regex(string.Format(matchFormat, _regex),
+                    RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace |
+                    RegexOptions.Singleline, remainingTime).IsMatch(haystack);
+            } catch (TimeoutException) {
+                return false;
+            }
+        }
+
+        return haystack.Length > 65536 ?
+            Task.Run(DoSearch, cancellationToken)
+            : Task.FromResult(DoSearch());
     }
 }

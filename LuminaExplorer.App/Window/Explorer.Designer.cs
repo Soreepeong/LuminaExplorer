@@ -28,6 +28,7 @@ partial class Explorer {
         colFilesRawSize = new BrightIdeasSoftware.OLVColumn();
         colFilesStoredSize = new BrightIdeasSoftware.OLVColumn();
         colFilesReservedSize = new BrightIdeasSoftware.OLVColumn();
+        colFilesFullPath = new BrightIdeasSoftware.OLVColumn();
         splPreview = new SplitContainer();
         tabPreview = new TabControl();
         tabPreviewFileResource = new TabPage();
@@ -146,7 +147,7 @@ partial class Explorer {
         // 
         // lvwFiles
         // 
-        lvwFiles.Columns.AddRange(new ColumnHeader[] { colFilesName, colFilesPackType, colFilesHash1, colFilesHash2, colFilesRawSize, colFilesStoredSize, colFilesReservedSize });
+        lvwFiles.Columns.AddRange(new ColumnHeader[] { colFilesName, colFilesPackType, colFilesHash1, colFilesHash2, colFilesRawSize, colFilesStoredSize, colFilesReservedSize, colFilesFullPath });
         lvwFiles.Dock = DockStyle.Fill;
         lvwFiles.FullRowSelect = true;
         lvwFiles.Location = new Point(0, 0);
@@ -216,6 +217,14 @@ partial class Explorer {
         colFilesReservedSize.IsEditable = false;
         colFilesReservedSize.Text = "Reserved";
         colFilesReservedSize.TextAlign = HorizontalAlignment.Right;
+        // 
+        // colFilesFullPath
+        // 
+        colFilesFullPath.AspectName = "FullPath";
+        colFilesFullPath.IsEditable = false;
+        colFilesFullPath.Text = "Path";
+        colFilesFullPath.TextAlign = HorizontalAlignment.Left;
+        colFilesFullPath.IsVisible = false;
         // 
         // splPreview
         // 
@@ -373,6 +382,7 @@ partial class Explorer {
         btnSearch.Name = "btnSearch";
         btnSearch.Size = new Size(23, 22);
         btnSearch.Text = "toolStripButton1";
+        btnNavUp.Click += btnSearch_Click;
         // 
         // txtSearch
         // 
@@ -481,6 +491,7 @@ partial class Explorer {
     private BrightIdeasSoftware.OLVColumn colFilesRawSize;
     private BrightIdeasSoftware.OLVColumn colFilesStoredSize;
     private BrightIdeasSoftware.OLVColumn colFilesReservedSize;
+    private BrightIdeasSoftware.OLVColumn colFilesFullPath;
     private ToolStrip tspNavigation;
     private ToolStripButton btnNavBack;
     private ToolStripButton btnNavForward;

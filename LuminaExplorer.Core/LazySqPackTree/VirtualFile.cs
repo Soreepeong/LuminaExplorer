@@ -31,6 +31,8 @@ public class VirtualFile {
 
     public string Name => LazyName.Value ?? $"~{FileHash:X08}";
 
+    public override string ToString() => Name;
+
     public bool NameResolveAttempted => LazyName.IsValueCreated;
 
     public bool NameResolved => LazyName is {IsValueCreated: true, Value: not null};
