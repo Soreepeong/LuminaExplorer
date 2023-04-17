@@ -3,110 +3,34 @@
 namespace LuminaExplorer.Core.LazySqPackTree.Matcher;
 
 public class SingleConditionMatcher : IMatcher {
-    private MatchWhat? _matchWhat;
-    private TypeConstraint? _typeConstraint;
-    private TextMatcher? _textMatcher;
-    private HashMatcher? _hashMatcher;
-    private SizeMatcher? _sizeMatcher;
+    private readonly MatchWhat _matchWhat;
+    private readonly TypeConstraint? _typeConstraint;
+    private readonly TextMatcher? _textMatcher;
+    private readonly HashMatcher? _hashMatcher;
+    private readonly SizeMatcher? _sizeMatcher;
 
-    public void ParseQuery(Span<uint> span, ref int i, uint[] validTerminators) {
-        _matchWhat = null;
-        _typeConstraint = null;
-
-        _textMatcher = null;
-        _hashMatcher = null;
-        _sizeMatcher = null;
-
-        if (validTerminators.Contains(span[i]))
-            return;
-
-        uint[] matchedArray;
-        if (span[i..].StartsWith(matchedArray = new uint[] {'p', 'a', 't', 'h', ':'})) {
-            i += matchedArray.Length;
-            _textMatcher = new();
-            _textMatcher.ParseQuery(span, ref i, validTerminators);
-            if (_textMatcher.IsEmpty())
-                _textMatcher = null;
-            else
-                _matchWhat = MatchWhat.Path;
-        } else if (span[i..].StartsWith(matchedArray = new uint[] {'d', 'a', 't', 'a', ':'})) {
-            i += matchedArray.Length;
-            _textMatcher = new();
-            _textMatcher.ParseQuery(span, ref i, validTerminators);
-            if (_textMatcher.IsEmpty())
-                _textMatcher = null;
-            else
-                _matchWhat = MatchWhat.Data;
-        } else if (span[i..].StartsWith(matchedArray = new uint[] {'t', 'y', 'p', 'e', ':'})) {
-            i += matchedArray.Length;
-
-            if (i >= span.Length)
-                return;
-            _typeConstraint = span[i] switch {
-                'F' or 'f' when i + 1 < span.Length => span[++i] switch {
-                    'O' or 'o' => TypeConstraint.Folder,
-                    'I' or 'i' => TypeConstraint.File,
-                    _ => _typeConstraint,
-                },
-                'D' or 'd' => TypeConstraint.Folder,
-                'E' or 'e' => TypeConstraint.Empty,
-                'S' or 's' or 'B' or 'b' => TypeConstraint.Standard,
-                'T' or 't' => TypeConstraint.Texture,
-                'M' or 'm' => TypeConstraint.Model,
-                _ => _typeConstraint,
-            };
-
-            if (_typeConstraint != null)
-                _matchWhat = MatchWhat.Type;
-        } else if (span[i..].StartsWith(matchedArray = new uint[] {'h', 'a', 's', 'h', ':'})) {
-            i += matchedArray.Length;
-            _hashMatcher = new();
-            _hashMatcher.ParseQuery(span, ref i, validTerminators);
-            if (_hashMatcher.IsEmpty())
-                _hashMatcher = null;
-            else
-                _matchWhat = MatchWhat.Hash;
-        } else if (span[i..].StartsWith(matchedArray = new uint[] {'s', 'i', 'z', 'e', ':'}) ||
-                   span[i..].StartsWith(matchedArray = new uint[] {'l', 'e', 'n', ':'}) ||
-                   span[i..].StartsWith(matchedArray = new uint[] {'l', 'e', 'n', 'g', 't', 'h', ':'})) {
-            i += matchedArray.Length;
-            _sizeMatcher = new();
-            _sizeMatcher.ParseQuery(span, ref i, validTerminators);
-            if (_sizeMatcher.IsEmpty())
-                _sizeMatcher = null;
-            else
-                _matchWhat = MatchWhat.RawSize;
-        } else if (span[i..].StartsWith(matchedArray = new uint[] {'o', 'c', 'c', 'u', 'p', 'i', 'e', 'd', ':'})) {
-            i += matchedArray.Length;
-            _sizeMatcher = new();
-            _sizeMatcher.ParseQuery(span, ref i, validTerminators);
-            if (_sizeMatcher.IsEmpty())
-                _sizeMatcher = null;
-            else
-                _matchWhat = MatchWhat.OccupiedSize;
-        } else if (span[i..].StartsWith(matchedArray = new uint[] {'r', 'e', 's', 'e', 'r', 'v', 'e', 'd', ':'})) {
-            i += matchedArray.Length;
-            _sizeMatcher = new();
-            _sizeMatcher.ParseQuery(span, ref i, validTerminators);
-            if (_sizeMatcher.IsEmpty())
-                _sizeMatcher = null;
-            else
-                _matchWhat = MatchWhat.ReservedSize;
-        } else {
-            _textMatcher = new();
-            _textMatcher.ParseQuery(span, ref i, validTerminators);
-            if (_textMatcher.IsEmpty())
-                _textMatcher = null;
-            else
-                _matchWhat = MatchWhat.Path;
-        }
+    public SingleConditionMatcher(TypeConstraint typeConstraint) {
+        _matchWhat = MatchWhat.Type;
+        _typeConstraint = typeConstraint;
     }
 
-    public bool IsEmpty() => _matchWhat is null;
+    public SingleConditionMatcher(MatchWhat what, TextMatcher matcher) {
+        _matchWhat = what;
+        _textMatcher = matcher;
+    }
+
+    public SingleConditionMatcher(HashMatcher matcher) {
+        _matchWhat = MatchWhat.Hash;
+        _hashMatcher = matcher;
+    }
+
+    public SingleConditionMatcher(MatchWhat what, SizeMatcher matcher) {
+        _matchWhat = what;
+        _sizeMatcher = matcher;
+    }
 
     public bool Matches(VirtualSqPackTree tree, VirtualFolder folder, Stopwatch stopwatch, TimeSpan timeout) =>
         _matchWhat switch {
-            null => throw new InvalidOperationException(),
             MatchWhat.Path => _textMatcher!.Matches(tree.GetFullPath(folder), stopwatch, timeout),
             MatchWhat.Data => false,
             MatchWhat.Type => _typeConstraint is TypeConstraint.NoConstraint or TypeConstraint.Folder,
@@ -120,7 +44,6 @@ public class SingleConditionMatcher : IMatcher {
     public bool Matches(VirtualSqPackTree tree, VirtualFile file, ref VirtualFileLookup? lookup, Lazy<string> data,
         Stopwatch stopwatch, TimeSpan timeout) =>
         _matchWhat switch {
-            null => throw new InvalidOperationException(),
             MatchWhat.Path => _textMatcher!.Matches(tree.GetFullPath(file), stopwatch, timeout),
             MatchWhat.Data => _textMatcher!.Matches(data.Value, stopwatch, timeout),
             MatchWhat.Type => _typeConstraint is TypeConstraint.NoConstraint or TypeConstraint.Folder,
@@ -130,6 +53,8 @@ public class SingleConditionMatcher : IMatcher {
             MatchWhat.ReservedSize => _sizeMatcher!.Matches((lookup ??= tree.GetLookup(file)).ReservedBytes),
             _ => throw new InvalidOperationException()
         };
+
+    public IMatcher UnwrapIfPossible() => this;
 
     public override string ToString() => _matchWhat switch {
         MatchWhat.Path => $"Path:{_textMatcher}",
@@ -142,7 +67,7 @@ public class SingleConditionMatcher : IMatcher {
         _ => $"SingleConditionMatcher({_matchWhat})",
     };
 
-    private enum MatchWhat {
+    public enum MatchWhat {
         Path,
         Data,
         Type,
@@ -152,7 +77,7 @@ public class SingleConditionMatcher : IMatcher {
         ReservedSize,
     }
 
-    private enum TypeConstraint {
+    public enum TypeConstraint {
         NoConstraint,
         Folder,
         File,

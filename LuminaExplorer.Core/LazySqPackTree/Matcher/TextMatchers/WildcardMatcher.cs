@@ -1,48 +1,29 @@
-using System.Text;
 using System.Text.RegularExpressions;
 
 namespace LuminaExplorer.Core.LazySqPackTree.Matcher.TextMatchers;
 
-public class WildcardMatcher : RegexMatcher {
-    private readonly bool _useEscapeSequence;
+public partial class WildcardMatcher : RegexMatcher {
+    private readonly string _wildcardString;
 
-    public WildcardMatcher(bool useEscapeSequence) {
-        _useEscapeSequence = useEscapeSequence;
-    }
+    public WildcardMatcher(string wildcardString) : base(TransformWildcardString(wildcardString)) =>
+        _wildcardString = wildcardString;
 
-    public override void ParseQuery(Span<uint> span, ref int i, uint[] validTerminators) {
-        validTerminators = validTerminators.Append('*').Append('?').ToArray();
-
-        var rsm = new RawStringMatcher(_useEscapeSequence);
-        var re = new StringBuilder();
-
-        for (; i < span.Length; i++) {
-            if (validTerminators.Contains(span[i]))
-                break;
-            
-            switch (span[i]) {
-                case '*':
-                    var wildcardCount = 1;
-                    while (i + 1 < span.Length && span[i + 1] == '*') {
-                        i++;
-                        wildcardCount++;
-                    }
-
-                    re.Append(wildcardCount == 1 ? @"[^\\/]*" : @".*");
-                    break;
-                case '?':
-                    re.Append('.');
-                    break;
-                default:
-                    rsm.ParseQuery(span, ref i, validTerminators);
-                    re.Append(Regex.Escape(rsm.Sequence));
-                    i--;
-                    break;
-            }
-        }
-
-        _regex = re.ToString();
-    }
+    private static string TransformWildcardString(string s) => string.Join(
+        ".*",
+        DirEncompassingWildcardRegex().Split(s)
+            .Select(x => string.Join(
+                @"[^\\/]*",
+                x.Split('*')
+                    .Select(y => string.Join(
+                        '.',
+                        y.Split('?'))))));
 
     public override string ToString() => $"Wildcard({_regex})";
+    
+    [GeneratedRegex("\\*\\*+")]
+    private static partial Regex DirEncompassingWildcardRegex();
+
+    public ITextMatcher Simplify() => _wildcardString.Any(x => x is '*' or '?')
+        ? this
+        : new RawStringMatcher(_wildcardString);
 }

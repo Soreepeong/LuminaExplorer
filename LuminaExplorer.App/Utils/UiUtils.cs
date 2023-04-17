@@ -11,11 +11,11 @@ public static partial class UiUtils {
 
         foreach (var sizeUnit in SizeUnits.SkipLast(1)) {
             if (size < 1024)
-                return $"{size:#,##} {sizeUnit}";
+                return $"{size:##,###} {sizeUnit}";
             size /= 1024;
         }
 
-        return $"{size:#,##} {SizeUnits[^1]}";
+        return $"{size:##,###} {SizeUnits[^1]}";
     }
 
     public static string FormatSize(ulong size) {
@@ -24,11 +24,11 @@ public static partial class UiUtils {
 
         foreach (var sizeUnit in SizeUnits.SkipLast(1)) {
             if (size < 1024)
-                return $"{size:#,##} {sizeUnit}";
+                return $"{size:##,###} {sizeUnit}";
             size /= 1024;
         }
 
-        return $"{size:#,##} {SizeUnits[^1]}";
+        return $"{size:##,###} {SizeUnits[^1]}";
     }
 
     public static Icon? ExtractPeIcon(string filePath, int index, bool largeIcon = true) {

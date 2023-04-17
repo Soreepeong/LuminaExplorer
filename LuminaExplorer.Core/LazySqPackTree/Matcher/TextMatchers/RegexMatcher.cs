@@ -4,16 +4,11 @@ using System.Text.RegularExpressions;
 namespace LuminaExplorer.Core.LazySqPackTree.Matcher.TextMatchers;
 
 public class RegexMatcher : ITextMatcher {
-    protected string? _regex;
+    protected readonly string _regex;
 
-    public virtual void ParseQuery(Span<uint> span, ref int i, uint[] validTerminators) {
-        validTerminators = validTerminators.Append('*').Append('?').ToArray();
-        var rsm = new RawStringMatcher(false);
-        rsm.ParseQuery(span, ref i, validTerminators);
-        _regex = rsm.Sequence;
+    public RegexMatcher(string regex) {
+        _regex = regex;
     }
-
-    public bool IsEmpty() => string.IsNullOrEmpty(_regex);
 
     public override string ToString() => $"Regex({_regex})";
 

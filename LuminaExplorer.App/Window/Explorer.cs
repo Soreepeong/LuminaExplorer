@@ -452,8 +452,7 @@ public partial class Explorer : Form {
     }
 
     private void txtSearch_KeyUp(object sender, KeyEventArgs e) {
-        var matcher = new MultipleConditionsMatcher();
-        matcher.ParseQuery(txtSearch.Text);
+        var matcher = new QueryTokenizer(txtSearch.Text).Parse();
 
         Debug.Print(matcher.ToString());
     }
