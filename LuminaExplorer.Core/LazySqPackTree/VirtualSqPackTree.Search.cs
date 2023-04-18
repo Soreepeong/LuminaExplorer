@@ -7,12 +7,18 @@ namespace LuminaExplorer.Core.LazySqPackTree;
 public sealed partial class VirtualSqPackTree {
     public class SearchProgress {
         public readonly Stopwatch Stopwatch = new();
+
+        public SearchProgress(object lastObject) {
+            Total = 1;
+            LastObject = lastObject;
+        }
+
         public long Total { get; internal set; }
         public long Progress { get; internal set; }
         public object LastObject { get; internal set; }
         public bool Completed { get; internal set; }
     }
-    
+
     public Task Search(
         VirtualFolder rootFolder,
         string query,
@@ -22,7 +28,7 @@ public sealed partial class VirtualSqPackTree {
         TimeSpan timeoutPerEntry = default,
         CancellationToken cancellationToken = default) => Task.Factory.StartNew(async () => {
         cancellationToken.ThrowIfCancellationRequested();
-        
+
         if (new QueryTokenizer(query).Parse() is not { } matcher)
             return;
 
@@ -38,7 +44,7 @@ public sealed partial class VirtualSqPackTree {
         var activeTasks = new HashSet<Task>();
         var queue = System.Threading.Channels.Channel.CreateUnbounded<object?>();
 
-        SearchProgress progress = new(){Total = 1};
+        var progress = new SearchProgress(rootFolder);
 
         async Task Traverse(VirtualFolder folder) {
             cancellationToken.ThrowIfCancellationRequested();
@@ -52,7 +58,7 @@ public sealed partial class VirtualSqPackTree {
             await Task.WhenAll(
                 folders.Select(Traverse)
                     .Append(queue.Writer.WriteAsync(folders, cancellationToken).AsTask())
-                    .Append(AsFilesResolved(folder).ContinueWith(
+                    .Append(AsFileNamesResolved(folder).ContinueWith(
                         async _ => await queue.Writer.WriteAsync(
                             folder.Files,
                             cancellationToken),
@@ -61,12 +67,12 @@ public sealed partial class VirtualSqPackTree {
 
         long nextProgressReportedMilliseconds = 0;
         progress.Stopwatch.Start();
-        
+
         _ = Task.Run(async () => {
-                await queue.Writer.WriteAsync(new object[]{rootFolder}, cancellationToken);
-                await Traverse(rootFolder);
-                await queue.Writer.WriteAsync(null, cancellationToken);
-            }, cancellationToken);
+            await queue.Writer.WriteAsync(new object[] {rootFolder}, cancellationToken);
+            await Traverse(rootFolder);
+            await queue.Writer.WriteAsync(null, cancellationToken);
+        }, cancellationToken);
 
         var itemList = new List<object>();
         while (true) {
@@ -122,7 +128,11 @@ public sealed partial class VirtualSqPackTree {
                                         cancellationToken);
                                     if (await matcher.Matches(this, file, lookup, data, stopwatch, timeoutPerEntry,
                                             cancellationToken))
-                                        return () => fileFoundCallback(file);
+                                        return () => {
+                                            // Force name resolution
+                                            _ = file.Name;
+                                            fileFoundCallback(file);
+                                        };
                                     else
                                         return null;
                                 default:
@@ -147,6 +157,5 @@ public sealed partial class VirtualSqPackTree {
 
         progress.Completed = true;
         progressCallback(progress);
-        
     }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 }

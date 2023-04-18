@@ -64,7 +64,7 @@ public sealed partial class VirtualSqPackTree {
         }
     }
 
-    public Task<VirtualFolder> AsFilesResolved(VirtualFolder folder) {
+    public Task<VirtualFolder> AsFileNamesResolved(VirtualFolder folder) {
         lock (_childFilesResolvers) {
             if (folder.FileNamesResolveAttempted) {
                 _childFilesResolvers.Remove(folder);

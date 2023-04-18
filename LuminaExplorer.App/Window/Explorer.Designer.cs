@@ -428,7 +428,7 @@ partial class Explorer {
         cboView.Alignment = ToolStripItemAlignment.Right;
         cboView.DropDownStyle = ComboBoxStyle.DropDownList;
         cboView.FlatStyle = FlatStyle.System;
-        cboView.Items.AddRange(new object[] { "Extra large icons", "Large icons", "Medium icons", "Small icons", "List", "Details" });
+        cboView.Items.AddRange(new object[] { "Thumbnails (256px)", "Thumbnails (224px)", "Thumbnails (192px)", "Thumbnails (160px)",  "Thumbnails (128px)", "Thumbnails (96px)", "Thumbnails (64px)", "Icons", "List", "Details" });
         cboView.Name = "cboView";
         cboView.Size = new Size(160, 25);
         cboView.SelectedIndexChanged += cboView_SelectedIndexChanged;

@@ -31,7 +31,7 @@ public static partial class UiUtils {
         return $"{size:##,###} {SizeUnits[^1]}";
     }
 
-    public static Icon? ExtractPeIcon(string filePath, int index, bool largeIcon = true) {
+    public static Icon? ExtractPeIcon(string filePath, int index, bool largeIcon) {
         if (filePath == null)
             throw new ArgumentNullException(nameof(filePath));
 
