@@ -1,31 +1,41 @@
 using System.Buffers;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
-using Lumina.Data;
 using Lumina.Data.Structs;
 using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
 
 public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
+    private readonly bool _keepOpen;
+
     private OffsetManager? _offsetManager;
 
     private int _bufferBlockIndex = -1;
     private uint _bufferValidSize;
     private byte[]? _blockBuffer;
 
-    public StandardVirtualFileStream(LuminaBinaryReader reader, long baseOffset, SqPackFileInfo info)
-        : base(reader.PlatformId, info.RawFileSize) {
-        _offsetManager = new(reader, baseOffset, info);
+    public StandardVirtualFileStream(string datPath, PlatformId platformId, long baseOffset, SqPackFileInfo info,
+        bool keepOpen)
+        : base(platformId, info.RawFileSize) {
+        _keepOpen = keepOpen;
+        _offsetManager = new(datPath, platformId, baseOffset, info);
+        if (keepOpen)
+            _offsetManager.AddRefKeepOpen();
+        else
+            FreeUnnecessaryResources();
     }
 
-    public StandardVirtualFileStream(StandardVirtualFileStream cloneFrom)
+    public StandardVirtualFileStream(StandardVirtualFileStream cloneFrom, bool keepOpen)
         : base(cloneFrom.PlatformId, (uint) cloneFrom.Length) {
+        _keepOpen = keepOpen;
         _offsetManager = cloneFrom._offsetManager;
         if (_offsetManager is null)
             throw new ObjectDisposedException(nameof(ModelVirtualFileStream));
 
         _offsetManager.AddRef();
+        if (keepOpen)
+            _offsetManager.AddRefKeepOpen();
     }
 
     ~StandardVirtualFileStream() {
@@ -139,34 +149,33 @@ public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
         return totalRead;
     }
 
-    public override object Clone() => new StandardVirtualFileStream(this);
+    public override BaseVirtualFileStream Clone(bool keepOpen) => new StandardVirtualFileStream(this, keepOpen);
 
     protected override void Dispose(bool disposing) {
-        IReferenceCounted.DecRef(ref _offsetManager);
+        _offsetManager?.DecRef();
+        if (_keepOpen)
+            _offsetManager?.DecRefKeepOpen();
+        _offsetManager = null;
         base.Dispose(disposing);
     }
 
-    private class OffsetManager : IReferenceCounted {
-        private int _refcount = 1;
+    public override void FreeUnnecessaryResources() => _offsetManager?.CloseReaderIfUnnecessary();
 
-        public readonly SemaphoreSlim ReaderLock = new(1, 1);
-        public readonly LuminaBinaryReader Reader;
-        public readonly long BaseOffset;
+    private class OffsetManager : BaseOffsetManager {
         public readonly int NumBlocks;
         public readonly uint[] RequestOffsets;
         public readonly uint[] BlockOffsets;
         public readonly ushort[] BlockSizes;
 
-        public OffsetManager(LuminaBinaryReader reader, long baseOffset, SqPackFileInfo info) {
-            Reader = reader;
-            BaseOffset = baseOffset;
+        public OffsetManager(string datPath, PlatformId platformId, long baseOffset, SqPackFileInfo info)
+            : base(datPath, platformId, baseOffset) {
             NumBlocks = (int) info.NumberOfBlocks;
             RequestOffsets = new uint[NumBlocks + 1];
             RequestOffsets[^1] = info.RawFileSize;
             BlockOffsets = new uint[NumBlocks];
             BlockSizes = new ushort[NumBlocks];
 
-            var blockInfos = reader
+            var blockInfos = Reader
                 .WithSeek(BaseOffset + (uint) Unsafe.SizeOf<SqPackFileInfo>())
                 .ReadStructuresAsArray<DatStdFileBlockInfos>(NumBlocks);
 
@@ -175,13 +184,6 @@ public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
                 BlockSizes[i] = blockInfos[i].CompressedSize;
                 BlockOffsets[i] = info.Size + blockInfos[i].Offset;
             }
-        }
-
-        public void AddRef() => Interlocked.Increment(ref _refcount);
-
-        public void DecRef() {
-            if (Interlocked.Decrement(ref _refcount) == 0)
-                Reader.Dispose();
         }
     }
 }

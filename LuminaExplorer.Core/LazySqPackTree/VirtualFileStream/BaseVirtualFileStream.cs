@@ -1,4 +1,5 @@
-﻿using Lumina.Data.Structs;
+﻿using Lumina.Data;
+using Lumina.Data.Structs;
 
 namespace LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
 
@@ -55,5 +56,75 @@ public abstract class BaseVirtualFileStream : Stream, ICloneable {
         return pad;
     }
 
-    public abstract object Clone();
+    public object Clone() => Clone(false);
+
+    public virtual void FreeUnnecessaryResources() { }
+
+    public abstract BaseVirtualFileStream Clone(bool keepOpen);
+
+    protected class BaseOffsetManager {
+        private int _refcount = 1;
+        private int _refcountKeepOpen;
+        private LuminaBinaryReader? _reader;
+        private readonly string _datPath;
+        private readonly PlatformId _platformId;
+
+        public readonly SemaphoreSlim ReaderLock = new(1, 1);
+        public readonly long BaseOffset;
+        public LuminaBinaryReader Reader => _reader ??= new(File.OpenRead(_datPath), _platformId);
+
+        public BaseOffsetManager(string datPath, PlatformId platformId, long baseOffset) {
+            _datPath = datPath;
+            _platformId = platformId;
+            BaseOffset = baseOffset;
+        }
+
+        public void AddRef() {
+            ReaderLock.Wait();
+            _refcount++;
+            ReaderLock.Release();
+        }
+
+        public void DecRef() {
+            ReaderLock.Wait();
+            try {
+                if (--_refcount > _refcountKeepOpen)
+                    return;
+                _reader?.Dispose();
+                _reader = null;
+            } finally {
+                ReaderLock.Release();
+            }
+        }
+
+        public void AddRefKeepOpen() {
+            ReaderLock.Wait();
+            _refcountKeepOpen++;
+            ReaderLock.Release();
+        }
+
+        public void DecRefKeepOpen() {
+            ReaderLock.Wait();
+            try {
+                if (_refcount >= --_refcountKeepOpen)
+                    return;
+                _reader?.Dispose();
+                _reader = null;
+            } finally {
+                ReaderLock.Release();
+            }
+        }
+
+        public void CloseReaderIfUnnecessary() {
+            ReaderLock.Wait();
+            try {
+                if (_refcount >= _refcountKeepOpen)
+                    return;
+                _reader?.Dispose();
+                _reader = null;
+            } finally {
+                ReaderLock.Release();
+            }
+        }
+    }
 }

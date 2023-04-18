@@ -3,7 +3,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Lumina.Data;
 using Lumina.Data.Files;
 using Lumina.Data.Structs;
 using LuminaExplorer.Core.Util;
@@ -11,24 +10,35 @@ using LuminaExplorer.Core.Util;
 namespace LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
 
 public sealed class TextureVirtualFileStream : BaseVirtualFileStream {
+    private readonly bool _keepOpen;
+
     private OffsetManager? _offsetManager;
 
     private int _bufferLodIndex = -1, _bufferBlockIndex = -1;
     private uint _bufferValidSize;
     private byte[]? _blockBuffer;
 
-    public TextureVirtualFileStream(LuminaBinaryReader reader, long baseOffset, SqPackFileInfo info)
-        : base(reader.PlatformId, info.RawFileSize) {
-        _offsetManager = new(reader, baseOffset, info);
+    public TextureVirtualFileStream(string datPath, PlatformId platformId, long baseOffset, SqPackFileInfo info,
+        bool keepOpen)
+        : base(platformId, info.RawFileSize) {
+        _keepOpen = keepOpen;
+        _offsetManager = new(datPath, platformId, baseOffset, info);
+        if (keepOpen)
+            _offsetManager.AddRefKeepOpen();
+        else
+            FreeUnnecessaryResources();
     }
 
-    public TextureVirtualFileStream(TextureVirtualFileStream cloneFrom)
+    public TextureVirtualFileStream(TextureVirtualFileStream cloneFrom, bool keepOpen)
         : base(cloneFrom.PlatformId, (uint) cloneFrom.Length) {
+        _keepOpen = keepOpen;
         _offsetManager = cloneFrom._offsetManager;
         if (_offsetManager is null)
             throw new ObjectDisposedException(nameof(ModelVirtualFileStream));
 
         _offsetManager.AddRef();
+        if (keepOpen)
+            _offsetManager.AddRefKeepOpen();
     }
 
     ~TextureVirtualFileStream() {
@@ -181,33 +191,32 @@ public sealed class TextureVirtualFileStream : BaseVirtualFileStream {
         return totalRead;
     }
 
-    public override object Clone() => new TextureVirtualFileStream(this);
+    public override BaseVirtualFileStream Clone(bool keepOpen) => new TextureVirtualFileStream(this, keepOpen);
 
     protected override void Dispose(bool disposing) {
-        IReferenceCounted.DecRef(ref _offsetManager);
+        _offsetManager?.DecRef();
+        if (_keepOpen)
+            _offsetManager?.DecRefKeepOpen();
+        _offsetManager = null;
         base.Dispose(disposing);
     }
 
     public TexFile.TexHeader TexHeader =>
         _offsetManager?.Header ?? throw new ObjectDisposedException(nameof(TextureVirtualFileStream));
 
-    private class OffsetManager : IReferenceCounted {
-        private int _refcount = 1;
+    public override void FreeUnnecessaryResources() => _offsetManager?.CloseReaderIfUnnecessary();
 
-        public readonly SemaphoreSlim ReaderLock = new(1, 1);
-        public readonly LuminaBinaryReader Reader;
-        public readonly long BaseOffset;
+    private class OffsetManager : BaseOffsetManager {
         public readonly int NumLods;
         public readonly LodBlock[] Lods;
         public readonly TexFile.TexHeader Header;
         public readonly byte[] HeaderBytes;
 
-        public unsafe OffsetManager(LuminaBinaryReader reader, long baseOffset, SqPackFileInfo info) {
-            Reader = reader;
-            BaseOffset = baseOffset;
+        public unsafe OffsetManager(string datPath, PlatformId platformId, long baseOffset, SqPackFileInfo info)
+            : base(datPath, platformId, baseOffset) {
             NumLods = (int) info.NumberOfBlocks;
 
-            var locators = reader
+            var locators = Reader
                 .WithSeek(BaseOffset + (uint) Unsafe.SizeOf<SqPackFileInfo>())
                 .ReadStructuresAsArray<LodBlockStruct>(NumLods);
 
@@ -216,21 +225,14 @@ public sealed class TextureVirtualFileStream : BaseVirtualFileStream {
             Lods = new LodBlock[NumLods];
             for (var i = 0; i < NumLods; i++) {
                 var baseRequestOffset = i == 0 ? texHeaderLength : Lods[i - 1].RequestOffsets[^1];
-                var blockSizes = reader.ReadStructuresAsArray<ushort>((int) locators[i].BlockCount);
+                var blockSizes = Reader.ReadStructuresAsArray<ushort>((int) locators[i].BlockCount);
 
                 Lods[i] = new(locators[i], blockSizes, baseRequestOffset, info.Size);
             }
 
-            HeaderBytes = reader.WithSeek(BaseOffset + info.Size).ReadBytes((int) texHeaderLength);
+            HeaderBytes = Reader.WithSeek(BaseOffset + info.Size).ReadBytes((int) texHeaderLength);
             fixed (void* p = HeaderBytes)
                 Header = *(TexFile.TexHeader*) p;
-        }
-        
-        public void AddRef() => Interlocked.Increment(ref _refcount);
-
-        public void DecRef() {
-            if (Interlocked.Decrement(ref _refcount) == 0)
-                Reader.Dispose();
         }
     }
 

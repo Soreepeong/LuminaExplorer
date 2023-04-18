@@ -3,7 +3,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Lumina.Data;
 using Lumina.Data.Parsing;
 using Lumina.Data.Structs;
 using LuminaExplorer.Core.Util;
@@ -12,6 +11,7 @@ namespace LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
 
 public sealed class ModelVirtualFileStream : BaseVirtualFileStream {
     private const int ModelFileHeaderSize = 0x44;
+    private readonly bool _keepOpen;
 
     private OffsetManager? _offsetManager;
 
@@ -19,18 +19,26 @@ public sealed class ModelVirtualFileStream : BaseVirtualFileStream {
     private uint _bufferValidSize;
     private byte[]? _blockBuffer;
 
-    public ModelVirtualFileStream(LuminaBinaryReader reader, long baseOffset, ModelBlock modelBlock)
-        : base(reader.PlatformId, modelBlock.RawFileSize) {
-        _offsetManager = new(reader, baseOffset, modelBlock);
+    public ModelVirtualFileStream(string datPath, PlatformId platformId, long baseOffset, ModelBlock modelBlock,
+        bool keepOpen = true)
+        : base(platformId, modelBlock.RawFileSize) {
+        _offsetManager = new(datPath, platformId, baseOffset, modelBlock);
+        _keepOpen = keepOpen;
+        if (keepOpen)
+            _offsetManager.AddRefKeepOpen();
+        else
+            FreeUnnecessaryResources();
     }
 
-    public ModelVirtualFileStream(ModelVirtualFileStream cloneFrom)
+    public ModelVirtualFileStream(ModelVirtualFileStream cloneFrom, bool keepOpen)
         : base(cloneFrom.PlatformId, (uint) cloneFrom.Length) {
         _offsetManager = cloneFrom._offsetManager;
         if (_offsetManager is null)
             throw new ObjectDisposedException(nameof(ModelVirtualFileStream));
 
         _offsetManager.AddRef();
+        if (keepOpen)
+            _offsetManager.AddRefKeepOpen();
     }
 
     ~ModelVirtualFileStream() {
@@ -41,7 +49,7 @@ public sealed class ModelVirtualFileStream : BaseVirtualFileStream {
         ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) {
         if (_offsetManager is null)
             throw new ObjectDisposedException(nameof(ModelVirtualFileStream));
-        
+
         if (count == 0)
             return 0;
 
@@ -117,7 +125,7 @@ public sealed class ModelVirtualFileStream : BaseVirtualFileStream {
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                _blockBuffer = ArrayPool<byte>.Shared.RentAsNecessary(_blockBuffer, (int)dbh.DecompressedSize);
+                _blockBuffer = ArrayPool<byte>.Shared.RentAsNecessary(_blockBuffer, (int) dbh.DecompressedSize);
                 if (dbh.IsCompressed) {
                     await using var zlibStream = new DeflateStream(
                         new MemoryStream(readBuffer, Unsafe.SizeOf<DatBlockHeader>(), (int) dbh.CompressedSize),
@@ -158,29 +166,26 @@ public sealed class ModelVirtualFileStream : BaseVirtualFileStream {
         return totalRead;
     }
 
-    public override object Clone() => new ModelVirtualFileStream(this);
+    public override BaseVirtualFileStream Clone(bool keepOpen) => new ModelVirtualFileStream(this, keepOpen);
 
     protected override void Dispose(bool disposing) {
-        IReferenceCounted.DecRef(ref _offsetManager);
+        _offsetManager?.DecRef();
+        if (_keepOpen)
+            _offsetManager?.DecRefKeepOpen();
+        _offsetManager = null;
         base.Dispose(disposing);
     }
 
-    private class OffsetManager : IReferenceCounted {
-        private int _refcount = 1;
-        
-        public readonly SemaphoreSlim ReaderLock = new(1, 1);
-        public readonly LuminaBinaryReader Reader;
-        public readonly long BaseOffset;
+    public override void FreeUnnecessaryResources() => _offsetManager?.CloseReaderIfUnnecessary();
+
+    private class OffsetManager : BaseOffsetManager {
         public readonly int NumBlocks;
         public readonly uint[] RequestOffsets;
         public readonly uint[] BlockOffsets;
         public readonly ushort[] BlockSizes;
         public readonly byte[] HeaderBytes;
-
-        public unsafe OffsetManager(LuminaBinaryReader reader, long baseOffset, ModelBlock modelBlock) {
-            Reader = reader;
-            BaseOffset = baseOffset;
-
+        
+        public unsafe OffsetManager(string datPath, PlatformId platformId, long baseOffset, ModelBlock modelBlock) : base(datPath, platformId, baseOffset) {
             var fileInfo = *(SqPackFileInfo*) &modelBlock;
             var locator = *(ModelBlockLocator*) ((byte*) &modelBlock + Unsafe.SizeOf<SqPackFileInfo>());
 
@@ -192,7 +197,7 @@ public sealed class ModelVirtualFileStream : BaseVirtualFileStream {
             var blockDecompressedSizes = new ushort[NumBlocks];
             HeaderBytes = new byte[ModelFileHeaderSize];
 
-            BlockSizes = reader.WithSeek(BaseOffset + Unsafe.SizeOf<ModelBlock>())
+            BlockSizes = Reader.WithSeek(BaseOffset + Unsafe.SizeOf<ModelBlock>())
                 .ReadStructuresAsArray<ushort>(NumBlocks);
 
             var modelFileHeader = new MdlStructs.ModelFileHeader {
@@ -213,7 +218,7 @@ public sealed class ModelVirtualFileStream : BaseVirtualFileStream {
                 if (BlockOffsets[i] == underlyingSize) {
                     blockDecompressedSizes[i] = 0;
                 } else {
-                    var blockHeader = reader.WithSeek(BaseOffset + BlockOffsets[i]).ReadStructure<DatBlockHeader>();
+                    var blockHeader = Reader.WithSeek(BaseOffset + BlockOffsets[i]).ReadStructure<DatBlockHeader>();
                     blockDecompressedSizes[i] = checked((ushort) blockHeader.DecompressedSize);
                 }
 
@@ -260,13 +265,6 @@ public sealed class ModelVirtualFileStream : BaseVirtualFileStream {
             ms.Write(BitConverter.GetBytes(modelFileHeader.EnableIndexBufferStreaming));
             ms.Write(BitConverter.GetBytes(modelFileHeader.EnableEdgeGeometry));
             ms.Write(new byte[] {0});
-        }
-        
-        public void AddRef() => Interlocked.Increment(ref _refcount);
-
-        public void DecRef() {
-            if (Interlocked.Decrement(ref _refcount) == 0)
-                Reader.Dispose();
         }
 
 #pragma warning disable CS0649

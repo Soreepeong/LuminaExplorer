@@ -34,6 +34,8 @@ public partial class Explorer {
             _previewCancellationTokenSource.Cancel();
             _sorterCancel.Cancel();
             _previews.Dispose();
+            _objects.AsParallel().ForAll(x => x.Dispose());
+            _objects.Clear();
         }
 
         public int PreviewCacheCapacity {
@@ -158,9 +160,15 @@ public partial class Explorer {
             _objects.InsertRange(index, modelObjects.Cast<VirtualObject>());
 
         public override void RemoveObjects(ICollection modelObjects) {
-            foreach (var o in modelObjects)
-                if (o is VirtualObject vo)
-                    _objects.Remove(vo);
+            foreach (var o in modelObjects) {
+                if (o is VirtualObject vo) {
+                    var i = _objects.IndexOf(vo);
+                    if (i != -1) {
+                        _objects[i].Dispose();
+                        _objects.RemoveAt(i);
+                    }
+                }
+            }
 
             if (!_objects.Any()) {
                 _previewCancellationTokenSource.Cancel();
@@ -169,14 +177,22 @@ public partial class Explorer {
         }
 
         public override void SetObjects(IEnumerable collection) {
+            foreach (var o in _objects)
+                o.Dispose();
+
             _objects.Clear();
             _previewCancellationTokenSource.Cancel();
             _previewCancellationTokenSource = new();
             _objects.AddRange(collection.Cast<VirtualObject>());
         }
 
-        public override void UpdateObject(int index, object modelObject) =>
+        public override void UpdateObject(int index, object modelObject) {
+            if (_objects[index] == modelObject)
+                return;
+
+            _objects[index].Dispose();
             _objects[index] = (VirtualObject) modelObject;
+        }
 
         public bool TryGetThumbnail(VirtualObject virtualObject, [MaybeNullWhen(false)] out Bitmap bitmap) {
             if (!_previews.TryGet(virtualObject, out var task)) {

@@ -11,8 +11,8 @@ namespace LuminaExplorer.Core.LazySqPackTree;
 public sealed class VirtualFileLookup : ICloneable, IDisposable {
     private VirtualFileLookupCore? _core;
 
-    public VirtualFileLookup(VirtualSqPackTree tree, VirtualFile virtualFile, LuminaBinaryReader reader) =>
-        _core = new(tree, virtualFile, reader);
+    public VirtualFileLookup(VirtualSqPackTree tree, VirtualFile virtualFile, string datPath) =>
+        _core = new(tree, virtualFile, datPath);
 
     private VirtualFileLookup(VirtualFileLookupCore? core) {
         _core = core;
@@ -29,7 +29,8 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
     private VirtualFileLookupCore Core => _core ?? throw new ObjectDisposedException(nameof(VirtualFileLookup));
 
     private void ReleaseUnmanagedResources() {
-        IReferenceCounted.DecRef(ref _core);
+        _core?.DecRef();
+        _core = null;
     }
 
     public void Dispose() {
@@ -53,8 +54,6 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
 
     public ulong OccupiedBytes => Core.OccupiedBytes;
 
-    public BaseVirtualFileStream DataStream => Core.DataStream;
-
     public Stream CreateStream() => Core.CreateStream();
 
     public Task<byte[]> ReadAll(CancellationToken cancellationToken = default) => Core.ReadAll(cancellationToken);
@@ -62,7 +61,7 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
     public Task<FileResource> AsFileResource(CancellationToken cancellationToken = default) =>
         Core.AsFileResource(cancellationToken);
 
-    private class VirtualFileLookupCore : IReferenceCounted {
+    private class VirtualFileLookupCore {
         private int _refcount = 1;
 
         private readonly VirtualSqPackTree _tree;
@@ -77,9 +76,11 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
         private readonly SqPackFileInfo _fileInfo;
         private readonly ModelBlock? _modelBlock;
 
-        internal VirtualFileLookupCore(VirtualSqPackTree tree, VirtualFile file, LuminaBinaryReader reader) {
+        internal VirtualFileLookupCore(VirtualSqPackTree tree, VirtualFile file, string datPath) {
             _tree = tree;
             File = file;
+
+            using var reader = new LuminaBinaryReader(System.IO.File.OpenRead(datPath), tree.PlatformId);
             reader.Position = file.Offset;
 
             _fileInfo = reader.WithSeek(file.Offset).ReadStructure<SqPackFileInfo>();
@@ -96,17 +97,15 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
 
             _dataStream = new(() => Type switch {
                 FileType.Empty => new EmptyVirtualFileStream(_tree.PlatformId),
-                FileType.Standard => new StandardVirtualFileStream(reader, file.Offset, _fileInfo),
-                FileType.Model => new ModelVirtualFileStream(reader, file.Offset, _modelBlock!.Value),
-                FileType.Texture => new TextureVirtualFileStream(reader, file.Offset, _fileInfo),
+                FileType.Standard => new StandardVirtualFileStream(datPath, _tree.PlatformId, file.Offset, _fileInfo, false),
+                FileType.Model => new ModelVirtualFileStream(datPath, _tree.PlatformId, file.Offset, _modelBlock!.Value, false),
+                FileType.Texture => new TextureVirtualFileStream(datPath, _tree.PlatformId, file.Offset, _fileInfo, false),
                 _ => throw new NotSupportedException()
             });
         }
 
         public ulong ReservedBytes => (ulong) ReservedSpaceUnits << 7;
         public ulong OccupiedBytes => (ulong) OccupiedSpaceUnits << 7;
-
-        public BaseVirtualFileStream DataStream => _dataStream.Value;
 
         public void AddRef() => Interlocked.Increment(ref _refcount);
 
@@ -118,7 +117,7 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
                 _dataStream.Value.Dispose();
         }
 
-        public Stream CreateStream() => new BufferedStream((Stream) DataStream.Clone());
+        public Stream CreateStream() => new BufferedStream(_dataStream.Value.Clone(true));
 
         public async Task<byte[]> ReadAll(CancellationToken cancellationToken = default) {
             await using var clonedStream = CreateStream();

@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using Lumina;
 using Lumina.Data;
@@ -12,7 +12,7 @@ public sealed partial class VirtualSqPackTree : IDisposable {
     // Enter writer lock when nodes may be moved around across parents not in same hierarchy.
     private readonly ReaderWriterLockSlim _treeStructureLock = new();
 
-    private readonly LruCache<VirtualFile, VirtualFileLookup> _fileLookups = new(128, true);
+    private readonly LruCache<VirtualFile, VirtualFileLookup> _fileLookups = new(4096, true);
 
     public readonly DirectoryInfo InstallationSqPackDirectory;
     public readonly VirtualFolder RootFolder = VirtualFolder.CreateRoot();
@@ -82,7 +82,7 @@ public sealed partial class VirtualSqPackTree : IDisposable {
         var fileName = Repository.BuildDatStr(cat, ex, chunk, PlatformId, $"dat{file.DataFileId}");
         var datPath = Path.Combine(InstallationSqPackDirectory.FullName, repoName, fileName);
 
-        data = new(this, file, new(File.OpenRead(datPath), PlatformId));
+        data = new(this, file, datPath);
 
         _fileLookups.Add(file, data);
         return (VirtualFileLookup) data.Clone();
