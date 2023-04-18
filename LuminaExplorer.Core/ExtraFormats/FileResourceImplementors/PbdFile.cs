@@ -1,4 +1,5 @@
-﻿using System.Numerics;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 using Lumina.Data;
 using Lumina.Data.Attributes;
 using Lumina.Extensions;
@@ -27,7 +28,7 @@ public class PbdFile : FileResource {
 
     public Deformer RootDeformer => Deformers.Single(x => x.Parent is null);
 
-    public bool TryGetDeformerBySkeletonId(XivHumanSkeletonId skeletonId, out Deformer deformer) {
+    public bool TryGetDeformerBySkeletonId(XivHumanSkeletonId skeletonId, [MaybeNullWhen(false)] out Deformer deformer) {
         foreach (var (s, d) in HeadersBySkeleton.Zip(Deformers)) {
             if (s.SkeletonId == skeletonId) {
                 deformer = d;

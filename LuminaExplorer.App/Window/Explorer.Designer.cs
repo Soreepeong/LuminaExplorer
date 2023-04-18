@@ -163,7 +163,6 @@ partial class Explorer {
         // 
         colFilesName.AspectName = "Name";
         colFilesName.HeaderCheckBox = true;
-        colFilesName.ImageAspectName = "TypeIconIndex";
         colFilesName.IsEditable = false;
         colFilesName.Text = "Name";
         colFilesName.Width = 240;
@@ -411,7 +410,7 @@ partial class Explorer {
         cboView.Alignment = ToolStripItemAlignment.Right;
         cboView.DropDownStyle = ComboBoxStyle.DropDownList;
         cboView.FlatStyle = FlatStyle.System;
-        cboView.Items.AddRange(new object[] { "Thumbnails (256px)", "Thumbnails (224px)", "Thumbnails (192px)", "Thumbnails (160px)",  "Thumbnails (128px)", "Thumbnails (96px)", "Thumbnails (64px)", "Icons", "List", "Details" });
+        cboView.Items.AddRange(new object[] { "Thumbnails (256px)", "Thumbnails (224px)", "Thumbnails (192px)", "Thumbnails (160px)",  "Thumbnails (128px)", "Thumbnails (96px)", "Thumbnails (64px)", "Large Icons", "Small Icons", "List", "Details" });
         cboView.Name = "cboView";
         cboView.Size = new Size(160, 25);
         // 

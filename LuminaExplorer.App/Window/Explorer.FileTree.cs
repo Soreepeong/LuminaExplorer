@@ -1,4 +1,5 @@
-﻿using LuminaExplorer.App.Utils;
+﻿using System.Diagnostics.CodeAnalysis;
+using LuminaExplorer.App.Utils;
 using LuminaExplorer.Core.LazySqPackTree;
 
 namespace LuminaExplorer.App.Window;
@@ -190,7 +191,7 @@ public partial class Explorer {
                     Nodes.Add(new TreeNode(@"Expanding..."));
             }
 
-            public bool TryFindChildNode(VirtualFolder folder, out FolderTreeNode childNode) {
+            public bool TryFindChildNode(VirtualFolder folder, [MaybeNullWhen(false)] out FolderTreeNode childNode) {
                 foreach (var node in Nodes) {
                     if (node is not FolderTreeNode n)
                         continue;

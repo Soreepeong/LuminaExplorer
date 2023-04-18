@@ -1,19 +1,33 @@
-﻿namespace LuminaExplorer.Core.Util;
+﻿using System.Diagnostics.CodeAnalysis;
+
+namespace LuminaExplorer.Core.Util;
 
 public sealed class LruCache<TKey, TValue> : IDisposable
     where TKey : notnull
     where TValue : notnull {
     private readonly object _syncRoot = new();
     private readonly Dictionary<TKey, LinkedListNode<LruCacheItem>> _entryLookup = new();
-    private readonly LinkedList<LruCacheItem> _entries = new();
+    private LinkedList<LruCacheItem> _entries = new();
 
-    private readonly int _capacity;
+    private int _capacity;
+    private readonly bool _disposeOnAnyThread;
 
-    public LruCache(int capacity) {
+    public LruCache(int capacity, bool disposeOnAnyThread) {
         _capacity = capacity;
+        _disposeOnAnyThread = disposeOnAnyThread;
     }
 
-    public bool TryGet(TKey key, out TValue value) {
+    public int Capacity {
+        get => _capacity;
+        set{
+            _capacity = value;
+            lock (_syncRoot) {
+                while (_entryLookup.Count >= _capacity)
+                    RemoveFirst();
+            }}
+    }
+
+    public bool TryGet(TKey key, [MaybeNullWhen(false)] out TValue value) {
         lock (_syncRoot) {
             if (_entryLookup.TryGetValue(key, out var node)) {
                 value = node.Value.Value;
@@ -44,10 +58,21 @@ public sealed class LruCache<TKey, TValue> : IDisposable
     public void Flush() {
         lock (_syncRoot) {
             _entryLookup.Clear();
-            foreach (var e in _entries)
-                if (e.Value is IDisposable disposable)
-                    disposable.Dispose();
-            _entries.Clear();
+            if (_disposeOnAnyThread) {
+                var entries = _entries;
+                Task.Run(() => {
+                    foreach (var e in entries) {
+                        if (e.Value is IDisposable disposable)
+                            disposable.Dispose();
+                    }
+                });
+                _entries = new();
+            } else {
+                foreach (var e in _entries)
+                    if (e.Value is IDisposable disposable)
+                        disposable.Dispose();
+                _entries.Clear();
+            }
         }
     }
 

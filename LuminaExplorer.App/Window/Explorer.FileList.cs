@@ -12,6 +12,10 @@ public partial class Explorer {
         private readonly VirtualObjectListView _listView;
         private readonly ComboBox _cboView;
 
+        private readonly ThumbnailDecoration _thumbnailDecoration;
+        private readonly Icon? _folderIconLarge;
+        private readonly Icon? _fileIconLarge;
+
         private ExplorerListViewDataSource? _source;
         private VirtualSqPackTree? _tree;
 
@@ -34,10 +38,8 @@ public partial class Explorer {
             _listView.LargeImageList = new();
             _listView.LargeImageList.ColorDepth = ColorDepth.Depth32Bit;
             _listView.LargeImageList.ImageSize = new(32, 32);
-            using (var icon = UiUtils.ExtractPeIcon("shell32.dll", 0, true)!)
-                _listView.LargeImageList.Images.Add(icon);
-            using (var icon = UiUtils.ExtractPeIcon("shell32.dll", 4, true)!)
-                _listView.LargeImageList.Images.Add(icon);
+            _fileIconLarge = UiUtils.ExtractPeIcon("shell32.dll", 0, true);
+            _folderIconLarge = UiUtils.ExtractPeIcon("shell32.dll", 4, true);
 
             if (_explorer.Tree is { } tree)
                 _listView.VirtualListDataSource = _source = new(_listView, tree);
@@ -45,6 +47,7 @@ public partial class Explorer {
                 _listView.VirtualListDataSource = new AbstractVirtualListDataSource(_listView);
             _listView.PrimarySortColumn = _explorer.colFilesName;
             _listView.PrimarySortOrder = SortOrder.Ascending;
+            _thumbnailDecoration = new(this);
 
             _listView.SelectionChanged += SelectionChanged;
             _listView.ItemDrag += ItemDrag;
@@ -53,6 +56,9 @@ public partial class Explorer {
             _listView.KeyUp += KeyUp;
             _listView.MouseUp += MouseUp;
             _listView.MouseWheel += MouseWheel;
+            _listView.FormatRow += FormatRow;
+
+            _explorer.Resize += WindowResized;
 
             if (_tree is not null) {
                 _tree.FolderChanged += VirtualFolderChanged;
@@ -108,6 +114,11 @@ public partial class Explorer {
             _listView.MouseUp -= MouseUp;
             _listView.MouseWheel -= MouseWheel;
             _cboView.SelectedIndexChanged -= cboView_SelectedIndexChanged;
+
+            _explorer.Resize -= WindowResized;
+            
+            _folderIconLarge?.Dispose();
+            _fileIconLarge?.Dispose();
         }
 
         public void Focus() => _listView.Focus();
@@ -151,12 +162,14 @@ public partial class Explorer {
 
         private void cboView_SelectedIndexChanged(object? sender, EventArgs e) {
             _listView.View = _cboView.SelectedIndex switch {
-                <= 6 => View.LargeIcon,
-                7 => View.SmallIcon,
-                8 => View.List,
-                9 => View.Details,
+                <= 7 => View.LargeIcon,
+                8 => View.SmallIcon,
+                9 => View.List,
+                10 => View.Details,
                 _ => throw new FailFastException("cboView.SelectedIndex >= cboView.SelectedIndex.Items.Count?"),
             };
+            
+            // 7 = LargeIcon(32px) but no thumbnails.
 
             if (_listView.VirtualListDataSource is ExplorerListViewDataSource source) {
                 source.ImageThumbnailSize = _cboView.SelectedIndex switch {
@@ -196,6 +209,10 @@ public partial class Explorer {
             var vo = source[_listView.SelectedIndices[0]];
             if (vo.IsFolder)
                 _explorer._navigationHandler?.NavigateTo(vo.Folder, true);
+        }
+
+        private void FormatRow(object? sender, FormatRowEventArgs e) {
+            e.Item.Decoration = _thumbnailDecoration;
         }
 
         private void ItemDrag(object? sender, ItemDragEventArgs e) {
@@ -266,6 +283,21 @@ public partial class Explorer {
                 previewHandler.PreviewFile(vo.File);
         }
 
+        private void WindowResized(object? sender, EventArgs e) {
+            if (_source is not { } source) 
+                return;
+
+            if (source.ImageThumbnailSize == 0) {
+                source.PreviewCacheCapacity = 128;
+                return;
+            }
+
+            var size = _explorer.Size;
+            var horz = (size.Width + source.ImageThumbnailSize - 1) / source.ImageThumbnailSize;
+            var vert = (size.Height + source.ImageThumbnailSize - 1) / source.ImageThumbnailSize;
+            source.PreviewCacheCapacity = Math.Min(horz * vert * 4, 128);
+        }
+
         // ReSharper disable once UnusedMember.Local
         public List<VirtualFolder> GetSelectedFolders() {
             var folders = new List<VirtualFolder>();
@@ -293,6 +325,45 @@ public partial class Explorer {
             }
 
             return folders;
+        }
+
+        private sealed class ThumbnailDecoration : IDecoration {
+            private readonly FileListHandler _handler;
+
+            public ThumbnailDecoration(FileListHandler handler) {
+                _handler = handler;
+            }
+
+            public OLVListItem? ListItem { get; set; }
+
+            public OLVListSubItem? SubItem { get; set; }
+
+            public void Draw(ObjectListView olv, Graphics g, Rectangle r) {
+                if (ListItem is not { } listItem ||
+                    ListItem.RowObject is not VirtualObject virtualObject ||
+                    _handler._source is not { } source)
+                    return;
+
+                Bitmap? bitmap = null;
+                var imageWidth = olv.View == View.LargeIcon ? 32 : 16;
+                var imageHeight = olv.View == View.LargeIcon ? 32 : 16; 
+                if (imageWidth >= 32 && source.TryGetThumbnail(virtualObject, out bitmap)) {
+                    imageWidth = bitmap.Width;
+                    imageHeight = bitmap.Height;
+                }
+
+                var iconBounds = listItem.GetBounds(ItemBoundsPortion.Icon);                
+                var x = iconBounds.Left + (iconBounds.Width - imageWidth) / 2;
+                var y = iconBounds.Top + (iconBounds.Height - imageHeight) / 2;
+                if (bitmap is not null) {
+                    g.DrawImage(bitmap, x, y);
+                    using var pen = new Pen(Color.LightGray);
+                    g.DrawRectangle(pen, x - 1, y - 1, bitmap.Width + 1, bitmap.Height + 1);
+                } else if (imageWidth <= 16 && imageHeight <= 16)
+                    olv.SmallImageList!.Draw(g, x, y, virtualObject.IsFolder ? 1 : 0);
+                else if ((virtualObject.IsFolder ? _handler._folderIconLarge : _handler._fileIconLarge) is { } icon)
+                    g.DrawIcon(icon, x, y);
+            }
         }
     }
 }

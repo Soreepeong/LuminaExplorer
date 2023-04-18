@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using BrightIdeasSoftware;
 using JetBrains.Annotations;
@@ -14,8 +15,8 @@ namespace LuminaExplorer.App.Window;
 public partial class Explorer {
     private class ExplorerListViewDataSource : AbstractVirtualListDataSource, IDisposable, IReadOnlyList<VirtualObject> {
         private readonly VirtualSqPackTree _tree;
-        
-        private readonly LruCache<VirtualObject, ResultDisposableTask<Bitmap?>> _previews = new(128);
+
+        private readonly LruCache<VirtualObject, ResultDisposableTask<Bitmap?>> _previews = new(128, true);
         private int _previewSize;
         private CancellationTokenSource _previewCancellationTokenSource = new();
 
@@ -32,6 +33,11 @@ public partial class Explorer {
             _previews.Dispose();
         }
 
+        public int PreviewCacheCapacity {
+            get => _previews.Capacity;
+            set => _previews.Capacity = value;
+        }
+
         public VirtualFolder? CurrentFolder {
             get => _currentFolder;
             set {
@@ -43,18 +49,20 @@ public partial class Explorer {
                     listView.ClearObjects();
                     return;
                 }
+                
+                _previews.Flush();
 
                 var fileNameResolver = _fileNameResolver = _tree.AsFileNamesResolved(_currentFolder);
                 if (!fileNameResolver.IsCompletedSuccessfully)
                     listView.ClearObjects();
                 else
                     listView.SelectedIndex = -1;
-                
+
                 fileNameResolver.ContinueWith(_ => {
-                    if (_fileNameResolver != fileNameResolver) 
+                    if (_fileNameResolver != fileNameResolver)
                         return;
                     _fileNameResolver = null;
-                    
+
                     listView.SetObjects(_tree.GetFolders(_currentFolder).Select(x => new VirtualObject(_tree, x))
                         .Concat(_currentFolder.Files.Select(x => new VirtualObject(_tree, x))));
                 }, TaskScheduler.FromCurrentSynchronizationContext());
@@ -66,11 +74,15 @@ public partial class Explorer {
             set {
                 if (_previewSize == value)
                     return;
-                
+
                 _previewSize = value;
                 _previewCancellationTokenSource.Cancel();
                 _previews.Flush();
                 _previewCancellationTokenSource = new();
+                listView.OwnerDraw = _previewSize > 0;
+
+                var largeImageListSize = _previewSize == 0 ? 32 : _previewSize;
+                listView.LargeImageList!.ImageSize = new(largeImageListSize, largeImageListSize);
                 listView.Invalidate();
             }
         }
@@ -136,43 +148,33 @@ public partial class Explorer {
 
         public override void AddObjects(ICollection modelObjects) => InsertObjects(_objects.Count, modelObjects);
 
-        public override void InsertObjects(int index, ICollection modelObjects) {
+        public override void InsertObjects(int index, ICollection modelObjects) =>
             _objects.InsertRange(index, modelObjects.Cast<VirtualObject>());
-            foreach (var o in _objects.Skip(index).Take(modelObjects.Count))
-                o.GetThumbnail += GetThumbnail;
-        }
 
         public override void RemoveObjects(ICollection modelObjects) {
             foreach (var o in modelObjects)
                 if (o is VirtualObject vo)
                     _objects.Remove(vo);
-            
+
             if (!_objects.Any())
                 _previewCancellationTokenSource.Cancel();
         }
 
         public override void SetObjects(IEnumerable collection) {
-            foreach (var o in _objects)
-                o.GetThumbnail -= GetThumbnail;
             _objects.Clear();
             _previewCancellationTokenSource.Cancel();
-            
+
             _objects.AddRange(collection.Cast<VirtualObject>());
             if (!_objects.Any())
                 return;
-            
+
             _previewCancellationTokenSource = new();
-            foreach (var o in _objects)
-                o.GetThumbnail += GetThumbnail;
         }
 
-        public override void UpdateObject(int index, object modelObject) {
-            _objects[index].GetThumbnail -= GetThumbnail;
+        public override void UpdateObject(int index, object modelObject) =>
             _objects[index] = (VirtualObject) modelObject;
-            _objects[index].GetThumbnail += GetThumbnail;
-        }
 
-        private Bitmap? GetThumbnail(VirtualObject virtualObject) {
+        public bool TryGetThumbnail(VirtualObject virtualObject, [MaybeNullWhen(false)] out Bitmap bitmap) {
             if (!_previews.TryGet(virtualObject, out var task)) {
                 _previews.Add(virtualObject, task = new(Task.Run(async () => {
                     var file = virtualObject.File;
@@ -189,7 +191,7 @@ public partial class Explorer {
                     canBeTexture |= file.Name.EndsWith(".atex", StringComparison.InvariantCultureIgnoreCase);
                     // may be an .atex file
                     canBeTexture |= !file.NameResolved && lookup is {Type: FileType.Standard, Size: > 256};
-                    
+
                     if (!canBeTexture)
                         return null;
 
@@ -204,6 +206,7 @@ public partial class Explorer {
                     } catch (Exception e) {
                         Debug.WriteLine(e);
                     }
+
                     return null;
                 })));
 
@@ -213,7 +216,13 @@ public partial class Explorer {
                 }, TaskScheduler.FromCurrentSynchronizationContext());
             }
 
-            return task.Task.IsCompletedSuccessfully ? task.Task.Result : null;
+            if ((task.Task.IsCompletedSuccessfully ? task.Task.Result : null) is { } b) {
+                bitmap = b;
+                return true;
+            }
+
+            bitmap = null!;
+            return false;
         }
 
         public VirtualObject this[int n] => _objects[n];
@@ -236,7 +245,6 @@ public partial class Explorer {
         private Lazy<string> _fullPath;
 
         public VirtualObject(VirtualSqPackTree tree, VirtualFile file) {
-            TypeIconIndex = 0;
             _file = file;
             _name = new(() => file.Name);
             _fullPath = new(() => tree.GetFullPath(file));
@@ -245,7 +253,6 @@ public partial class Explorer {
         }
 
         public VirtualObject(VirtualSqPackTree tree, VirtualFolder folder) {
-            TypeIconIndex = 1;
             _folder = folder;
             _name = new(folder.Name.Trim('/'));
             _fullPath = new(() => tree.GetFullPath(folder));
@@ -267,9 +274,6 @@ public partial class Explorer {
         ~VirtualObject() {
             ReleaseUnmanagedResources();
         }
-
-        // GetThumbnail?.Invoke(this, _imageCancellationTokenSource.Token)
-        public event GetThumbnailDelegate? GetThumbnail;
 
         public bool IsFolder => _lookup is null;
 
@@ -317,10 +321,6 @@ public partial class Explorer {
             set => SetField(ref _fullPath, new(value));
         }
 
-        [UsedImplicitly] public int TypeIconIndex { get; }
-
-        public delegate Bitmap? GetThumbnailDelegate(VirtualObject virtualObject);
-        
         #region Implementation of INotifyPropertyChanged
 
         public event PropertyChangedEventHandler? PropertyChanged;

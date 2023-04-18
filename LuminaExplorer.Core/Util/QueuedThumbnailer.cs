@@ -1,4 +1,5 @@
-﻿using System.Drawing.Imaging;
+﻿using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using Lumina.Data.Files;
 using Lumina.Data.Structs;
 
@@ -33,47 +34,45 @@ public class QueuedThumbnailer {
 
                 Bitmap sourceBitmap;
                 unsafe {
-                    fixed (void* p = f.RawData) {
+                    fixed (void* p = f.RawData)
                         sourceBitmap = new(f.Width, f.Height, 4 * f.Width, PixelFormat.Format32bppArgb, (nint) p);
+                }
+                
+                // Note: sourceBitmap seemingly does not copy the given data. Making a copy is required.
+                if (f.Width <= w && f.Height <= w)
+                    return new(sourceBitmap);
+
+                var srcRect = new Rectangle(0, 0, sourceBitmap.Width, sourceBitmap.Height);
+
+                var sourceAspectRatio = (float) sourceBitmap.Height / sourceBitmap.Width;
+                var targetAspectRatio = (float) w / h;
+                if (sourceAspectRatio < targetAspectRatio) {
+                    // horizontally wider
+                    if (sourceAspectRatio < targetAspectRatio / CropThresholdAspectRatioRatio) {
+                        sourceAspectRatio = targetAspectRatio / CropThresholdAspectRatioRatio;
+                        srcRect.Width = (int) (sourceBitmap.Height / sourceAspectRatio);
+                        srcRect.X = (sourceBitmap.Width - srcRect.Width) / 2;
                     }
+
+                    // fit height
+                    h = (int) (w * sourceAspectRatio);
+                } else {
+                    // vertically wider
+                    if (sourceAspectRatio > targetAspectRatio * CropThresholdAspectRatioRatio) {
+                        sourceAspectRatio = targetAspectRatio * CropThresholdAspectRatioRatio;
+                        srcRect.Height = (int) (sourceBitmap.Width * sourceAspectRatio);
+                        srcRect.Y = (sourceBitmap.Height - srcRect.Height) / 2;
+                    }
+
+                    // fit width
+                    w = (int) (h / sourceAspectRatio);
                 }
 
-                if (f.Width == w && f.Height == h)
-                    return sourceBitmap;
-
-                Bitmap? targetBitmap = null;
+                var targetBitmap = new Bitmap(w, h, PixelFormat.Format32bppArgb);
                 try {
-                    using var g = Graphics.FromImage(targetBitmap = new(w, h, PixelFormat.Format32bppArgb));
-                    var srcRect = new Rectangle(0, 0, sourceBitmap.Width, sourceBitmap.Height);
-                    var destRect = new Rectangle(0, 0, w, h);
-
-                    var sourceAspectRatio = (float) sourceBitmap.Height / sourceBitmap.Width;
-                    var targetAspectRatio = (float) w / h;
-                    if (sourceAspectRatio < targetAspectRatio) {
-                        // horizontally wider
-                        if (sourceAspectRatio < targetAspectRatio / CropThresholdAspectRatioRatio) {
-                            sourceAspectRatio = targetAspectRatio / CropThresholdAspectRatioRatio;
-                            srcRect.Width = (int) (sourceBitmap.Height / sourceAspectRatio);
-                            srcRect.X = (sourceBitmap.Width - srcRect.Width) / 2;
-                        }
-
-                        // fit height
-                        destRect.Height = (int) (destRect.Width * sourceAspectRatio);
-                        destRect.Y = (h - destRect.Height) / 2;
-                    } else {
-                        // vertically wider
-                        if (sourceAspectRatio > targetAspectRatio * CropThresholdAspectRatioRatio) {
-                            sourceAspectRatio = targetAspectRatio * CropThresholdAspectRatioRatio;
-                            srcRect.Height = (int) (sourceBitmap.Width * sourceAspectRatio);
-                            srcRect.Y = (sourceBitmap.Height - srcRect.Height) / 2;
-                        }
-
-                        // fit width
-                        destRect.Width = (int) (destRect.Height / sourceAspectRatio);
-                        destRect.X = (w - destRect.Width) / 2;
-                    }
-
-                    g.DrawImage(sourceBitmap, destRect, srcRect, GraphicsUnit.Pixel);
+                    using var g = Graphics.FromImage(targetBitmap);
+                    g.InterpolationMode = InterpolationMode.Bicubic;
+                    g.DrawImage(sourceBitmap, new Rectangle(0, 0, w, h), srcRect, GraphicsUnit.Pixel);
 
                     var result = targetBitmap;
                     targetBitmap = null;

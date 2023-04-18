@@ -133,7 +133,10 @@ public partial class Explorer {
                     cancelSource.Token);
             }
 
-            _searchTask.ContinueWith(_ => StartNewTask(), TaskScheduler.FromCurrentSynchronizationContext());
+            if (_searchTask.IsCompleted)
+                StartNewTask();
+            else
+                _searchTask.ContinueWith(_ => StartNewTask(), TaskScheduler.FromCurrentSynchronizationContext());
         }
     }
 }

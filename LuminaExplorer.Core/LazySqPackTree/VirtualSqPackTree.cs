@@ -12,7 +12,7 @@ public sealed partial class VirtualSqPackTree : IDisposable {
     // Enter writer lock when nodes may be moved around across parents not in same hierarchy.
     private readonly ReaderWriterLockSlim _treeStructureLock = new();
 
-    private readonly LruCache<VirtualFile, VirtualFileLookup> _fileLookups = new(128);
+    private readonly LruCache<VirtualFile, VirtualFileLookup> _fileLookups = new(128, true);
 
     public readonly DirectoryInfo InstallationSqPackDirectory;
     public readonly VirtualFolder RootFolder = VirtualFolder.CreateRoot();
