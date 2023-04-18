@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.ObjectPool;
+﻿using System.Diagnostics;
+using Microsoft.Extensions.ObjectPool;
 
 namespace LuminaExplorer.Core.Util;
 
@@ -10,6 +11,8 @@ public class AsyncSorter<T> {
     private Comparison<T>? _comparison;
     private IComparer<T>? _comparer;
     private CancellationToken _cancellationToken;
+    private Action<double>? _progressReport;
+    private TimeSpan _progressReportInterval = TimeSpan.FromMilliseconds(200);
 
     public AsyncSorter(ICollection<T> source) => _source = source;
 
@@ -23,8 +26,18 @@ public class AsyncSorter<T> {
         return this;
     }
 
-    public AsyncSorter<T> With(CancellationToken cancellationToken) {
+    public AsyncSorter<T> WithCancellationToken(CancellationToken cancellationToken) {
         _cancellationToken = cancellationToken;
+        return this;
+    }
+
+    public AsyncSorter<T> WithProgrssCallback(Action<double> callback) {
+        _progressReport = callback;
+        return this;
+    }
+
+    public AsyncSorter<T> WithProgrssCallbackInterval(TimeSpan interval) {
+        _progressReportInterval = interval;
         return this;
     }
 
@@ -34,9 +47,28 @@ public class AsyncSorter<T> {
         if (to - from <= AsyncSortThreshold)
             return SortShort(from, to);
 
+        var maxProgress = 1L;
+        var currentProgress = 0L;
+        
         var minimumUnit = to - from;
-        while (minimumUnit > AsyncSortThreshold)
+        while (minimumUnit > AsyncSortThreshold) {
             minimumUnit = (minimumUnit + 1) / 2;
+            maxProgress++;
+        }
+
+        maxProgress *= to - from;
+
+        var progressTimer = new Stopwatch();
+
+        void MaybeReportProgress(bool force= false) {
+            if (_progressReport is null || (!force && progressTimer.Elapsed < _progressReportInterval))
+                return;
+            
+            progressTimer.Restart();
+            _progressReport(1.0 * currentProgress / maxProgress);
+        }
+
+        MaybeReportProgress(true);
 
         var sortedLists = new List<List<T>>((to - from + minimumUnit - 1) / minimumUnit);
 
@@ -53,6 +85,8 @@ public class AsyncSorter<T> {
                     if (!x.IsCompleted)
                         return false;
                     sortedLists.Add(x.Result);
+                    currentProgress += x.Result.Count;
+                    MaybeReportProgress();
                     return true;
                 });
             }
@@ -85,6 +119,8 @@ public class AsyncSorter<T> {
                         if (!x.IsCompleted)
                             return false;
                         sortedLists.Add(x.Result);
+                        currentProgress += x.Result.Count;
+                        MaybeReportProgress();
                         return true;
                     });
                 }
@@ -92,10 +128,13 @@ public class AsyncSorter<T> {
                 if (i >= sortedLists2.Count)
                     break;
 
-                var list1 = sortedLists2[i];
-                if (i + 1 == sortedLists2.Count)
+                if (i + 1 == sortedLists2.Count) {
+                    var list1 = sortedLists2[i];
                     sortedLists.Add(list1);
-                else {
+                    currentProgress += list1.Count;
+                    MaybeReportProgress();
+                } else {
+                    var list1 = sortedLists2[i];
                     var list2 = sortedLists2[i + 1];
                     tasks.Add(Task.Run(() => Merge(list1, list2), _cancellationToken));
                 }
@@ -104,6 +143,8 @@ public class AsyncSorter<T> {
             sortedLists2.Clear();
         }
 
+        currentProgress = maxProgress;
+        MaybeReportProgress(true);
         return sortedLists.First();
     }
 

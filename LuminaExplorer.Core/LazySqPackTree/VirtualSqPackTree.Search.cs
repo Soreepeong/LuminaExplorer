@@ -55,14 +55,13 @@ public sealed partial class VirtualSqPackTree {
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            await Task.WhenAll(
-                folders.Select(Traverse)
-                    .Append(queue.Writer.WriteAsync(folders, cancellationToken).AsTask())
-                    .Append(AsFileNamesResolved(folder).ContinueWith(
-                        async _ => await queue.Writer.WriteAsync(
-                            folder.Files,
-                            cancellationToken),
-                        cancellationToken).Unwrap()));
+            var asFileNamesResolved = AsFileNamesResolved(folder);
+            await queue.Writer.WriteAsync(folders, cancellationToken).ConfigureAwait(false);
+            foreach (var f in folders)
+                await Traverse(f);
+            await queue.Writer.WriteAsync(
+                (await asFileNamesResolved.ConfigureAwait(false)).Files,
+                cancellationToken).ConfigureAwait(false);
         }
 
         long nextProgressReportedMilliseconds = 0;
@@ -85,7 +84,6 @@ public sealed partial class VirtualSqPackTree {
             if (@object is null)
                 break;
 
-            progress.Progress++;
             progress.LastObject = @object;
             if (progress.Stopwatch.ElapsedMilliseconds >= nextProgressReportedMilliseconds) {
                 progressCallback(progress);
@@ -140,6 +138,7 @@ public sealed partial class VirtualSqPackTree {
                             }
                         } finally {
                             stopwatches.Return(stopwatch);
+                            progress.Progress++;
                         }
                     },
                     cancellationToken);
@@ -157,5 +156,5 @@ public sealed partial class VirtualSqPackTree {
 
         progress.Completed = true;
         progressCallback(progress);
-    }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+    }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
 }

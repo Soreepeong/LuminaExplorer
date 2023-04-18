@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -106,7 +106,42 @@ public partial class Explorer {
         public override void Sort(OLVColumn column, SortOrder order) {
             _sorterCancel.Cancel();
             _sorterCancel = new();
-            SortImpl(column, order, _sorterCancel.Token)
+
+            var orderMultiplier = order == SortOrder.Descending ? -1 : 1;
+            _objects.SortAsync()
+                .With(column.AspectName switch {
+                    nameof(VirtualObject.FullPath) => (a, b) =>
+                        string.Compare(a.FullPath, b.FullPath, StringComparison.InvariantCultureIgnoreCase) *
+                        orderMultiplier,
+                    nameof(VirtualObject.Name) => (a, b) =>
+                        (a.CompareByFolderOrFile(b) ?? a.CompareByName(b)) * orderMultiplier,
+                    nameof(VirtualObject.PackTypeString) => (a, b) => orderMultiplier * (
+                        a.CompareByFolderOrFile(b) ??
+                        (a.IsFolder ? a.CompareByName(b) : a.Lookup.Type.CompareTo(b.Lookup.Type))),
+                    nameof(VirtualObject.Hash1) => (a, b) => orderMultiplier * (
+                        a.CompareByFolderOrFile(b) ??
+                        (a.IsFolder ? a.CompareByName(b) : a.Hash1Value.CompareTo(b.Hash1Value))),
+                    nameof(VirtualObject.Hash2) => (a, b) => orderMultiplier * (
+                        a.CompareByFolderOrFile(b) ??
+                        (a.IsFolder ? a.CompareByName(b) : a.Hash2Value.CompareTo(b.Hash2Value))),
+                    nameof(VirtualObject.RawSize) => (a, b) => orderMultiplier * (
+                        a.CompareByFolderOrFile(b) ??
+                        (a.IsFolder ? a.CompareByName(b) : a.Lookup.Size.CompareTo(b.Lookup.Size))),
+                    nameof(VirtualObject.StoredSize) => (a, b) => orderMultiplier * (
+                        a.CompareByFolderOrFile(b) ??
+                        (a.IsFolder
+                            ? a.CompareByName(b)
+                            : a.Lookup.OccupiedSpaceUnits.CompareTo(b.Lookup.OccupiedSpaceUnits))),
+                    nameof(VirtualObject.ReservedSize) => (a, b) => orderMultiplier * (
+                        a.CompareByFolderOrFile(b) ??
+                        (a.IsFolder
+                            ? a.CompareByName(b)
+                            : a.Lookup.ReservedSpaceUnits.CompareTo(b.Lookup.ReservedSpaceUnits))),
+                    _ => throw new FailFastException($"Invalid column AspectName {column.AspectName}"),
+                })
+                .WithCancellationToken(_sorterCancel.Token)
+                .WithProgrssCallback(progress => Debug.Print("Sort progress: {0:0.00}%", 100 * progress))
+                .Sort()
                 .ContinueWith(result => {
                     if (!result.IsCompletedSuccessfully)
                         return;
@@ -115,43 +150,6 @@ public partial class Explorer {
                     listView.ClearCachedInfo();
                     listView.Invalidate();
                 }, TaskScheduler.FromCurrentSynchronizationContext());
-        }
-
-        private Task<List<VirtualObject>> SortImpl(
-            OLVColumn column,
-            SortOrder order,
-            CancellationToken cancellationToken) {
-            var orderMultiplier = order == SortOrder.Descending ? -1 : 1;
-            return _objects.SortAsync().With(column.AspectName switch {
-                nameof(VirtualObject.FullPath) => (a, b) =>
-                    string.Compare(a.FullPath, b.FullPath, StringComparison.InvariantCultureIgnoreCase) *
-                    orderMultiplier,
-                nameof(VirtualObject.Name) => (a, b) =>
-                    (a.CompareByFolderOrFile(b) ?? a.CompareByName(b)) * orderMultiplier,
-                nameof(VirtualObject.PackTypeString) => (a, b) => orderMultiplier * (
-                    a.CompareByFolderOrFile(b) ??
-                    (a.IsFolder ? a.CompareByName(b) : a.Lookup.Type.CompareTo(b.Lookup.Type))),
-                nameof(VirtualObject.Hash1) => (a, b) => orderMultiplier * (
-                    a.CompareByFolderOrFile(b) ??
-                    (a.IsFolder ? a.CompareByName(b) : a.Hash1Value.CompareTo(b.Hash1Value))),
-                nameof(VirtualObject.Hash2) => (a, b) => orderMultiplier * (
-                    a.CompareByFolderOrFile(b) ??
-                    (a.IsFolder ? a.CompareByName(b) : a.Hash2Value.CompareTo(b.Hash2Value))),
-                nameof(VirtualObject.RawSize) => (a, b) => orderMultiplier * (
-                    a.CompareByFolderOrFile(b) ??
-                    (a.IsFolder ? a.CompareByName(b) : a.Lookup.Size.CompareTo(b.Lookup.Size))),
-                nameof(VirtualObject.StoredSize) => (a, b) => orderMultiplier * (
-                    a.CompareByFolderOrFile(b) ??
-                    (a.IsFolder
-                        ? a.CompareByName(b)
-                        : a.Lookup.OccupiedSpaceUnits.CompareTo(b.Lookup.OccupiedSpaceUnits))),
-                nameof(VirtualObject.ReservedSize) => (a, b) => orderMultiplier * (
-                    a.CompareByFolderOrFile(b) ??
-                    (a.IsFolder
-                        ? a.CompareByName(b)
-                        : a.Lookup.ReservedSpaceUnits.CompareTo(b.Lookup.ReservedSpaceUnits))),
-                _ => throw new FailFastException($"Invalid column AspectName {column.AspectName}"),
-            }).With(cancellationToken).Sort();
         }
 
         public override void AddObjects(ICollection modelObjects) => InsertObjects(_objects.Count, modelObjects);
@@ -164,19 +162,17 @@ public partial class Explorer {
                 if (o is VirtualObject vo)
                     _objects.Remove(vo);
 
-            if (!_objects.Any())
+            if (!_objects.Any()) {
                 _previewCancellationTokenSource.Cancel();
+                _previewCancellationTokenSource = new();
+            }
         }
 
         public override void SetObjects(IEnumerable collection) {
             _objects.Clear();
             _previewCancellationTokenSource.Cancel();
-
-            _objects.AddRange(collection.Cast<VirtualObject>());
-            if (!_objects.Any())
-                return;
-
             _previewCancellationTokenSource = new();
+            _objects.AddRange(collection.Cast<VirtualObject>());
         }
 
         public override void UpdateObject(int index, object modelObject) =>

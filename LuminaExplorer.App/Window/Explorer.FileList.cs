@@ -347,7 +347,7 @@ public partial class Explorer {
                 Bitmap? bitmap = null;
                 var imageWidth = olv.View == View.LargeIcon ? 32 : 16;
                 var imageHeight = olv.View == View.LargeIcon ? 32 : 16; 
-                if (imageWidth >= 32 && source.TryGetThumbnail(virtualObject, out bitmap)) {
+                if (source.ImageThumbnailSize != 0 && source.TryGetThumbnail(virtualObject, out bitmap)) {
                     imageWidth = bitmap.Width;
                     imageHeight = bitmap.Height;
                 }

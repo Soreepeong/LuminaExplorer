@@ -80,15 +80,8 @@ public partial class Explorer {
                 }
 
                 // Defer adding until completion if there simply are too many, since sorting a lot of objects is pretty slow
-                if (fileListHandler.ItemCount > 1000 && !progress.Completed)
+                if (fileListHandler.ItemCount > 8192 && !progress.Completed)
                     return;
-
-                // There are too many; Give Up(tm)
-                if (fileListHandler.ItemCount + pendingObjects1.Count > 10000) {
-                    cancelSource.Cancel();
-                    cancelSource.Token.ThrowIfCancellationRequested();
-                    return;
-                }
 
                 lock (pendingObjectsLock) {
                     if (!pendingObjects1.Any())
