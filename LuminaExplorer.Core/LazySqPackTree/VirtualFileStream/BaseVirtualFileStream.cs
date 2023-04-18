@@ -71,6 +71,8 @@ public abstract class BaseVirtualFileStream : Stream, ICloneable {
 
         public readonly SemaphoreSlim ReaderLock = new(1, 1);
         public readonly long BaseOffset;
+        
+        // TODO: use R/W lock of some sort, or this may cause using disposed objects on some multithreaded operation
         public LuminaBinaryReader Reader => _reader ??= new(File.OpenRead(_datPath), _platformId);
 
         public BaseOffsetManager(string datPath, PlatformId platformId, long baseOffset) {
