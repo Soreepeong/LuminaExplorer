@@ -3,182 +3,255 @@
 namespace LuminaExplorer.App.Window;
 
 public partial class Explorer {
-    private readonly List<VirtualFolder> _navigationHistory = new();
-    private int _navigationHistoryPosition = -1;
-    private VirtualFolder _currentFolder;
+    private sealed class NavigationHandler : IDisposable {
+        private readonly Explorer _explorer;
+        private readonly ComboBox _txtPath;
 
-    private void Constructor_Navigation() {
-        txtPath.AutoCompleteMode = AutoCompleteMode.Suggest;
-        txtPath.AutoCompleteSource = AutoCompleteSource.CustomSource;
-        
-        _vsp.FolderChanged += SqPackTree_FolderChanged_Navigation;
-    }
+        private readonly List<VirtualFolder> _navigationHistory = new();
+        private int _navigationHistoryPosition = -1;
+        private VirtualFolder? _currentFolder;
 
-    private void Dispose_Navigation() {
-        _vsp.FolderChanged -= SqPackTree_FolderChanged_Navigation;
-    }
+        private VirtualSqPackTree? _tree;
 
-    private void SqPackTree_FolderChanged_Navigation(VirtualFolder changedFolder, VirtualFolder[]? previousPathFromRoot) {
-        btnNavUp.Enabled = _currentFolder.Parent is not null;
-    }
+        public NavigationHandler(Explorer explorer) {
+            _explorer = explorer;
+            _txtPath = explorer.txtPath.ComboBox!;
+            _txtPath.AutoCompleteMode = AutoCompleteMode.Suggest;
+            _txtPath.AutoCompleteSource = AutoCompleteSource.CustomSource;
 
-    private void btnNavBack_Click(object sender, EventArgs e) => NavigateBack();
+            _tree = explorer.Tree;
+            _currentFolder = _tree?.RootFolder;
+            if (_tree is not null)
+                _tree.FolderChanged += SqPackTree_FolderChanged_Navigation;
 
-    private void btnNavForward_Click(object sender, EventArgs e) => NavigateForward();
-
-    private void btnNavUp_Click(object sender, EventArgs e) => NavigateUp();
-
-    private void btnsHistory_DropDownOpening(object sender, EventArgs e) {
-        var counter = 0;
-        for (int iFrom = Math.Max(0, _navigationHistoryPosition - 10),
-             iTo = Math.Min(_navigationHistory.Count - 1, _navigationHistoryPosition + 10),
-             i = iTo;
-             i >= iFrom;
-             i--, counter++) {
-            var path = _vsp.GetFullPath(_navigationHistory[i]);
-
-            if (btnsHistory.DropDownItems.Count <= counter) {
-                btnsHistory.DropDownItems.Add(new ToolStripButton() {
-                    AutoSize = false,
-                    Alignment = ToolStripItemAlignment.Left,
-                    TextAlign = ContentAlignment.MiddleLeft,
-                    Width = 320,
-                });
-            }
-
-            var ddi = btnsHistory.DropDownItems[counter];
-            ddi.Visible = true;
-            ddi.Text = path == "" ? "(root)" : path;
-            ddi.Tag = i;
+            _explorer.btnNavBack.Click += btnNavBack_Click;
+            _explorer.btnNavForward.Click += btnNavForward_Click;
+            _explorer.btnsHistory.DropDownOpening += btnsHistory_DropDownOpening;
+            _explorer.btnsHistory.DropDownItemClicked += btnsHistory_DropDownItemClicked;
+            _explorer.btnNavUp.Click += btnNavUp_Click;
+            _explorer.txtPath.KeyDown += txtPath_KeyDown;
+            _explorer.txtPath.KeyUp += txtPath_KeyUp;
         }
 
-        for (; counter < btnsHistory.DropDownItems.Count; counter++)
-            btnsHistory.DropDownItems[counter].Visible = false;
-    }
+        public void Dispose() {
+            _explorer.btnNavBack.Click -= btnNavBack_Click;
+            _explorer.btnNavForward.Click -= btnNavForward_Click;
+            _explorer.btnsHistory.DropDownOpening -= btnsHistory_DropDownOpening;
+            _explorer.btnsHistory.DropDownItemClicked -= btnsHistory_DropDownItemClicked;
+            _explorer.btnNavUp.Click -= btnNavUp_Click;
+            _explorer.txtPath.KeyDown -= txtPath_KeyDown;
+            _explorer.txtPath.KeyUp -= txtPath_KeyUp;
 
-    private void btnsHistory_DropDownItemClicked(object sender, ToolStripItemClickedEventArgs e) {
-        if (e.ClickedItem?.Tag is int historyIndex)
-            NavigateTo(_navigationHistory[_navigationHistoryPosition = historyIndex], false);
-    }
-
-    private void txtPath_KeyDown(object sender, KeyEventArgs e) {
-        switch (e.KeyCode) {
-            case Keys.Enter: {
-                var prevText = txtPath.Text;
-                ExpandTreeTo(txtPath.Text)
-                    .ContinueWith(vfr => {
-                        var fullPath = _vsp.GetFullPath(vfr.Result.Folder);
-                        var exactMatchFound = 0 == string.Compare(
-                            fullPath.TrimEnd('/'),
-                            prevText.Trim().TrimEnd('/'),
-                            StringComparison.InvariantCultureIgnoreCase);
-                        txtPath.Text = prevText;
-
-                        if (exactMatchFound) {
-                            lvwFiles.Focus();
-                            return;
-                        }
-
-                        var currentFullPathLength = fullPath.Length;
-                        var sharedLength = 0;
-                        while (sharedLength < currentFullPathLength && sharedLength < prevText.Length)
-                            sharedLength++;
-                        txtPath.ComboBox!.SelectionStart = sharedLength;
-                        txtPath.ComboBox!.SelectionLength = prevText.Length - sharedLength;
-                    }, TaskScheduler.FromCurrentSynchronizationContext());
-                break;
-            }
-
-            case Keys.Escape:
-                txtPath.Text = _vsp.GetFullPath(_currentFolder);
-                lvwFiles.Focus();
-                break;
+            Tree = null;
         }
-    }
 
-    private void txtPath_KeyUp(object? sender, KeyEventArgs keyEventArgs) {
-        var searchedText = txtPath.Text;
-        _vsp.SuggestFullPath(searchedText);
-
-        var cleanerPath = searchedText.Split('/', StringSplitOptions.TrimEntries);
-        if (cleanerPath.Any())
-            cleanerPath = cleanerPath[..^1];
-        _vsp.AsFoldersResolved(cleanerPath)
-            .ContinueWith(res => {
-                if (searchedText != txtPath.Text || !res.IsCompletedSuccessfully)
+        public VirtualSqPackTree? Tree {
+            get => _tree;
+            set {
+                if (_tree == value)
                     return;
 
-                if (txtPath.Tag == res.Result)
-                    return;
+                if (_tree is not null)
+                    _tree.FolderChanged -= SqPackTree_FolderChanged_Navigation;
 
-                txtPath.Tag = res.Result;
+                _tree = value;
+                _currentFolder = null;
 
-                var selectionStart = txtPath.ComboBox!.SelectionStart;
-                var selectionLength = txtPath.ComboBox!.SelectionLength;
+                if (_tree is not null) {
+                    _tree.FolderChanged += SqPackTree_FolderChanged_Navigation;
 
-                var parentFolder = _vsp.GetFullPath(res.Result);
-                var src = new AutoCompleteStringCollection();
-
-                foreach (var f in _vsp.GetFolders(res.Result).Where(x => x != res.Result.Parent))
-                    src.Add($"{parentFolder}{f.Name[..^1]}");
-                txtPath.AutoCompleteCustomSource = src;
-
-                txtPath.ComboBox.SelectionStart = selectionStart;
-                txtPath.ComboBox.SelectionLength = selectionLength;
-            }, TaskScheduler.FromCurrentSynchronizationContext());
-    }
-
-    private bool NavigateBack() {
-        if (_navigationHistoryPosition <= 0)
-            return false;
-        NavigateTo(_navigationHistory[--_navigationHistoryPosition], false);
-        return true;
-    }
-
-    private bool NavigateForward() {
-        if (_navigationHistoryPosition + 1 >= _navigationHistory.Count)
-            return false;
-        NavigateTo(_navigationHistory[++_navigationHistoryPosition], false);
-        return true;
-    }
-
-    private bool NavigateUp() {
-        if (_currentFolder.Parent is not { } parent)
-            return false;
-        NavigateTo(parent, true);
-        return true;
-    }
-
-    private void NavigateTo(VirtualFolder folder, bool addToHistory) {
-        if (_currentFolder == folder)
-            return;
-
-        colFilesFullPath.IsVisible = false;
-
-        _currentFolder = folder;
-        if (addToHistory) {
-            _navigationHistory.RemoveRange(
-                _navigationHistoryPosition + 1,
-                _navigationHistory.Count - _navigationHistoryPosition - 1);
-            _navigationHistory.Add(folder);
-            _navigationHistoryPosition++;
-
-            if (_navigationHistory.Count > 1000) {
-                var toRemove = _navigationHistory.Count - 1000;
-                _navigationHistory.RemoveRange(0, toRemove);
-                _navigationHistoryPosition -= toRemove;
-                if (_navigationHistoryPosition < 0)
-                    _navigationHistoryPosition = 0;
+                    NavigateTo(_tree.RootFolder, true);
+                }
             }
         }
 
-        btnNavBack.Enabled = _navigationHistoryPosition > 0;
-        btnNavForward.Enabled = _navigationHistoryPosition < _navigationHistory.Count - 1;
-        btnNavUp.Enabled = folder.Parent is not null;
+        public VirtualFolder? CurrentFolder => _currentFolder;
 
-        txtPath.Text = _vsp.GetFullPath(folder);
+        private void SqPackTree_FolderChanged_Navigation(VirtualFolder changedFolder,
+            VirtualFolder[]? previousPathFromRoot) {
+            _explorer.btnNavUp.Enabled = _currentFolder?.Parent is not null;
+        }
 
-        if (lvwFiles.VirtualListDataSource is ExplorerListViewDataSource source)
-            source.CurrentFolder = folder;
+        private void btnNavBack_Click(object? sender, EventArgs e) => NavigateBack();
+
+        private void btnNavForward_Click(object? sender, EventArgs e) => NavigateForward();
+
+        private void btnNavUp_Click(object? sender, EventArgs e) => NavigateUp();
+
+        private void btnsHistory_DropDownOpening(object? sender, EventArgs e) {
+            if (_tree is not { } tree)
+                return;
+            
+            var counter = 0;
+            for (int iFrom = Math.Max(0, _navigationHistoryPosition - 10),
+                 iTo = Math.Min(_navigationHistory.Count - 1, _navigationHistoryPosition + 10),
+                 i = iTo;
+                 i >= iFrom;
+                 i--, counter++) {
+                var path = tree.GetFullPath(_navigationHistory[i]);
+
+                if (_explorer.btnsHistory.DropDownItems.Count <= counter) {
+                    _explorer.btnsHistory.DropDownItems.Add(new ToolStripButton() {
+                        AutoSize = false,
+                        Alignment = ToolStripItemAlignment.Left,
+                        TextAlign = ContentAlignment.MiddleLeft,
+                        Width = 320,
+                    });
+                }
+
+                var ddi = _explorer.btnsHistory.DropDownItems[counter];
+                ddi.Visible = true;
+                ddi.Text = path == "" ? "(root)" : path;
+                ddi.Tag = i;
+            }
+
+            for (; counter < _explorer.btnsHistory.DropDownItems.Count; counter++)
+                _explorer.btnsHistory.DropDownItems[counter].Visible = false;
+        }
+
+        private void btnsHistory_DropDownItemClicked(object? sender, ToolStripItemClickedEventArgs e) {
+            if (e.ClickedItem?.Tag is int historyIndex)
+                NavigateTo(_navigationHistory[_navigationHistoryPosition = historyIndex], false);
+        }
+
+        private void txtPath_KeyDown(object? sender, KeyEventArgs e) {
+            switch (e.KeyCode) {
+                case Keys.Enter: {
+                    var prevText = _txtPath.Text;
+                    _explorer._fileTreeHandler?.ExpandTreeTo(_txtPath.Text)
+                        .ContinueWith(vfr => {
+                            if (_tree is not { } tree)
+                                return;
+
+                            var fullPath = tree.GetFullPath(vfr.Result.Folder);
+                            var exactMatchFound = 0 == string.Compare(
+                                fullPath.TrimEnd('/'),
+                                prevText.Trim().TrimEnd('/'),
+                                StringComparison.InvariantCultureIgnoreCase);
+                            _txtPath.Text = prevText;
+
+                            if (exactMatchFound) {
+                                _explorer._fileListHandler?.Focus();
+                                return;
+                            }
+
+                            var currentFullPathLength = fullPath.Length;
+                            var sharedLength = 0;
+                            while (sharedLength < currentFullPathLength && sharedLength < prevText.Length)
+                                sharedLength++;
+                            _txtPath.SelectionStart = sharedLength;
+                            _txtPath.SelectionLength = prevText.Length - sharedLength;
+                        }, TaskScheduler.FromCurrentSynchronizationContext());
+                    break;
+                }
+
+                case Keys.Escape: {
+                    if (_tree is not { } tree || _currentFolder is not { } currentFolder)
+                        return;
+
+                    _txtPath.Text = tree.GetFullPath(currentFolder);
+                    _explorer._fileListHandler?.Focus();
+                    break;
+                }
+            }
+        }
+
+        private void txtPath_KeyUp(object? sender, KeyEventArgs keyEventArgs) {
+            if (_tree is not { } tree)
+                return;
+            
+            var searchedText = _txtPath.Text;
+            tree.SuggestFullPath(searchedText);
+
+            var cleanerPath = searchedText.Split('/', StringSplitOptions.TrimEntries);
+            if (cleanerPath.Any())
+                cleanerPath = cleanerPath[..^1];
+            tree.AsFoldersResolved(cleanerPath)
+                .ContinueWith(res => {
+                    if (_tree is not { } tree2)
+                        return;
+                    
+                    if (searchedText != _txtPath.Text || !res.IsCompletedSuccessfully)
+                        return;
+
+                    if (_txtPath.Tag == res.Result)
+                        return;
+
+                    _txtPath.Tag = res.Result;
+
+                    var selectionStart = _txtPath.SelectionStart;
+                    var selectionLength = _txtPath.SelectionLength;
+
+                    var parentFolder = tree2.GetFullPath(res.Result);
+                    var src = new AutoCompleteStringCollection();
+
+                    foreach (var f in tree2.GetFolders(res.Result).Where(x => x != res.Result.Parent))
+                        src.Add($"{parentFolder}{f.Name[..^1]}");
+                    _txtPath.AutoCompleteCustomSource = src;
+
+                    _txtPath.SelectionStart = selectionStart;
+                    _txtPath.SelectionLength = selectionLength;
+                }, TaskScheduler.FromCurrentSynchronizationContext());
+        }
+
+        public bool NavigateBack() {
+            if (_navigationHistoryPosition <= 0)
+                return false;
+            NavigateTo(_navigationHistory[--_navigationHistoryPosition], false);
+            return true;
+        }
+
+        public bool NavigateForward() {
+            if (_navigationHistoryPosition + 1 >= _navigationHistory.Count)
+                return false;
+            NavigateTo(_navigationHistory[++_navigationHistoryPosition], false);
+            return true;
+        }
+
+        public bool NavigateUp() {
+            if (_currentFolder?.Parent is not { } parent)
+                return false;
+            NavigateTo(parent, true);
+            return true;
+        }
+
+        public void NavigateToCurrent() {
+            if (_explorer._fileListHandler is { } fileListHandler)
+                fileListHandler.CurrentFolder = _currentFolder;
+        }
+
+        public void NavigateTo(VirtualFolder folder, bool addToHistory) {
+            if (_tree is not { } tree)
+                return;
+
+            if (_currentFolder == folder)
+                return;
+
+            _currentFolder = folder;
+            if (addToHistory) {
+                _navigationHistory.RemoveRange(
+                    _navigationHistoryPosition + 1,
+                    _navigationHistory.Count - _navigationHistoryPosition - 1);
+                _navigationHistory.Add(folder);
+                _navigationHistoryPosition++;
+
+                if (_navigationHistory.Count > 1000) {
+                    var toRemove = _navigationHistory.Count - 1000;
+                    _navigationHistory.RemoveRange(0, toRemove);
+                    _navigationHistoryPosition -= toRemove;
+                    if (_navigationHistoryPosition < 0)
+                        _navigationHistoryPosition = 0;
+                }
+            }
+
+            _explorer.btnNavBack.Enabled = _navigationHistoryPosition > 0;
+            _explorer.btnNavForward.Enabled = _navigationHistoryPosition < _navigationHistory.Count - 1;
+            _explorer.btnNavUp.Enabled = folder.Parent is not null;
+
+            _txtPath.Text = tree.GetFullPath(folder);
+
+            if (_explorer._fileListHandler is { } fileListHandler)
+                fileListHandler.CurrentFolder = folder;
+        }
     }
 }

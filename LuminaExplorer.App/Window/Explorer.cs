@@ -3,21 +3,23 @@ using LuminaExplorer.Core.LazySqPackTree;
 namespace LuminaExplorer.App.Window;
 
 public partial class Explorer : Form {
-    private const int ImageListIndexFile = 0;
-    private const int ImageListIndexFolder = 1;
+    private PreviewHandler? _previewHandler;
+    private FileListHandler? _fileListHandler;
+    private NavigationHandler? _navigationHandler;
+    private FileTreeHandler? _fileTreeHandler;
+    private SearchHandler? _searchHandler;
+    private VirtualSqPackTree? _tree;
 
-    private readonly VirtualSqPackTree _vsp;
-    
-    public Explorer(VirtualSqPackTree vsp) {
-        _vsp = vsp;
-
+    public Explorer(VirtualSqPackTree? vsp) {
         InitializeComponent();
         
-        Constructor_FileTree();
-        Constructor_FileList();
-        Constructor_Navigation();
+        _previewHandler = new(this);
+        _fileListHandler = new(this);
+        _navigationHandler = new(this);
+        _fileTreeHandler = new(this);
+        _searchHandler = new(this);
 
-        NavigateTo(_vsp.RootFolder, true);
+        Tree = vsp;
 
         txtSearch.TextBox!.PlaceholderText = @"Search...";
         
@@ -33,11 +35,36 @@ public partial class Explorer : Form {
         // ExpandTreeTo("/chara/monster/m0489/animation/a0001/bt_common/loop_sp/");
     }
 
+    public VirtualSqPackTree? Tree {
+        get => _tree;
+        set {
+            if (_tree == value)
+                return;
+
+            _tree = value;
+            if (_fileListHandler is not null)
+                _fileListHandler.Tree = value;
+            if (_navigationHandler is not null)
+                _navigationHandler.Tree = value;
+            if (_fileTreeHandler is not null)
+                _fileTreeHandler.Tree = value;
+            if (_searchHandler is not null)
+                _searchHandler.Tree = value;
+        }
+    }
+
     protected override void Dispose(bool disposing) {
         if (disposing) {
-            Dispose_Navigation();
-            Dispose_FileList();
-            Dispose_FileTree();
+            _previewHandler?.Dispose();
+            _previewHandler = null;
+            _fileListHandler?.Dispose();
+            _fileListHandler = null;
+            _navigationHandler?.Dispose();
+            _navigationHandler = null;
+            _fileTreeHandler?.Dispose();
+            _fileTreeHandler = null;
+            _searchHandler?.Dispose();
+            _searchHandler = null;
 
             components?.Dispose();
         }
@@ -55,10 +82,10 @@ public partial class Explorer : Form {
                 txtPath.Focus();
                 return true;
             case Keys.BrowserBack:
-                NavigateBack();
+                _navigationHandler?.NavigateBack();
                 return true;
             case Keys.BrowserForward:
-                NavigateForward();
+                _navigationHandler?.NavigateForward();
                 return true;
             default:
                 return base.ProcessCmdKey(ref msg, keyData);

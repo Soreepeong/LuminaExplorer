@@ -33,7 +33,7 @@ public partial class Explorer {
         }
 
         public VirtualFolder? CurrentFolder {
-            // get => _currentFolder;
+            get => _currentFolder;
             set {
                 if (_currentFolder == value)
                     return;
@@ -119,8 +119,8 @@ public partial class Explorer {
                             nameof(VirtualObject.RawSize) => a.Lookup.Size.CompareTo(b.Lookup.Size),
                             nameof(VirtualObject.StoredSize) =>
                                 a.Lookup.OccupiedBytes.CompareTo(b.Lookup.OccupiedBytes),
-                            nameof(VirtualObject.ReservedSize) => a.Lookup.ReservedBytes.CompareTo(
-                                b.Lookup.ReservedBytes),
+                            nameof(VirtualObject.ReservedSize) =>
+                                a.Lookup.ReservedBytes.CompareTo(b.Lookup.ReservedBytes),
                             _ => 0,
                         },
                     };
@@ -129,7 +129,7 @@ public partial class Explorer {
                 return order switch {
                     SortOrder.None or SortOrder.Ascending => c,
                     SortOrder.Descending => -c,
-                    _ => throw new InvalidOperationException(),
+                    _ => throw new FailFastException("Invalid SortOrder"),
                 };
             });
         }
@@ -236,7 +236,7 @@ public partial class Explorer {
         private Lazy<string> _fullPath;
 
         public VirtualObject(VirtualSqPackTree tree, VirtualFile file) {
-            Image = ImageListIndexFile;
+            TypeIconIndex = 0;
             _file = file;
             _name = new(() => file.Name);
             _fullPath = new(() => tree.GetFullPath(file));
@@ -245,7 +245,7 @@ public partial class Explorer {
         }
 
         public VirtualObject(VirtualSqPackTree tree, VirtualFolder folder) {
-            Image = ImageListIndexFolder;
+            TypeIconIndex = 1;
             _folder = folder;
             _name = new(folder.Name.Trim('/'));
             _fullPath = new(() => tree.GetFullPath(folder));
@@ -270,8 +270,6 @@ public partial class Explorer {
 
         // GetThumbnail?.Invoke(this, _imageCancellationTokenSource.Token)
         public event GetThumbnailDelegate? GetThumbnail;
-
-        public delegate Bitmap? GetThumbnailDelegate(VirtualObject virtualObject);
 
         public bool IsFolder => _lookup is null;
 
@@ -319,7 +317,9 @@ public partial class Explorer {
             set => SetField(ref _fullPath, new(value));
         }
 
-        [UsedImplicitly] public object? Image { get; }
+        [UsedImplicitly] public int TypeIconIndex { get; }
+
+        public delegate Bitmap? GetThumbnailDelegate(VirtualObject virtualObject);
         
         #region Implementation of INotifyPropertyChanged
 

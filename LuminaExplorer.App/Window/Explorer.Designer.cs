@@ -123,8 +123,6 @@ partial class Explorer {
         tvwFiles.PathSeparator = "/";
         tvwFiles.Size = new Size(266, 687);
         tvwFiles.TabIndex = 1;
-        tvwFiles.AfterExpand += tvwFiles_AfterExpand;
-        tvwFiles.AfterSelect += tvwFiles_AfterSelect;
         // 
         // splSub
         // 
@@ -160,18 +158,12 @@ partial class Explorer {
         lvwFiles.UseTranslucentSelection = true;
         lvwFiles.View = View.Details;
         lvwFiles.VirtualMode = true;
-        lvwFiles.SelectionChanged += lvwFiles_SelectionChanged;
-        lvwFiles.ItemDrag += lvwFiles_ItemDrag;
-        lvwFiles.DoubleClick += lvwFiles_DoubleClick;
-        lvwFiles.KeyPress += lvwFiles_KeyPress;
-        lvwFiles.KeyUp += lvwFiles_KeyUp;
-        lvwFiles.MouseUp += lvwFiles_MouseUp;
         // 
         // colFilesName
         // 
         colFilesName.AspectName = "Name";
         colFilesName.HeaderCheckBox = true;
-        colFilesName.ImageAspectName = "Image";
+        colFilesName.ImageAspectName = "TypeIconIndex";
         colFilesName.IsEditable = false;
         colFilesName.Text = "Name";
         colFilesName.Width = 240;
@@ -333,7 +325,6 @@ partial class Explorer {
         btnNavBack.Name = "btnNavBack";
         btnNavBack.Size = new Size(23, 22);
         btnNavBack.Text = "toolStripButton1";
-        btnNavBack.Click += btnNavBack_Click;
         // 
         // btnNavForward
         // 
@@ -343,7 +334,6 @@ partial class Explorer {
         btnNavForward.Name = "btnNavForward";
         btnNavForward.Size = new Size(23, 22);
         btnNavForward.Text = "toolStripButton3";
-        btnNavForward.Click += btnNavForward_Click;
         // 
         // btnsHistory
         // 
@@ -352,8 +342,6 @@ partial class Explorer {
         btnsHistory.Name = "btnsHistory";
         btnsHistory.Size = new Size(13, 22);
         btnsHistory.Text = "toolStripDropDownButton1";
-        btnsHistory.DropDownOpening += btnsHistory_DropDownOpening;
-        btnsHistory.DropDownItemClicked += btnsHistory_DropDownItemClicked;
         // 
         // btnNavUp
         // 
@@ -363,15 +351,12 @@ partial class Explorer {
         btnNavUp.Name = "btnNavUp";
         btnNavUp.Size = new Size(23, 22);
         btnNavUp.Text = "toolStripButton2";
-        btnNavUp.Click += btnNavUp_Click;
         // 
         // txtPath
         // 
         txtPath.FlatStyle = FlatStyle.System;
         txtPath.Name = "txtPath";
         txtPath.Size = new Size(963, 25);
-        txtPath.KeyDown += txtPath_KeyDown;
-        txtPath.KeyUp += txtPath_KeyUp;
         // 
         // btnSearch
         // 
@@ -382,14 +367,12 @@ partial class Explorer {
         btnSearch.Name = "btnSearch";
         btnSearch.Size = new Size(23, 22);
         btnSearch.Text = "toolStripButton1";
-        btnNavUp.Click += btnSearch_Click;
         // 
         // txtSearch
         // 
         txtSearch.Alignment = ToolStripItemAlignment.Right;
         txtSearch.Name = "txtSearch";
         txtSearch.Size = new Size(160, 25);
-        txtSearch.KeyUp += txtSearch_KeyUp;
         // 
         // toolStripContainer1
         // 
@@ -431,7 +414,6 @@ partial class Explorer {
         cboView.Items.AddRange(new object[] { "Thumbnails (256px)", "Thumbnails (224px)", "Thumbnails (192px)", "Thumbnails (160px)",  "Thumbnails (128px)", "Thumbnails (96px)", "Thumbnails (64px)", "Icons", "List", "Details" });
         cboView.Name = "cboView";
         cboView.Size = new Size(160, 25);
-        cboView.SelectedIndexChanged += cboView_SelectedIndexChanged;
         // 
         // Explorer
         // 
