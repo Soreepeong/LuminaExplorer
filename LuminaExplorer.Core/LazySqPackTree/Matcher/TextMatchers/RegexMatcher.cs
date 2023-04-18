@@ -52,4 +52,7 @@ public class RegexMatcher : ITextMatcher {
             Task.Run(DoSearch, cancellationToken)
             : Task.FromResult(DoSearch());
     }
+
+    public virtual ITextMatcher Simplify() =>
+        _regex.Replace(".*", "") == "" ? new ConstantResultTextMatcher(true) : this;
 }

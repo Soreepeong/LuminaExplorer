@@ -9,17 +9,17 @@ public partial class Explorer {
         private readonly TextBox _txtSearch;
         
         private CancellationTokenSource _searchCancellationTokenSource = new();
-        private Task _searchTask = Task.CompletedTask;
         
         public SearchHandler(Explorer explorer) {
             _explorer = explorer;
             _txtSearch = _explorer.txtSearch.TextBox!;
-            _explorer.btnNavUp.Click += btnSearch_Click;
+            _explorer.btnSearch.Click += btnSearch_Click;
             _explorer.txtSearch.KeyUp += txtSearch_KeyUp;
         }
 
         public void Dispose() {
-            _explorer.btnNavUp.Click -= btnSearch_Click;
+            _searchCancellationTokenSource.Cancel();
+            _explorer.btnSearch.Click -= btnSearch_Click;
             _explorer.txtSearch.KeyUp -= txtSearch_KeyUp;
         }
         
@@ -40,103 +40,91 @@ public partial class Explorer {
                 return;
             }
 
-            if (_explorer._fileListHandler is null)
+            if (_explorer._fileListHandler is null || _explorer._navigationHandler is null || Tree is null)
                 return;
 
             var cancelSource = _searchCancellationTokenSource = new();
 
-            void StartNewTask() {
+            _explorer._fileListHandler.Clear();
+
+            var pendingObjectsLock = new object();
+            var pendingObjects1 = new List<VirtualObject>();
+            var pendingObjects2 = new List<VirtualObject>();
+            var searchBaseFolder = _explorer._navigationHandler.CurrentFolder;
+            if (searchBaseFolder is null)
+                return;
+
+            void OnObjectFound(VirtualObject vo) {
                 cancelSource.Token.ThrowIfCancellationRequested();
 
-                if (_explorer._fileListHandler is null || _explorer._navigationHandler is null || Tree is null)
+                lock (pendingObjectsLock)
+                    pendingObjects1.Add(vo);
+            }
+
+            void ReportProgress(VirtualSqPackTree.SearchProgress progress) {
+                cancelSource.Token.ThrowIfCancellationRequested();
+
+                Debug.Print("{0:0.00}% {1:##.###} / {2:##.###}: {3}",
+                    100.0 * progress.Progress / progress.Total,
+                    progress.Progress, progress.Total, progress.LastObject);
+
+                if (progress.Completed) {
+                    if (pendingObjects1.Any())
+                        _explorer.BeginInvoke(() => _explorer._fileListHandler?.AddObjects(pendingObjects1));
                     return;
-
-                _explorer._fileListHandler.Clear();
-
-                var pendingObjectsLock = new object();
-                var pendingObjects1 = new List<VirtualObject>();
-                var pendingObjects2 = new List<VirtualObject>();
-                var searchBaseFolder = _explorer._navigationHandler.CurrentFolder;
-                if (searchBaseFolder is null)
-                    return;
-
-                void OnObjectFound(VirtualObject vo) {
-                    cancelSource.Token.ThrowIfCancellationRequested();
-
-                    lock (pendingObjectsLock)
-                        pendingObjects1.Add(vo);
                 }
 
-                void ReportProgress(VirtualSqPackTree.SearchProgress progress) {
+                if (_explorer._fileListHandler is not { } fileListHandler)  {
+                    cancelSource.Cancel();
+                    throw new OperationCanceledException();
+                }
+
+                // Defer adding until completion if there simply are too many, since sorting a lot of objects is pretty slow
+                if (fileListHandler.ItemCount > 1000 && !progress.Completed)
+                    return;
+
+                // There are too many; Give Up(tm)
+                if (fileListHandler.ItemCount + pendingObjects1.Count > 10000) {
+                    cancelSource.Cancel();
                     cancelSource.Token.ThrowIfCancellationRequested();
+                    return;
+                }
 
-                    Debug.Print("{0:0.00}% {1:##.###} / {2:##.###}: {3}",
-                        100.0 * progress.Progress / progress.Total,
-                        progress.Progress, progress.Total, progress.LastObject);
-
-                    if (progress.Completed) {
-                        if (pendingObjects1.Any())
-                            _explorer.BeginInvoke(() => _explorer._fileListHandler?.AddObjects(pendingObjects1));
+                lock (pendingObjectsLock) {
+                    if (!pendingObjects1.Any())
                         return;
-                    }
 
-                    if (_explorer._fileListHandler is not { } fileListHandler)  {
+                    (pendingObjects1, pendingObjects2) = (pendingObjects2, pendingObjects1);
+
+                    pendingObjects1.Clear();
+                    var objects = pendingObjects2.ToArray();
+                    _explorer.BeginInvoke(() => _explorer._fileListHandler?.AddObjects(objects));
+                    pendingObjects2.Clear();
+                }
+            }
+
+            Tree.Search(
+                searchBaseFolder,
+                _txtSearch.Text,
+                ReportProgress,
+                folder => {
+                    if (Tree is { } tree)
+                        OnObjectFound(new(tree, folder));
+                    else {
                         cancelSource.Cancel();
                         throw new OperationCanceledException();
                     }
-
-                    // Defer adding until completion if there simply are too many, since sorting a lot of objects is pretty slow
-                    if (fileListHandler.ItemCount > 1000 && !progress.Completed)
-                        return;
-
-                    // There are too many; Give Up(tm)
-                    if (fileListHandler.ItemCount + pendingObjects1.Count > 10000) {
+                },
+                file => {
+                    if (Tree is { } tree)
+                        OnObjectFound(new(tree, file));
+                    else {
                         cancelSource.Cancel();
-                        cancelSource.Token.ThrowIfCancellationRequested();
-                        return;
+                        throw new OperationCanceledException();
                     }
-
-                    lock (pendingObjectsLock) {
-                        if (!pendingObjects1.Any())
-                            return;
-
-                        (pendingObjects1, pendingObjects2) = (pendingObjects2, pendingObjects1);
-
-                        pendingObjects1.Clear();
-                        var objects = pendingObjects2.ToArray();
-                        _explorer.BeginInvoke(() => _explorer._fileListHandler?.AddObjects(objects));
-                        pendingObjects2.Clear();
-                    }
-                }
-
-                _searchTask = Tree.Search(
-                    searchBaseFolder,
-                    _txtSearch.Text,
-                    ReportProgress,
-                    folder => {
-                        if (Tree is { } tree)
-                            OnObjectFound(new(tree, folder));
-                        else {
-                            cancelSource.Cancel();
-                            throw new OperationCanceledException();
-                        }
-                    },
-                    file => {
-                        if (Tree is { } tree)
-                            OnObjectFound(new(tree, file));
-                        else {
-                            cancelSource.Cancel();
-                            throw new OperationCanceledException();
-                        }
-                    },
-                    TimeSpan.FromSeconds(1000),
-                    cancelSource.Token);
-            }
-
-            if (_searchTask.IsCompleted)
-                StartNewTask();
-            else
-                _searchTask.ContinueWith(_ => StartNewTask(), TaskScheduler.FromCurrentSynchronizationContext());
+                },
+                TimeSpan.FromSeconds(1000),
+                cancelSource.Token);
         }
     }
 }

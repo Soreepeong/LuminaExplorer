@@ -13,7 +13,8 @@ using LuminaExplorer.Core.Util;
 namespace LuminaExplorer.App.Window;
 
 public partial class Explorer {
-    private class ExplorerListViewDataSource : AbstractVirtualListDataSource, IDisposable, IReadOnlyList<VirtualObject> {
+    private class
+        ExplorerListViewDataSource : AbstractVirtualListDataSource, IDisposable, IReadOnlyList<VirtualObject> {
         private readonly VirtualSqPackTree _tree;
 
         private readonly LruCache<VirtualObject, ResultDisposableTask<Bitmap?>> _previews = new(128, true);
@@ -22,7 +23,8 @@ public partial class Explorer {
 
         private VirtualFolder? _currentFolder;
         private Task<VirtualFolder>? _fileNameResolver;
-        private readonly List<VirtualObject> _objects = new();
+        private List<VirtualObject> _objects = new();
+        private CancellationTokenSource _sorterCancel = new();
 
         public ExplorerListViewDataSource(VirtualObjectListView volv, VirtualSqPackTree tree) : base(volv) {
             _tree = tree;
@@ -30,6 +32,7 @@ public partial class Explorer {
 
         public void Dispose() {
             _previewCancellationTokenSource.Cancel();
+            _sorterCancel.Cancel();
             _previews.Dispose();
         }
 
@@ -49,7 +52,7 @@ public partial class Explorer {
                     listView.ClearObjects();
                     return;
                 }
-                
+
                 _previews.Flush();
 
                 var fileNameResolver = _fileNameResolver = _tree.AsFileNamesResolved(_currentFolder);
@@ -101,49 +104,54 @@ public partial class Explorer {
             => DefaultSearchText(value, first, last, column, this);
 
         public override void Sort(OLVColumn column, SortOrder order) {
-            _objects.Sort((a, b) => {
-                int c;
-                if (column.AspectName == nameof(VirtualObject.FullPath)) {
-                    c = string.Compare(a.FullPath, b.FullPath, StringComparison.InvariantCultureIgnoreCase);
-                } else {
-                    c = a.IsFolder switch {
-                        true when !b.IsFolder => -1,
-                        false when b.IsFolder => 1,
-                        // Case when both are folders:
-                        true when b.IsFolder => column.AspectName switch {
-                            nameof(VirtualObject.Name) =>
-                                string.Compare(a.Name, b.Name, StringComparison.InvariantCultureIgnoreCase),
-                            nameof(VirtualObject.PackTypeString) => 0,
-                            nameof(VirtualObject.Hash1) => a.Hash1Value.CompareTo(b.Hash1Value),
-                            nameof(VirtualObject.Hash2) => 0,
-                            nameof(VirtualObject.RawSize) => 0,
-                            nameof(VirtualObject.StoredSize) => 0,
-                            nameof(VirtualObject.ReservedSize) => 0,
-                            _ => 0,
-                        },
-                        // Case when both are files:
-                        _ => column.AspectName switch {
-                            nameof(VirtualObject.Name) =>
-                                string.Compare(a.Name, b.Name, StringComparison.InvariantCultureIgnoreCase),
-                            nameof(VirtualObject.PackTypeString) => a.Lookup.Type.CompareTo(b.Lookup.Type),
-                            nameof(VirtualObject.Hash1) => a.Hash1Value.CompareTo(b.Hash1Value),
-                            nameof(VirtualObject.Hash2) => a.Hash2Value.CompareTo(b.Hash2Value),
-                            nameof(VirtualObject.RawSize) => a.Lookup.Size.CompareTo(b.Lookup.Size),
-                            nameof(VirtualObject.StoredSize) =>
-                                a.Lookup.OccupiedBytes.CompareTo(b.Lookup.OccupiedBytes),
-                            nameof(VirtualObject.ReservedSize) =>
-                                a.Lookup.ReservedBytes.CompareTo(b.Lookup.ReservedBytes),
-                            _ => 0,
-                        },
-                    };
-                }
+            _sorterCancel.Cancel();
+            _sorterCancel = new();
+            SortImpl(column, order, _sorterCancel.Token)
+                .ContinueWith(result => {
+                    if (!result.IsCompletedSuccessfully)
+                        return;
 
-                return order switch {
-                    SortOrder.None or SortOrder.Ascending => c,
-                    SortOrder.Descending => -c,
-                    _ => throw new FailFastException("Invalid SortOrder"),
-                };
-            });
+                    _objects = result.Result;
+                    listView.ClearCachedInfo();
+                    listView.Invalidate();
+                }, TaskScheduler.FromCurrentSynchronizationContext());
+        }
+
+        private Task<List<VirtualObject>> SortImpl(
+            OLVColumn column,
+            SortOrder order,
+            CancellationToken cancellationToken) {
+            var orderMultiplier = order == SortOrder.Descending ? -1 : 1;
+            return _objects.SortAsync().With(column.AspectName switch {
+                nameof(VirtualObject.FullPath) => (a, b) =>
+                    string.Compare(a.FullPath, b.FullPath, StringComparison.InvariantCultureIgnoreCase) *
+                    orderMultiplier,
+                nameof(VirtualObject.Name) => (a, b) =>
+                    (a.CompareByFolderOrFile(b) ?? a.CompareByName(b)) * orderMultiplier,
+                nameof(VirtualObject.PackTypeString) => (a, b) => orderMultiplier * (
+                    a.CompareByFolderOrFile(b) ??
+                    (a.IsFolder ? a.CompareByName(b) : a.Lookup.Type.CompareTo(b.Lookup.Type))),
+                nameof(VirtualObject.Hash1) => (a, b) => orderMultiplier * (
+                    a.CompareByFolderOrFile(b) ??
+                    (a.IsFolder ? a.CompareByName(b) : a.Hash1Value.CompareTo(b.Hash1Value))),
+                nameof(VirtualObject.Hash2) => (a, b) => orderMultiplier * (
+                    a.CompareByFolderOrFile(b) ??
+                    (a.IsFolder ? a.CompareByName(b) : a.Hash2Value.CompareTo(b.Hash2Value))),
+                nameof(VirtualObject.RawSize) => (a, b) => orderMultiplier * (
+                    a.CompareByFolderOrFile(b) ??
+                    (a.IsFolder ? a.CompareByName(b) : a.Lookup.Size.CompareTo(b.Lookup.Size))),
+                nameof(VirtualObject.StoredSize) => (a, b) => orderMultiplier * (
+                    a.CompareByFolderOrFile(b) ??
+                    (a.IsFolder
+                        ? a.CompareByName(b)
+                        : a.Lookup.OccupiedSpaceUnits.CompareTo(b.Lookup.OccupiedSpaceUnits))),
+                nameof(VirtualObject.ReservedSize) => (a, b) => orderMultiplier * (
+                    a.CompareByFolderOrFile(b) ??
+                    (a.IsFolder
+                        ? a.CompareByName(b)
+                        : a.Lookup.ReservedSpaceUnits.CompareTo(b.Lookup.ReservedSpaceUnits))),
+                _ => throw new FailFastException($"Invalid column AspectName {column.AspectName}"),
+            }).With(cancellationToken).Sort();
         }
 
         public override void AddObjects(ICollection modelObjects) => InsertObjects(_objects.Count, modelObjects);
@@ -240,13 +248,13 @@ public partial class Explorer {
         private readonly VirtualFolder? _folder;
         private readonly Lazy<uint> _hash2;
 
-        private Lazy<string> _name;
+        private string _name;
         private Lazy<VirtualFileLookup>? _lookup;
         private Lazy<string> _fullPath;
 
         public VirtualObject(VirtualSqPackTree tree, VirtualFile file) {
             _file = file;
-            _name = new(() => file.Name);
+            _name = file.Name;
             _fullPath = new(() => tree.GetFullPath(file));
             _lookup = new(() => tree.GetLookup(File));
             _hash2 = new(() => tree.GetFullPathHash(File));
@@ -254,7 +262,7 @@ public partial class Explorer {
 
         public VirtualObject(VirtualSqPackTree tree, VirtualFolder folder) {
             _folder = folder;
-            _name = new(folder.Name.Trim('/'));
+            _name = folder.Name.Trim('/');
             _fullPath = new(() => tree.GetFullPath(folder));
             _hash2 = new(0u);
         }
@@ -290,8 +298,8 @@ public partial class Explorer {
         [UsedImplicitly] public bool Checked { get; set; }
 
         public string Name {
-            get => _name.Value;
-            set => SetField(ref _name, new(value));
+            get => _name;
+            set => SetField(ref _name, value);
         }
 
         public string PackTypeString => _lookup is null
@@ -320,6 +328,13 @@ public partial class Explorer {
             get => _fullPath.Value;
             set => SetField(ref _fullPath, new(value));
         }
+
+        public int CompareByName(VirtualObject other) =>
+            !IsFolder && !other.IsFolder && File.NameResolved != other.File.NameResolved
+                ? File.NameResolved ? -1 : 1
+                : string.Compare(_name, other._name, StringComparison.InvariantCultureIgnoreCase);
+
+        public int? CompareByFolderOrFile(VirtualObject other) => IsFolder == other.IsFolder ? null : IsFolder ? -1 : 1;
 
         #region Implementation of INotifyPropertyChanged
 

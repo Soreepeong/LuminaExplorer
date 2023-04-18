@@ -8,7 +8,6 @@ public partial class Explorer {
     private sealed class PreviewHandler : IDisposable {
         private readonly Explorer _explorer;
 
-        private Task _loadTask = Task.CompletedTask;
         private CancellationTokenSource? _previewCancellationTokenSource;
 
         public PreviewHandler(Explorer explorer) {
@@ -31,19 +30,16 @@ public partial class Explorer {
 
             var token = (_previewCancellationTokenSource = new()).Token;
 
-            _loadTask = _loadTask
-                .ContinueWith(_ => _explorer.Tree
-                        .GetLookup(file)
-                        .AsFileResource(token)
-                        .ContinueWith(fr => {
-                                if (!fr.IsCompletedSuccessfully)
-                                    return;
-                                _explorer.ppgPreview.SelectedObject = new WrapperTypeConverter().ConvertFrom(fr.Result);
-                                _explorer.hbxPreview.ByteProvider = new FileResourceByteProvider(fr.Result);
-                            },
-                            TaskScheduler.FromCurrentSynchronizationContext()),
-                    TaskScheduler.FromCurrentSynchronizationContext())
-                .Unwrap();
+            _explorer.Tree
+                ?.GetLookup(file)
+                .AsFileResource(token)
+                .ContinueWith(fr => {
+                        if (!fr.IsCompletedSuccessfully)
+                            return;
+                        _explorer.ppgPreview.SelectedObject = new WrapperTypeConverter().ConvertFrom(fr.Result);
+                        _explorer.hbxPreview.ByteProvider = new FileResourceByteProvider(fr.Result);
+                    },
+                    TaskScheduler.FromCurrentSynchronizationContext());
         }
     }
 }
