@@ -110,11 +110,14 @@ public partial class Explorer {
                 _explorer._navigationHandler?.NavigateTo(node.Folder, true);
         }
 
-        public Task<FolderTreeNode> ExpandTreeTo(params string[] pathComponents) =>
-            ExpandTreeToImpl(
+        public Task<FolderTreeNode> ExpandTreeTo(params string[] pathComponents) {
+            if (_tree is null)
+                throw new InvalidOperationException();
+            return ExpandTreeToImpl(
                 (FolderTreeNode) _treeView.Nodes[0],
                 Path.Join(pathComponents).Replace('\\', '/').TrimStart('/').Split('/'),
                 0);
+        }
 
         private Task<FolderTreeNode> ExpandTreeToImpl(FolderTreeNode node, string[] parts, int partIndex) {
             for (; partIndex < parts.Length; partIndex++) {

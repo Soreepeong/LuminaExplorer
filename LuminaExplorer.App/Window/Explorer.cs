@@ -9,27 +9,21 @@ public partial class Explorer : Form {
     private FileTreeHandler? _fileTreeHandler;
     private SearchHandler? _searchHandler;
     private VirtualSqPackTree? _tree;
-    private AppConfig _appConfig = new();
+    private AppConfig _appConfig;
 
-    public Explorer() {
+    public Explorer(AppConfig? appConfig = default, VirtualSqPackTree? tree = default) {
         InitializeComponent();
-        
+
+        _appConfig = appConfig ?? new();
+        _tree = tree;
         _previewHandler = new(this);
         _fileListHandler = new(this);
         _navigationHandler = new(this);
         _fileTreeHandler = new(this);
         _searchHandler = new(this);
-        
-        // ExpandTreeTo("/chara/monster/");
 
-        // random folder with a lot of images
-        // ExpandTreeTo("/common/graphics/texture");
-
-        // mustadio
-        // ExpandTreeTo("/chara/monster/m0361/obj/body/b0003/texture/");
-
-        // construct 14
-        // ExpandTreeTo("/chara/monster/m0489/animation/a0001/bt_common/loop_sp/");
+        _fileTreeHandler.ExpandTreeTo(AppConfig.LastFolder);
+        _ = _navigationHandler.NavigateTo(AppConfig.LastFolder);
     }
 
     public AppConfig AppConfig {
@@ -38,12 +32,11 @@ public partial class Explorer : Form {
             if (_appConfig == value)
                 return;
 
+            _appConfig = value with { };
             if (_fileListHandler is not null)
-                _fileListHandler.AppConfig = value;
+                _fileListHandler.AppConfig = _appConfig;
             if (_searchHandler is not null)
-                _searchHandler.AppConfig = value;
-            
-            _appConfig = value;
+                _searchHandler.AppConfig = _appConfig;
         }
     }
 

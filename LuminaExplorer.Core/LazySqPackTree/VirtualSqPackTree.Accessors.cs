@@ -60,6 +60,9 @@ public sealed partial class VirtualSqPackTree {
     }
 
     public List<VirtualFile> GetFiles(VirtualFolder folder) {
+        if (!IsFoldersResolved(folder))
+            throw new InvalidOperationException();
+
         _treeStructureLock.EnterReadLock();
         try {
             return new(folder.Files);
@@ -69,6 +72,9 @@ public sealed partial class VirtualSqPackTree {
     }
 
     public List<VirtualFolder> GetFolders(VirtualFolder folder, bool excludeUpDir = true) {
+        if (!IsFoldersResolved(folder))
+            throw new InvalidOperationException();
+        
         _treeStructureLock.EnterReadLock();
         try {
             return excludeUpDir

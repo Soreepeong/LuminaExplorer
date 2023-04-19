@@ -24,7 +24,7 @@ static class Program {
             using var f = File.OpenRead(Path.Combine(baseDir, "config.json"));
             appConfig = JsonSerializer.Deserialize<AppConfig>(f);
         } catch (Exception) {
-            using var f = File.OpenWrite(Path.Combine(baseDir, "config.template.json"));
+            using var f = File.OpenWrite(Path.Combine(baseDir, "config.json"));
             JsonSerializer.Serialize(f, appConfig = new());
         }
 
@@ -43,9 +43,14 @@ static class Program {
         var hashdb = new HashDatabase(hashCacheFile);
 
         using var vsptree = new VirtualSqPackTree(hashdb, gameData);
-        using var mainExplorer = new Explorer();
-        mainExplorer.AppConfig = appConfig;
-        mainExplorer.Tree = vsptree;
-        Application.Run(mainExplorer);
+        using var mainExplorer = new Explorer(appConfig, vsptree);
+        
+        try {
+            Application.Run(mainExplorer);
+            appConfig = mainExplorer.AppConfig;
+        } finally {
+            using var f = File.OpenWrite(Path.Combine(baseDir, "config.json"));
+            JsonSerializer.Serialize(f, appConfig);
+        }
     }
 }

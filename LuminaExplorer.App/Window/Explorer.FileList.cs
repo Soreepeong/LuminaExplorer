@@ -1,6 +1,10 @@
 using System.Collections;
+using System.Diagnostics;
 using BrightIdeasSoftware;
+using Lumina.Data;
+using Lumina.Data.Files;
 using LuminaExplorer.App.Utils;
+using LuminaExplorer.Controls.FileResourceViewerControls;
 using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.Util;
 
@@ -22,6 +26,7 @@ public partial class Explorer {
 
         public FileListHandler(Explorer explorer) {
             _explorer = explorer;
+            _tree = explorer.Tree;
             _listView = explorer.lvwFiles;
             _cboView = explorer.cboView.ComboBox!;
             _appConfig = explorer.AppConfig;
@@ -43,7 +48,7 @@ public partial class Explorer {
             _fileIconLarge = UiUtils.ExtractPeIcon("shell32.dll", 0, true);
             _folderIconLarge = UiUtils.ExtractPeIcon("shell32.dll", 4, true);
 
-            if (_explorer.Tree is { } tree) {
+            if (_tree is { } tree) {
                 _listView.VirtualListDataSource = _source = new(_listView, tree, _appConfig.PreviewThumbnailerThreads) {
                     SortThreads = _appConfig.SortThreads,
                 };
@@ -230,14 +235,7 @@ public partial class Explorer {
         }
 
         private void DoubleClick(object? sender, EventArgs e) {
-            if (_listView.VirtualListDataSource is not ExplorerListViewDataSource source)
-                return;
-            if (_listView.SelectedIndices.Count == 0)
-                return;
-
-            var vo = source[_listView.SelectedIndices[0]];
-            if (vo.IsFolder)
-                _explorer._navigationHandler?.NavigateTo(vo.Folder, true);
+            ExecuteItems(GetSelectedFiles(), GetSelectedFolders());
         }
 
         private void FormatRow(object? sender, FormatRowEventArgs e) {
@@ -273,12 +271,8 @@ public partial class Explorer {
         private void KeyPress(object? sender, KeyPressEventArgs e) {
             if (_listView.VirtualListDataSource is not ExplorerListViewDataSource source)
                 return;
-            if (e.KeyChar == (char) Keys.Enter) {
-                if (_listView.SelectedIndices.Count == 0)
-                    return;
-                if (source[_listView.SelectedIndices[0]].Folder is { } folder)
-                    _explorer._navigationHandler?.NavigateTo(folder, true);
-            }
+            if (e.KeyChar == (char) Keys.Enter)
+                ExecuteItems(GetSelectedFiles(), GetSelectedFolders());
         }
 
         private void KeyUp(object? sender, KeyEventArgs e) {
@@ -313,6 +307,59 @@ public partial class Explorer {
         }
 
         private void WindowResized(object? sender, EventArgs e) => RecalculateNumberOfPreviewsToCache();
+
+        public void ExecuteItems(List<VirtualFile> files, List<VirtualFolder> folders) {
+            if (_listView.VirtualListDataSource is not ExplorerListViewDataSource source)
+                return;
+
+            if (!files.Any() && folders.Count == 1) {
+                _explorer._navigationHandler?.NavigateTo(folders.First(), true);
+                return;
+            }
+
+            if (!folders.Any() && files.Count == 1) {
+                var file = files.First();
+                Task<FileResource> fileResourceTask;
+                if (_tree is not { } tree)
+                    return;
+                if (_explorer._previewHandler is {} previewHandler && 
+                    previewHandler.TryGetAvailableFileResource(file, out var fileResource))
+                    fileResourceTask = Task.FromResult(fileResource);
+                else
+                    fileResourceTask = tree.GetLookup(file).AsFileResource();
+                fileResourceTask.ContinueWith(fr => {
+                    if (!fr.IsCompletedSuccessfully) {
+                        MessageBox.Show(
+                            $"Failed to open file \"{file.Name}\".\n\nError: {fr.Exception}",
+                            "Error",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Stop);
+                        return;
+                    }
+
+                    Control? viewerControl = null;
+                    if (fr.Result is TexFile texFile) {
+                        var control = new TexFileViewerControl();
+                        control.Anchor = AnchorStyles.Left | AnchorStyles.Top;
+                        control.Dock = DockStyle.Fill;
+                        control.SetFile(tree, file, texFile);
+                        viewerControl = control;
+                    }
+
+                    if (viewerControl is null)
+                        return;
+                    
+                    var viewerWindow = new Form();
+                    viewerWindow.Text = tree.GetFullPath(file);
+                    viewerWindow.Controls.Add(viewerControl);
+                    viewerWindow.Show();
+                }, TaskScheduler.FromCurrentSynchronizationContext());
+                return;
+            }
+
+            // TODO: do something
+            Debug.Print("Do something");
+        }
 
         // ReSharper disable once UnusedMember.Local
         public List<VirtualFolder> GetSelectedFolders() {

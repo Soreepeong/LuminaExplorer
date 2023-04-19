@@ -12,15 +12,16 @@ public partial class Explorer {
         private VirtualFolder? _currentFolder;
 
         private VirtualSqPackTree? _tree;
+        private AppConfig _appConfig;
 
         public NavigationHandler(Explorer explorer) {
             _explorer = explorer;
+            _appConfig = explorer.AppConfig;
             _txtPath = explorer.txtPath.ComboBox!;
             _txtPath.AutoCompleteMode = AutoCompleteMode.Suggest;
             _txtPath.AutoCompleteSource = AutoCompleteSource.CustomSource;
 
             _tree = explorer.Tree;
-            _currentFolder = _tree?.RootFolder;
             if (_tree is not null)
                 _tree.FolderChanged += SqPackTree_FolderChanged_Navigation;
 
@@ -63,6 +64,12 @@ public partial class Explorer {
                     NavigateTo(_tree.RootFolder, true);
                 }
             }
+        }
+
+        // ReSharper disable once ConvertToAutoProperty
+        public AppConfig AppConfig {
+            get => _appConfig;
+            set => _appConfig = value;
         }
 
         public VirtualFolder? CurrentFolder => _currentFolder;
@@ -254,10 +261,32 @@ public partial class Explorer {
             _explorer.btnNavForward.Enabled = _navigationHistoryPosition < _navigationHistory.Count - 1;
             _explorer.btnNavUp.Enabled = folder.Parent is not null;
 
-            _txtPath.Text = tree.GetFullPath(folder);
+            var fullPath = _txtPath.Text = tree.GetFullPath(folder);
 
             if (_explorer._fileListHandler is { } fileListHandler)
                 fileListHandler.CurrentFolder = folder;
+
+            _explorer.AppConfig = AppConfig with {
+                LastFolder = fullPath,
+            };
+        }
+
+        public async Task<VirtualFolder> NavigateTo(params string[] pathComponents) {
+            if (_tree is null)
+                throw new InvalidOperationException();
+
+            var folder = _tree.RootFolder;
+            foreach (var part in VirtualSqPackTree.NormalizePath(pathComponents).Split("/")) {
+                var folders = _tree.GetFolders(await _tree.AsFoldersResolved(folder));
+                var candidate = folders.FirstOrDefault(x =>
+                    string.Compare(x.Name, part, StringComparison.InvariantCultureIgnoreCase) == 0);
+                if (candidate is null)
+                    break;
+                folder = candidate;
+            }
+
+            _explorer.BeginInvoke(() => NavigateTo(folder, true));
+            return folder;
         }
     }
 }

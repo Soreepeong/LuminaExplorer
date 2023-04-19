@@ -105,9 +105,9 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
                     FileType.Texture => new TextureVirtualFileStream(datPath, _tree.PlatformId, file.Offset, _fileInfo),
                     _ => throw new NotSupportedException(),
                 };
-                
+
                 result.CloseButOpenAgainWhenNecessary();
-                
+
                 return result;
             });
         }
@@ -172,75 +172,80 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
         }
 
         public Task<FileResource> AsFileResource(CancellationToken cancellationToken = default) =>
-            Task.Run(() => ReadAll(cancellationToken), cancellationToken)
-                .ContinueWith(buffer => {
-                    var reader = new LuminaBinaryReader(buffer.Result, _tree.PlatformId);
+            Task.Factory.StartNew(
+                () => ReadAll(cancellationToken)
+                    .ContinueWith(buffer => {
+                        var reader = new LuminaBinaryReader(buffer.Result, _tree.PlatformId);
 
-                    var magic = Size >= 4 ? reader.ReadUInt32() : 0;
+                        var magic = Size >= 4 ? reader.ReadUInt32() : 0;
 
-                    var fileResourceType = typeof(FileResource);
-                    var allResourceTypes = AppDomain.CurrentDomain.GetAssemblies()
-                        .SelectMany(x => x.GetTypes())
-                        .Where(x => fileResourceType.IsAssignableFrom(x) && x != fileResourceType)
-                        .ToArray();
+                        var fileResourceType = typeof(FileResource);
+                        var allResourceTypes = AppDomain.CurrentDomain.GetAssemblies()
+                            .SelectMany(x => x.GetTypes())
+                            .Where(x => fileResourceType.IsAssignableFrom(x) && x != fileResourceType)
+                            .ToArray();
 
-                    var typeByExt = allResourceTypes.ToDictionary(
-                        x => (x.GetCustomAttribute<FileExtensionAttribute>()?.Extension ?? $".{x.Name[..^4]}")
-                            .ToLowerInvariant(),
-                        x => x);
+                        var typeByExt = allResourceTypes.ToDictionary(
+                            x => (x.GetCustomAttribute<FileExtensionAttribute>()?.Extension ?? $".{x.Name[..^4]}")
+                                .ToLowerInvariant(),
+                            x => x);
 
-                    typeByExt[".atex"] = typeByExt[".tex"];
+                        typeByExt[".atex"] = typeByExt[".tex"];
 
-                    var typeByMagic = new Dictionary<uint, Type> {
-                        {
-                            0x42444553u, typeByExt[".scd"]
-                        },
-                    };
-                    var possibleTypes = new HashSet<Type>();
-
-                    switch (Type) {
-                        case FileType.Empty:
-                            break;
-
-                        case FileType.Standard: {
-                            if (File.NameResolveAttempted) {
-                                if (typeByExt.TryGetValue(
-                                        Path.GetExtension(File.Name).ToLowerInvariant(),
-                                        out var type))
-                                    possibleTypes.Add(type);
-                            }
-
+                        var typeByMagic = new Dictionary<uint, Type> {
                             {
-                                if (typeByMagic.TryGetValue(magic, out var type))
-                                    possibleTypes.Add(type);
+                                0x42444553u, typeByExt[".scd"]
+                            },
+                        };
+                        var possibleTypes = new HashSet<Type>();
+
+                        switch (Type) {
+                            case FileType.Empty:
+                                break;
+
+                            case FileType.Standard: {
+                                if (File.NameResolveAttempted) {
+                                    if (typeByExt.TryGetValue(
+                                            Path.GetExtension(File.Name).ToLowerInvariant(),
+                                            out var type))
+                                        possibleTypes.Add(type);
+                                }
+
+                                {
+                                    if (typeByMagic.TryGetValue(magic, out var type))
+                                        possibleTypes.Add(type);
+                                }
+
+                                break;
                             }
 
-                            break;
+                            case FileType.Model:
+                                possibleTypes.Add(typeByExt[".mdl"]);
+                                break;
+
+                            case FileType.Texture:
+                                possibleTypes.Add(typeByExt[".tex"]);
+                                break;
+
+                            default:
+                                throw new NotSupportedException();
                         }
 
-                        case FileType.Model:
-                            possibleTypes.Add(typeByExt[".mdl"]);
-                            break;
+                        foreach (var f in possibleTypes) {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            try {
+                                return AsFileResourceImpl(reader.WithSeek(0), buffer.Result, f);
+                            } catch (Exception) {
+                                // pass 
+                            }
+                        }
 
-                        case FileType.Texture:
-                            possibleTypes.Add(typeByExt[".tex"]);
-                            break;
-
-                        default:
-                            throw new NotSupportedException();
-                    }
-
-                    foreach (var f in possibleTypes) {
                         cancellationToken.ThrowIfCancellationRequested();
-                        try {
-                            return AsFileResourceImpl(reader.WithSeek(0), buffer.Result, f);
-                        } catch (Exception) {
-                            // pass 
-                        }
-                    }
-
-                    cancellationToken.ThrowIfCancellationRequested();
-                    return AsFileResourceImpl(reader.WithSeek(0), buffer.Result, typeof(FileResource));
-                }, cancellationToken);
+                        return AsFileResourceImpl(reader.WithSeek(0), buffer.Result, typeof(FileResource));
+                    }, cancellationToken),
+                cancellationToken,
+                TaskCreationOptions.None,
+                TaskScheduler.Default
+            ).Unwrap();
     }
 }

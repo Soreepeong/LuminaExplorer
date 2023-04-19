@@ -301,6 +301,7 @@ partial class Explorer {
         picPreview.Size = new Size(320, 197);
         picPreview.TabIndex = 0;
         picPreview.TabStop = false;
+        picPreview.SizeMode = PictureBoxSizeMode.Zoom;
         // 
         // tspNavigation
         // 
