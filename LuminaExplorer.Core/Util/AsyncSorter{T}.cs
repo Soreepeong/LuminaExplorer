@@ -1,200 +1,177 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Microsoft.Extensions.ObjectPool;
 
 namespace LuminaExplorer.Core.Util;
 
-public class AsyncSorter<T> {
+public class AsyncListSorter<T> {
     private const int AsyncSortThreshold = 4096;
 
-    private readonly ObjectPool<List<T>> _pool = ObjectPool.Create(new DefaultPooledObjectPolicy<List<T>>());
-    private readonly ICollection<T> _source;
-    private Comparison<T>? _comparison;
+    private readonly List<T> _list;
+    private readonly T[] _array;
+    private readonly T[] _mergeScratch;
     private IComparer<T>? _comparer;
     private CancellationToken _cancellationToken;
     private Action<double>? _progressReport;
     private TimeSpan _progressReportInterval = TimeSpan.FromMilliseconds(200);
 
-    public AsyncSorter(ICollection<T> source) => _source = source;
+    public AsyncListSorter(List<T> list) {
+        _list = list;
+        _array = (T[]) list.GetType()
+            .GetField("_items", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(list)!;
+        _mergeScratch = new T[_list.Count];
+    }
 
-    public AsyncSorter<T> With(IComparer<T> comparison) {
+    public AsyncListSorter<T> With(IComparer<T> comparison) {
         _comparer = comparison;
         return this;
     }
 
-    public AsyncSorter<T> With(Comparison<T> comparison) {
-        _comparison = comparison;
+    public AsyncListSorter<T> With(Comparison<T> comparison) {
+        _comparer = new ComparisonWrapper(comparison);
         return this;
     }
 
-    public AsyncSorter<T> WithCancellationToken(CancellationToken cancellationToken) {
+    public AsyncListSorter<T> WithCancellationToken(CancellationToken cancellationToken) {
         _cancellationToken = cancellationToken;
         return this;
     }
 
-    public AsyncSorter<T> WithProgrssCallback(Action<double> callback) {
+    public AsyncListSorter<T> WithProgrssCallback(Action<double> callback) {
         _progressReport = callback;
         return this;
     }
 
-    public AsyncSorter<T> WithProgrssCallbackInterval(TimeSpan interval) {
+    public AsyncListSorter<T> WithProgrssCallbackInterval(TimeSpan interval) {
         _progressReportInterval = interval;
         return this;
     }
 
-    public Task<List<T>> Sort() => Sort(0, _source.Count);
+    // public Task<List<T>> Sort() => Sort(0, _list.Length);
 
-    public async Task<List<T>> Sort(int from, int to) {
-        if (to - from <= AsyncSortThreshold)
-            return SortShort(from, to);
+    public Task<List<T>> Sort() => Sort(0, _list.Count);
+
+    public async Task<List<T>> Sort(int index, int count) {
+        if (index + count > _list.Count)
+            throw new IndexOutOfRangeException(nameof(index));
+
+        if (count <= AsyncSortThreshold) {
+            Array.Sort(_array, index, count, _comparer);
+            return _list;
+        }
 
         var maxProgress = 1L;
         var currentProgress = 0L;
-        
-        var minimumUnit = to - from;
-        while (minimumUnit > AsyncSortThreshold) {
+
+        var minimumUnit = count;
+        while (minimumUnit * 2 > AsyncSortThreshold) {
             minimumUnit = (minimumUnit + 1) / 2;
             maxProgress++;
         }
 
-        maxProgress *= to - from;
+        maxProgress *= count;
 
         var progressTimer = new Stopwatch();
 
-        void MaybeReportProgress(bool force= false) {
+        void MaybeReportProgress(bool force = false) {
             if (_progressReport is null || (!force && progressTimer.Elapsed < _progressReportInterval))
                 return;
-            
+
             progressTimer.Restart();
             _progressReport(1.0 * currentProgress / maxProgress);
         }
 
         MaybeReportProgress(true);
 
-        var sortedLists = new List<List<T>>((to - from + minimumUnit - 1) / minimumUnit);
-
         var taskCount = Environment.ProcessorCount;
-        var tasks = new List<Task<List<T>>>(taskCount);
+        var tasks = new List<Task<int>>(taskCount);
 
-        for (var i = from;; i += minimumUnit) {
-            _cancellationToken.ThrowIfCancellationRequested();
-            
-            while (tasks.Count > taskCount || (i >= to && tasks.Any())) {
+        for (int pass = 0, unit = minimumUnit; unit < count; unit *= 2, pass++) {
+            for (int i = index, remaining = count; ; i += unit * 2, remaining -= unit * 2) {
                 _cancellationToken.ThrowIfCancellationRequested();
-                await Task.WhenAny(tasks);
-                tasks.RemoveAll(x => {
-                    if (!x.IsCompleted)
-                        return false;
-                    sortedLists.Add(x.Result);
-                    currentProgress += x.Result.Count;
-                    MaybeReportProgress();
-                    return true;
-                });
-            }
 
-            if (i >= to)
-                break;
-
-            // "captured variable is modified".
-            // ??
-            {
-                var subFrom = i;
-                var subTo = Math.Min(i + minimumUnit, to);
-                tasks.Add(Task.Run(() => SortShort(subFrom, subTo), _cancellationToken));
-            }
-        }
-
-        var sortedLists2 = new List<List<T>>(sortedLists.Count);
-        while (sortedLists.Count > 1) {
-            _cancellationToken.ThrowIfCancellationRequested();
-            
-            (sortedLists, sortedLists2) = (sortedLists2, sortedLists);
-
-            for (var i = 0;; i += 2) {
-                _cancellationToken.ThrowIfCancellationRequested();
-                
-                while (tasks.Count > taskCount || (i >= sortedLists2.Count && tasks.Any())) {
+                while (tasks.Count > taskCount || (remaining <= 0 && tasks.Any())) {
                     _cancellationToken.ThrowIfCancellationRequested();
                     await Task.WhenAny(tasks);
                     tasks.RemoveAll(x => {
                         if (!x.IsCompleted)
                             return false;
-                        sortedLists.Add(x.Result);
-                        currentProgress += x.Result.Count;
+                        currentProgress += x.Result;
                         MaybeReportProgress();
                         return true;
                     });
                 }
 
-                if (i >= sortedLists2.Count)
+                if (remaining <= 0)
                     break;
 
-                if (i + 1 == sortedLists2.Count) {
-                    var list1 = sortedLists2[i];
-                    sortedLists.Add(list1);
-                    currentProgress += list1.Count;
-                    MaybeReportProgress();
+                if (pass == 0) {
+                    var innerIndex = i;
+                    var innerCount = Math.Min(unit * 2, remaining);
+                    tasks.Add(Task.Run(() => {
+                        Array.Sort(_array, innerIndex, innerCount, _comparer);
+                        return innerCount;
+                    }, _cancellationToken));
                 } else {
-                    var list1 = sortedLists2[i];
-                    var list2 = sortedLists2[i + 1];
-                    tasks.Add(Task.Run(() => Merge(list1, list2), _cancellationToken));
+                    var left = i;
+                    var mid = left + Math.Min(unit, count - left);
+                    var right = mid + Math.Min(unit, count - mid);
+                    if (right == mid) {
+                        currentProgress += right - mid;
+                        MaybeReportProgress();
+                    } else
+                        tasks.Add(Task.Run(() => Merge(left, mid, right), _cancellationToken));
                 }
             }
-
-            sortedLists2.Clear();
         }
 
         currentProgress = maxProgress;
         MaybeReportProgress(true);
-        return sortedLists.First();
+        return _list;
     }
 
-    private List<T> SortShort(int from, int to) {
-        var res = _pool.Get();
-        res.Clear();
-        res.EnsureCapacity(to - from);
-        res.AddRange(_source.Skip(from).Take(to - from));
-        if (_comparison is not null)
-            res.Sort(_comparison);
-        else
-            res.Sort(_comparer);
-        return res;
-    }
-
-    private List<T> Merge(List<T> left, List<T> right) {
-        var res = _pool.Get();
-        res.Clear();
-        res.EnsureCapacity(left.Count + right.Count);
-        var l = 0;
-        var r = 0;
-        while (l < left.Count && r < right.Count) {
+    private int Merge(int leftIndex, int midIndex, int rightIndex) {
+        var r1 = leftIndex;
+        var r2 = midIndex;
+        var w = leftIndex;
+        while (r1 < midIndex && r2 < rightIndex) {
             _cancellationToken.ThrowIfCancellationRequested();
             int cmp;
-            if (_comparison is not null)
-                cmp = _comparison(left[l], right[r]);
-            else if (_comparer is not null)
-                cmp = _comparer.Compare(left[l], right[r]);
-            else if (left[l] is IComparable leftcmp)
-                cmp = leftcmp.CompareTo(right[r]);
+            if (_comparer is not null)
+                cmp = _comparer.Compare(_array[r1], _array[r2]);
+            else if (_array[r1] is IComparable leftcmp)
+                cmp = leftcmp.CompareTo(_array[r2]);
             else
                 throw new NotSupportedException();
             switch (cmp) {
                 case < 0:
-                    res.Add(left[l++]);
+                    _mergeScratch[w++] = _array[r1++];
                     break;
                 case > 0:
-                    res.Add(right[r++]);
+                    _mergeScratch[w++] = _array[r2++];
                     break;
                 default:
-                    res.Add(left[l++]);
-                    res.Add(right[r++]);
+                    _mergeScratch[w++] = _array[r1++];
+                    _mergeScratch[w++] = _array[r2++];
                     break;
             }
         }
 
-        res.AddRange(left.Skip(l));
-        res.AddRange(right.Skip(r));
-        _pool.Return(left);
-        _pool.Return(right);
-        return res;
+        Array.Copy(_array, r1, _mergeScratch, w, midIndex - r1);
+        w += midIndex - r1;
+        Array.Copy(_array, r2, _mergeScratch, w, rightIndex - r2);
+        Array.Copy(_mergeScratch, leftIndex, _array, leftIndex, rightIndex - leftIndex);
+
+        return rightIndex - leftIndex;
+    }
+
+    private class ComparisonWrapper : IComparer<T> {
+        private readonly Comparison<T> _comparison;
+
+        public ComparisonWrapper(Comparison<T> comparison) {
+            _comparison = comparison;
+        }
+
+        public int Compare(T? x, T? y) => _comparison(x!, y!);
     }
 }

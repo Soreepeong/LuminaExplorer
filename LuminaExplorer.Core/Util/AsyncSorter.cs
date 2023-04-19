@@ -1,5 +1,6 @@
-﻿namespace LuminaExplorer.Core.Util;
+namespace LuminaExplorer.Core.Util;
 
-public static class AsyncSorter {
-    public static AsyncSorter<T> SortAsync<T>(this ICollection<T> collection) => new(collection);
+public static class AsyncListSorter {
+    public static AsyncListSorter<T> SortIntoNewListAsync<T>(this ICollection<T> collection) => new(new(collection));
+    public static AsyncListSorter<T> SortAsync<T>(this List<T> list) => new(list);
 }

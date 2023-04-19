@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using LuminaExplorer.Core.LazySqPackTree;
 
 namespace LuminaExplorer.App.Window;
@@ -32,13 +32,21 @@ public partial class Explorer {
                 Search(_txtSearch.Text);
         }
 
-        private void Search(string query) {
-            _searchCancellationTokenSource.Cancel();
+        public void SearchAbort() {
+            if (_searchCancellationTokenSource.IsCancellationRequested)
+                return;
 
+            _searchCancellationTokenSource.Cancel();
+            _explorer._navigationHandler?.NavigateToCurrent();
+        }
+
+        public void Search(string query) {
             if (string.IsNullOrWhiteSpace(query)) {
-                _explorer._navigationHandler?.NavigateToCurrent();
+                SearchAbort();
                 return;
             }
+
+            _searchCancellationTokenSource.Cancel();
 
             if (_explorer._fileListHandler is null || _explorer._navigationHandler is null || Tree is null)
                 return;
@@ -74,7 +82,7 @@ public partial class Explorer {
                     return;
                 }
 
-                if (_explorer._fileListHandler is not { } fileListHandler)  {
+                if (_explorer._fileListHandler is not { } fileListHandler || fileListHandler.CurrentFolder is not null)  {
                     cancelSource.Cancel();
                     throw new OperationCanceledException();
                 }

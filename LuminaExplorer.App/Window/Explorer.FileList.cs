@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using BrightIdeasSoftware;
 using LuminaExplorer.App.Utils;
 using LuminaExplorer.Core.LazySqPackTree;
@@ -98,6 +98,8 @@ public partial class Explorer {
                     _source.CurrentFolder = value;
 
                 _explorer.colFilesFullPath.IsVisible = value is null;
+                if (value is not null)
+                    _explorer._searchHandler?.SearchAbort();
             }
         }
 
@@ -128,7 +130,7 @@ public partial class Explorer {
                 return;
 
             source.CurrentFolder = null;
-            _listView.ClearObjects();
+            _listView.SetObjects(Array.Empty<object>());
         }
 
         public void AddObjects(ICollection objects) => _listView.AddObjects(objects);
@@ -176,6 +178,7 @@ public partial class Explorer {
                     <= 6 => 256 - 32 * _cboView.SelectedIndex,
                     _ => 0,
                 };
+                RecalculateNumberOfPreviewsToCache();
             }
         }
 
@@ -283,20 +286,7 @@ public partial class Explorer {
                 previewHandler.PreviewFile(vo.File);
         }
 
-        private void WindowResized(object? sender, EventArgs e) {
-            if (_source is not { } source) 
-                return;
-
-            if (source.ImageThumbnailSize == 0) {
-                source.PreviewCacheCapacity = 128;
-                return;
-            }
-
-            var size = _explorer.Size;
-            var horz = (size.Width + source.ImageThumbnailSize - 1) / source.ImageThumbnailSize;
-            var vert = (size.Height + source.ImageThumbnailSize - 1) / source.ImageThumbnailSize;
-            source.PreviewCacheCapacity = Math.Min(horz * vert * 4, 128);
-        }
+        private void WindowResized(object? sender, EventArgs e) => RecalculateNumberOfPreviewsToCache();
 
         // ReSharper disable once UnusedMember.Local
         public List<VirtualFolder> GetSelectedFolders() {
@@ -325,6 +315,21 @@ public partial class Explorer {
             }
 
             return folders;
+        }
+
+        private void RecalculateNumberOfPreviewsToCache() {
+            if (_source is not { } source)
+                return;
+
+            if (source.ImageThumbnailSize == 0) {
+                source.PreviewCacheCapacity = 128;
+                return;
+            }
+
+            var size = _explorer.Size;
+            var horz = (size.Width + source.ImageThumbnailSize - 1) / source.ImageThumbnailSize;
+            var vert = (size.Height + source.ImageThumbnailSize - 1) / source.ImageThumbnailSize;
+            source.PreviewCacheCapacity = Math.Max(horz * vert * 4, 128);
         }
 
         private sealed class ThumbnailDecoration : IDecoration {

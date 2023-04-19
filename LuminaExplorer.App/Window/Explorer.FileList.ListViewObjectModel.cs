@@ -2,13 +2,17 @@ using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading.Channels;
+using System.Threading.Tasks;
 using BrightIdeasSoftware;
 using JetBrains.Annotations;
 using Lumina.Data.Structs;
 using LuminaExplorer.App.Utils;
 using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.Util;
+using static BrightIdeasSoftware.TreeListView;
 
 namespace LuminaExplorer.App.Window;
 
@@ -19,15 +23,19 @@ public partial class Explorer {
 
         private readonly LruCache<VirtualObject, ResultDisposableTask<Bitmap?>> _previews = new(128, true);
         private int _previewSize;
+        private Channel<VirtualObject> _previewQueue = Channel.CreateUnbounded<VirtualObject>();
         private CancellationTokenSource _previewCancellationTokenSource = new();
 
         private VirtualFolder? _currentFolder;
         private Task<VirtualFolder>? _fileNameResolver;
         private List<VirtualObject> _objects = new();
         private CancellationTokenSource _sorterCancel = new();
+        private Task _sortTask = Task.CompletedTask;
 
         public ExplorerListViewDataSource(VirtualObjectListView volv, VirtualSqPackTree tree) : base(volv) {
             _tree = tree;
+
+            ResetBitmapLoader();
         }
 
         public void Dispose() {
@@ -51,7 +59,7 @@ public partial class Explorer {
 
                 _currentFolder = value;
                 if (_currentFolder is null) {
-                    listView.ClearObjects();
+                    listView.SetObjects(Array.Empty<object>());
                     return;
                 }
 
@@ -59,7 +67,7 @@ public partial class Explorer {
 
                 var fileNameResolver = _fileNameResolver = _tree.AsFileNamesResolved(_currentFolder);
                 if (!fileNameResolver.IsCompletedSuccessfully)
-                    listView.ClearObjects();
+                    listView.SetObjects(Array.Empty<object>());
                 else
                     listView.SelectedIndex = -1;
 
@@ -81,9 +89,7 @@ public partial class Explorer {
                     return;
 
                 _previewSize = value;
-                _previewCancellationTokenSource.Cancel();
-                _previews.Flush();
-                _previewCancellationTokenSource = new();
+                ResetBitmapLoader();
                 listView.OwnerDraw = _previewSize > 0;
 
                 var largeImageListSize = _previewSize == 0 ? 32 : _previewSize;
@@ -110,7 +116,8 @@ public partial class Explorer {
             _sorterCancel = new();
 
             var orderMultiplier = order == SortOrder.Descending ? -1 : 1;
-            _objects.SortAsync()
+            var syncContext = TaskScheduler.FromCurrentSynchronizationContext();
+            _sortTask = _sortTask.ContinueWith(_ => _objects.SortIntoNewListAsync()
                 .With(column.AspectName switch {
                     nameof(VirtualObject.FullPath) => (a, b) =>
                         string.Compare(a.FullPath, b.FullPath, StringComparison.InvariantCultureIgnoreCase) *
@@ -150,39 +157,46 @@ public partial class Explorer {
 
                     _objects = result.Result;
                     listView.ClearCachedInfo();
+                    listView.UpdateVirtualListSize();
                     listView.Invalidate();
-                }, TaskScheduler.FromCurrentSynchronizationContext());
+                }, syncContext), syncContext);
         }
 
         public override void AddObjects(ICollection modelObjects) => InsertObjects(_objects.Count, modelObjects);
 
-        public override void InsertObjects(int index, ICollection modelObjects) =>
+        public override void InsertObjects(int index, ICollection modelObjects) {
+            _sorterCancel.Cancel();
+            _sortTask.Wait();
             _objects.InsertRange(index, modelObjects.Cast<VirtualObject>());
+        }
 
         public override void RemoveObjects(ICollection modelObjects) {
             foreach (var o in modelObjects) {
                 if (o is VirtualObject vo) {
                     var i = _objects.IndexOf(vo);
                     if (i != -1) {
+                        _sorterCancel.Cancel();
+                        _sortTask.Wait();
+
                         _objects[i].Dispose();
                         _objects.RemoveAt(i);
                     }
                 }
             }
 
-            if (!_objects.Any()) {
-                _previewCancellationTokenSource.Cancel();
-                _previewCancellationTokenSource = new();
-            }
+            if (!_objects.Any())
+                ResetBitmapLoader();
         }
 
         public override void SetObjects(IEnumerable collection) {
+            _sorterCancel.Cancel();
+            _sortTask.Wait();
+
             foreach (var o in _objects)
                 o.Dispose();
 
             _objects.Clear();
-            _previewCancellationTokenSource.Cancel();
-            _previewCancellationTokenSource = new();
+            ResetBitmapLoader();
             _objects.AddRange(collection.Cast<VirtualObject>());
         }
 
@@ -190,50 +204,29 @@ public partial class Explorer {
             if (_objects[index] == modelObject)
                 return;
 
+            _sorterCancel.Cancel();
+            _sortTask.Wait();
+
             _objects[index].Dispose();
             _objects[index] = (VirtualObject) modelObject;
         }
 
+        public VirtualObject this[int n] => _objects[n];
+
+        public IEnumerator<VirtualObject> GetEnumerator() => _objects.GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator() => _objects.GetEnumerator();
+
+        public int Count => _objects.Count;
+
         public bool TryGetThumbnail(VirtualObject virtualObject, [MaybeNullWhen(false)] out Bitmap bitmap) {
             if (!_previews.TryGet(virtualObject, out var task)) {
-                _previews.Add(virtualObject, task = new(Task.Run(async () => {
-                    var file = virtualObject.File;
-                    VirtualFileLookup lookup;
-                    try {
-                        lookup = virtualObject.Lookup;
-                    } catch (Exception e) {
-                        Debug.WriteLine(e);
-                        return null;
-                    }
-
-                    var canBeTexture = false;
-                    canBeTexture |= lookup.Type == FileType.Texture;
-                    canBeTexture |= file.Name.EndsWith(".atex", StringComparison.InvariantCultureIgnoreCase);
-                    // may be an .atex file
-                    canBeTexture |= !file.NameResolved && lookup is {Type: FileType.Standard, Size: > 256};
-
-                    if (!canBeTexture)
-                        return null;
-
-                    try {
-                        await using var stream = lookup.CreateStream();
-                        return await QueuedThumbnailer.Instance.LoadFromTexStream(
-                            ImageThumbnailSize,
-                            ImageThumbnailSize,
-                            stream,
-                            _tree.PlatformId,
-                            _previewCancellationTokenSource.Token).ConfigureAwait(false);
-                    } catch (Exception e) {
-                        Debug.WriteLine(e);
-                    }
-
-                    return null;
-                })));
-
-                task.Task.ContinueWith(res => {
-                    if (res.IsCompletedSuccessfully)
-                        listView.RefreshObject(virtualObject);
-                }, TaskScheduler.FromCurrentSynchronizationContext());
+                if (!virtualObject.ThumbnailRequested) {
+                    virtualObject.ThumbnailRequested = true;
+                    _previewQueue.Writer.TryWrite(virtualObject);
+                }
+                bitmap = null!;
+                return false;
             }
 
             if ((task.Task.IsCompletedSuccessfully ? task.Task.Result : null) is { } b) {
@@ -245,13 +238,68 @@ public partial class Explorer {
             return false;
         }
 
-        public VirtualObject this[int n] => _objects[n];
+        void ResetBitmapLoader() {
+            _previews.Flush();
+            _previewCancellationTokenSource.Cancel();
+            _previewQueue.Writer.Complete();
 
-        public IEnumerator<VirtualObject> GetEnumerator() => _objects.GetEnumerator();
+            _previewCancellationTokenSource = new();
+            _previewQueue = Channel.CreateUnbounded<VirtualObject>();
 
-        IEnumerator IEnumerable.GetEnumerator() => _objects.GetEnumerator();
+            var uiSynchContext = TaskScheduler.FromCurrentSynchronizationContext();
+            Task.Factory.StartNew(async () => {
+                while (true) {
+                    var virtualObject = await _previewQueue.Reader.ReadAsync();
 
-        public int Count => _objects.Count;
+                    while (_previewQueue.Reader.Count > PreviewCacheCapacity) {
+                        _previewCancellationTokenSource.Token.ThrowIfCancellationRequested();
+                        virtualObject = await _previewQueue.Reader.ReadAsync();
+                    }
+
+                    ResultDisposableTask<Bitmap?> task;
+                    _previews.Add(virtualObject, task = new(Task.Run(async () => {
+                        if (virtualObject.IsFolder)
+                            return null;
+
+                        var file = virtualObject.File;
+                        VirtualFileLookup lookup;
+                        try {
+                            lookup = virtualObject.Lookup;
+                        } catch (Exception) {
+                            return null;
+                        }
+
+                        var canBeTexture = false;
+                        canBeTexture |= lookup.Type == FileType.Texture;
+                        canBeTexture |= file.Name.EndsWith(".atex", StringComparison.InvariantCultureIgnoreCase);
+                        // may be an .atex file
+                        canBeTexture |= !file.NameResolved && lookup is { Type: FileType.Standard, Size: > 256 };
+
+                        if (!canBeTexture)
+                            return null;
+
+                        try {
+                            await using var stream = lookup.CreateStream();
+                            return await QueuedThumbnailer.Instance.LoadFromTexStream(
+                                ImageThumbnailSize,
+                                ImageThumbnailSize,
+                                stream,
+                                _tree.PlatformId,
+                                _previewCancellationTokenSource.Token).ConfigureAwait(false);
+                        } catch (Exception e) {
+                            Debug.WriteLine(e);
+                        }
+
+                        return null;
+                    })));
+
+                    _ = task.Task.ContinueWith(res => {
+                        if (res.IsCompletedSuccessfully)
+                            listView.RefreshObject(virtualObject);
+                    }, uiSynchContext);
+                }
+            }, _previewCancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        }
     }
 
     // ReSharper disable once ClassWithVirtualMembersNeverInherited.Local
@@ -263,6 +311,8 @@ public partial class Explorer {
         private string _name;
         private Lazy<VirtualFileLookup>? _lookup;
         private Lazy<string> _fullPath;
+
+        public bool ThumbnailRequested;
 
         public VirtualObject(VirtualSqPackTree tree, VirtualFile file) {
             _file = file;
@@ -280,7 +330,7 @@ public partial class Explorer {
         }
 
         private void ReleaseUnmanagedResources() {
-            if (_lookup is {IsValueCreated: true}) {
+            if (_lookup is { IsValueCreated: true }) {
                 _lookup.Value.Dispose();
                 _lookup = null;
             }
