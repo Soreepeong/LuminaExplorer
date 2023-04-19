@@ -12,6 +12,7 @@ public partial class Explorer {
         
         public SearchHandler(Explorer explorer) {
             _explorer = explorer;
+            Tree = explorer.Tree;
             AppConfig = explorer._appConfig;
             _txtSearch = _explorer.txtSearch.TextBox!;
             _txtSearch.PlaceholderText = @"Search...";
