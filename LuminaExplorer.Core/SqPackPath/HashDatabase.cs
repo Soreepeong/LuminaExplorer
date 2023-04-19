@@ -8,7 +8,6 @@ using LuminaExplorer.Core.Util;
 namespace LuminaExplorer.Core.SqPackPath;
 
 public class HashDatabase {
-    private const string PathListUrl = "https://rl2.perchbird.dev/download/export/PathList.gz";
     private readonly FolderStruct[] _folders;
     private readonly FileStruct[] _files;
     private readonly byte[] _strings;
@@ -120,7 +119,8 @@ public class HashDatabase {
         public int CompareTo(FileStruct other) => Hash.CompareTo(other.Hash);
     }
 
-    public static async Task WriteCachedFile(
+    public static async Task MakeCachedFile(
+        string sourceUrl,
         Stream target,
         Action<float> progress,
         CancellationToken cancellationToken) {
@@ -130,7 +130,7 @@ public class HashDatabase {
 
         using var client = new HttpClient();
         using var resp = await client.GetAsync(
-            PathListUrl,
+            sourceUrl,
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken);
         var length = resp.Content.Headers.ContentLength;
