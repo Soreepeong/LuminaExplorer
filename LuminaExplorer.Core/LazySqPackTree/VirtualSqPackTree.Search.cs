@@ -25,6 +25,7 @@ public sealed partial class VirtualSqPackTree {
         Action<SearchProgress> progressCallback,
         Action<VirtualFolder> folderFoundCallback,
         Action<VirtualFile> fileFoundCallback,
+        int numThreads = default,
         TimeSpan timeoutPerEntry = default,
         CancellationToken cancellationToken = default) => Task.Factory.StartNew(async () => {
         cancellationToken.ThrowIfCancellationRequested();
@@ -36,6 +37,8 @@ public sealed partial class VirtualSqPackTree {
 
         Debug.Print(matcher.ToString());
 
+        if (numThreads == default)
+            numThreads = Environment.ProcessorCount;
         if (timeoutPerEntry == default)
             timeoutPerEntry = TimeSpan.FromMilliseconds(500);
 
@@ -75,7 +78,7 @@ public sealed partial class VirtualSqPackTree {
 
         var itemList = new List<object>();
         while (true) {
-            while (activeTasks.Count >= Environment.ProcessorCount) {
+            while (activeTasks.Count >= numThreads) {
                 await Task.WhenAny(activeTasks);
                 activeTasks.RemoveWhere(x => x.IsCompleted);
             }
@@ -101,7 +104,7 @@ public sealed partial class VirtualSqPackTree {
             }
 
             foreach (var item in itemList) {
-                while (activeTasks.Count >= Environment.ProcessorCount) {
+                while (activeTasks.Count >= numThreads) {
                     await Task.WhenAny(activeTasks);
                     activeTasks.RemoveWhere(x => x.IsCompleted);
                 }

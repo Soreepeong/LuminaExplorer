@@ -46,7 +46,9 @@ public sealed partial class VirtualSqPackTree {
                 return subfolder is null
                     ? AsFoldersResolved(folder)
                     : AsFoldersResolvedImpl(subfolder, parts, partIndex + 1);
-            }, TaskScheduler.FromCurrentSynchronizationContext()).Unwrap();
+            }, default,
+                TaskContinuationOptions.DenyChildAttach,
+                TaskScheduler.FromCurrentSynchronizationContext()).Unwrap();
         }
 
         return AsFoldersResolved(folder);

@@ -9,8 +9,9 @@ public partial class Explorer : Form {
     private FileTreeHandler? _fileTreeHandler;
     private SearchHandler? _searchHandler;
     private VirtualSqPackTree? _tree;
+    private AppConfig _appConfig = new();
 
-    public Explorer(VirtualSqPackTree? vsp) {
+    public Explorer() {
         InitializeComponent();
         
         _previewHandler = new(this);
@@ -18,10 +19,6 @@ public partial class Explorer : Form {
         _navigationHandler = new(this);
         _fileTreeHandler = new(this);
         _searchHandler = new(this);
-
-        Tree = vsp;
-
-        txtSearch.TextBox!.PlaceholderText = @"Search...";
         
         // ExpandTreeTo("/chara/monster/");
 
@@ -33,6 +30,21 @@ public partial class Explorer : Form {
 
         // construct 14
         // ExpandTreeTo("/chara/monster/m0489/animation/a0001/bt_common/loop_sp/");
+    }
+
+    public AppConfig AppConfig {
+        get => _appConfig;
+        set {
+            if (_appConfig == value)
+                return;
+
+            if (_fileListHandler is not null)
+                _fileListHandler.AppConfig = value;
+            if (_searchHandler is not null)
+                _searchHandler.AppConfig = value;
+            
+            _appConfig = value;
+        }
     }
 
     public VirtualSqPackTree? Tree {
@@ -55,6 +67,7 @@ public partial class Explorer : Form {
 
     protected override void Dispose(bool disposing) {
         if (disposing) {
+            Hide();
             _previewHandler?.Dispose();
             _previewHandler = null;
             _fileListHandler?.Dispose();

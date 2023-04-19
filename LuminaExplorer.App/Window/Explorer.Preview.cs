@@ -39,6 +39,8 @@ public partial class Explorer {
                         _explorer.ppgPreview.SelectedObject = new WrapperTypeConverter().ConvertFrom(fr.Result);
                         _explorer.hbxPreview.ByteProvider = new FileResourceByteProvider(fr.Result);
                     },
+                    default,
+                    TaskContinuationOptions.DenyChildAttach,
                     TaskScheduler.FromCurrentSynchronizationContext());
         }
     }

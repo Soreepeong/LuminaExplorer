@@ -81,7 +81,7 @@ public partial class Explorer {
         private void btnsHistory_DropDownOpening(object? sender, EventArgs e) {
             if (_tree is not { } tree)
                 return;
-            
+
             var counter = 0;
             for (int iFrom = Math.Max(0, _navigationHistoryPosition - 10),
                  iTo = Math.Min(_navigationHistory.Count - 1, _navigationHistoryPosition + 10),
@@ -119,29 +119,32 @@ public partial class Explorer {
                 case Keys.Enter: {
                     var prevText = _txtPath.Text;
                     _explorer._fileTreeHandler?.ExpandTreeTo(_txtPath.Text)
-                        .ContinueWith(vfr => {
-                            if (_tree is not { } tree)
-                                return;
+                        .ContinueWith(
+                            vfr => {
+                                if (_tree is not { } tree)
+                                    return;
 
-                            var fullPath = tree.GetFullPath(vfr.Result.Folder);
-                            var exactMatchFound = 0 == string.Compare(
-                                fullPath.TrimEnd('/'),
-                                prevText.Trim().TrimEnd('/'),
-                                StringComparison.InvariantCultureIgnoreCase);
-                            _txtPath.Text = prevText;
+                                var fullPath = tree.GetFullPath(vfr.Result.Folder);
+                                var exactMatchFound = 0 == string.Compare(
+                                    fullPath.TrimEnd('/'),
+                                    prevText.Trim().TrimEnd('/'),
+                                    StringComparison.InvariantCultureIgnoreCase);
+                                _txtPath.Text = prevText;
 
-                            if (exactMatchFound) {
-                                _explorer._fileListHandler?.Focus();
-                                return;
-                            }
+                                if (exactMatchFound) {
+                                    _explorer._fileListHandler?.Focus();
+                                    return;
+                                }
 
-                            var currentFullPathLength = fullPath.Length;
-                            var sharedLength = 0;
-                            while (sharedLength < currentFullPathLength && sharedLength < prevText.Length)
-                                sharedLength++;
-                            _txtPath.SelectionStart = sharedLength;
-                            _txtPath.SelectionLength = prevText.Length - sharedLength;
-                        }, TaskScheduler.FromCurrentSynchronizationContext());
+                                var currentFullPathLength = fullPath.Length;
+                                var sharedLength = 0;
+                                while (sharedLength < currentFullPathLength && sharedLength < prevText.Length)
+                                    sharedLength++;
+                                _txtPath.SelectionStart = sharedLength;
+                                _txtPath.SelectionLength = prevText.Length - sharedLength;
+                            }, default,
+                            TaskContinuationOptions.DenyChildAttach,
+                            TaskScheduler.FromCurrentSynchronizationContext());
                     break;
                 }
 
@@ -159,7 +162,7 @@ public partial class Explorer {
         private void txtPath_KeyUp(object? sender, KeyEventArgs keyEventArgs) {
             if (_tree is not { } tree)
                 return;
-            
+
             var searchedText = _txtPath.Text;
             tree.SuggestFullPath(searchedText);
 
@@ -167,31 +170,34 @@ public partial class Explorer {
             if (cleanerPath.Any())
                 cleanerPath = cleanerPath[..^1];
             tree.AsFoldersResolved(cleanerPath)
-                .ContinueWith(res => {
-                    if (_tree is not { } tree2)
-                        return;
-                    
-                    if (searchedText != _txtPath.Text || !res.IsCompletedSuccessfully)
-                        return;
+                .ContinueWith(
+                    res => {
+                        if (_tree is not { } tree2)
+                            return;
 
-                    if (_txtPath.Tag == res.Result)
-                        return;
+                        if (searchedText != _txtPath.Text || !res.IsCompletedSuccessfully)
+                            return;
 
-                    _txtPath.Tag = res.Result;
+                        if (_txtPath.Tag == res.Result)
+                            return;
 
-                    var selectionStart = _txtPath.SelectionStart;
-                    var selectionLength = _txtPath.SelectionLength;
+                        _txtPath.Tag = res.Result;
 
-                    var parentFolder = tree2.GetFullPath(res.Result);
-                    var src = new AutoCompleteStringCollection();
+                        var selectionStart = _txtPath.SelectionStart;
+                        var selectionLength = _txtPath.SelectionLength;
 
-                    foreach (var f in tree2.GetFolders(res.Result).Where(x => x != res.Result.Parent))
-                        src.Add($"{parentFolder}{f.Name[..^1]}");
-                    _txtPath.AutoCompleteCustomSource = src;
+                        var parentFolder = tree2.GetFullPath(res.Result);
+                        var src = new AutoCompleteStringCollection();
 
-                    _txtPath.SelectionStart = selectionStart;
-                    _txtPath.SelectionLength = selectionLength;
-                }, TaskScheduler.FromCurrentSynchronizationContext());
+                        foreach (var f in tree2.GetFolders(res.Result).Where(x => x != res.Result.Parent))
+                            src.Add($"{parentFolder}{f.Name[..^1]}");
+                        _txtPath.AutoCompleteCustomSource = src;
+
+                        _txtPath.SelectionStart = selectionStart;
+                        _txtPath.SelectionLength = selectionLength;
+                    }, default,
+                    TaskContinuationOptions.DenyChildAttach,
+                    TaskScheduler.FromCurrentSynchronizationContext());
         }
 
         public bool NavigateBack() {

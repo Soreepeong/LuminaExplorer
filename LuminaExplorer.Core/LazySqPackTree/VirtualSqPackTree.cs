@@ -64,14 +64,18 @@ public sealed partial class VirtualSqPackTree : IDisposable {
     }
 
     public void Dispose() {
-        _fileLookups.Dispose();
+        lock (_fileLookups)
+            _fileLookups.Dispose();
         FolderChanged = null;
         FileChanged = null;
     }
 
     public VirtualFileLookup GetLookup(VirtualFile file) {
-        if (_fileLookups.TryGet(file, out var data))
-            return (VirtualFileLookup) data.Clone();
+        VirtualFileLookup? data;
+        lock (_fileLookups) {
+            if (_fileLookups.TryGet(file, out data))
+                return (VirtualFileLookup) data.Clone();
+        }
 
         var cat = unchecked((byte) (file.IndexId >> 16));
         var ex = unchecked((byte) (file.IndexId >> 8));
@@ -84,7 +88,8 @@ public sealed partial class VirtualSqPackTree : IDisposable {
 
         data = new(this, file, datPath);
 
-        _fileLookups.Add(file, data);
+        lock (_fileLookups)
+            _fileLookups.Add(file, data);
         return (VirtualFileLookup) data.Clone();
     }
 

@@ -95,12 +95,20 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
                 OccupiedSpaceUnits = _fileInfo.__unknown[1];
             }
 
-            _dataStream = new(() => Type switch {
-                FileType.Empty => new EmptyVirtualFileStream(_tree.PlatformId),
-                FileType.Standard => new StandardVirtualFileStream(datPath, _tree.PlatformId, file.Offset, _fileInfo, false),
-                FileType.Model => new ModelVirtualFileStream(datPath, _tree.PlatformId, file.Offset, _modelBlock!.Value, false),
-                FileType.Texture => new TextureVirtualFileStream(datPath, _tree.PlatformId, file.Offset, _fileInfo, false),
-                _ => throw new NotSupportedException()
+            _dataStream = new(() => {
+                BaseVirtualFileStream result = Type switch {
+                    FileType.Empty => new EmptyVirtualFileStream(_tree.PlatformId),
+                    FileType.Standard => new StandardVirtualFileStream(datPath, _tree.PlatformId, file.Offset,
+                        _fileInfo),
+                    FileType.Model => new ModelVirtualFileStream(datPath, _tree.PlatformId, file.Offset,
+                        _modelBlock!.Value),
+                    FileType.Texture => new TextureVirtualFileStream(datPath, _tree.PlatformId, file.Offset, _fileInfo),
+                    _ => throw new NotSupportedException(),
+                };
+                
+                result.CloseButOpenAgainWhenNecessary();
+                
+                return result;
             });
         }
 

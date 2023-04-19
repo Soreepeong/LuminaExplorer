@@ -1,42 +1,25 @@
 using System.Buffers;
-using System.IO.Compression;
 using System.Runtime.CompilerServices;
+using Lumina.Data;
 using Lumina.Data.Structs;
 using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
 
 public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
-    private readonly bool _keepOpen;
+    private readonly OffsetManager _offsetManager;
 
-    private OffsetManager? _offsetManager;
+    private LuminaBinaryReader? _reader;
 
     private int _bufferBlockIndex = -1;
     private uint _bufferValidSize;
     private byte[]? _blockBuffer;
 
-    public StandardVirtualFileStream(string datPath, PlatformId platformId, long baseOffset, SqPackFileInfo info,
-        bool keepOpen)
-        : base(platformId, info.RawFileSize) {
-        _keepOpen = keepOpen;
-        _offsetManager = new(datPath, platformId, baseOffset, info);
-        if (keepOpen)
-            _offsetManager.AddRefKeepOpen();
-        else
-            FreeUnnecessaryResources();
-    }
+    public StandardVirtualFileStream(string datPath, PlatformId platformId, long baseOffset, SqPackFileInfo info)
+        : base(platformId, info.RawFileSize) => _offsetManager = new(datPath, platformId, baseOffset, info);
 
-    public StandardVirtualFileStream(StandardVirtualFileStream cloneFrom, bool keepOpen)
-        : base(cloneFrom.PlatformId, (uint) cloneFrom.Length) {
-        _keepOpen = keepOpen;
-        _offsetManager = cloneFrom._offsetManager;
-        if (_offsetManager is null)
-            throw new ObjectDisposedException(nameof(ModelVirtualFileStream));
-
-        _offsetManager.AddRef();
-        if (keepOpen)
-            _offsetManager.AddRefKeepOpen();
-    }
+    public StandardVirtualFileStream(StandardVirtualFileStream cloneFrom)
+        : base(cloneFrom.PlatformId, (uint) cloneFrom.Length) => _offsetManager = cloneFrom._offsetManager;
 
     ~StandardVirtualFileStream() {
         Dispose(false);
@@ -83,6 +66,7 @@ public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
             i = ~i - 1;
 
         byte[]? readBuffer = null;
+        DeflateBytes? deflater = null;
         try {
             for (; i < _offsetManager.NumBlocks; i++) {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -93,12 +77,10 @@ public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
                 var bufferConsumed = PositionUint - _offsetManager.RequestOffsets[i];
                 var bufferRemaining = _offsetManager.RequestOffsets[i + 1] - PositionUint;
 
-                await _offsetManager.ReaderLock.WaitAsync(cancellationToken);
                 readBuffer = ArrayPool<byte>.Shared.RentAsNecessary(readBuffer, 16384);
-                await _offsetManager.Reader
+                await (_reader ??= _offsetManager.CreateNewReader())
                     .WithSeek(_offsetManager.BaseOffset + _offsetManager.BlockOffsets[i])
                     .BaseStream.ReadExactlyAsync(new(readBuffer, 0, _offsetManager.BlockSizes[i]), cancellationToken);
-                _offsetManager.ReaderLock.Release();
 
                 DatBlockHeader dbh;
                 unsafe {
@@ -110,10 +92,9 @@ public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
 
                 _blockBuffer = ArrayPool<byte>.Shared.RentAsNecessary(_blockBuffer, (int) dbh.DecompressedSize);
                 if (dbh.IsCompressed) {
-                    await using var zlibStream = new DeflateStream(
-                        new MemoryStream(readBuffer, Unsafe.SizeOf<DatBlockHeader>(), (int) dbh.CompressedSize),
-                        CompressionMode.Decompress);
-                    zlibStream.ReadExactly(new(_blockBuffer, 0, (int) dbh.DecompressedSize));
+                    deflater ??= DeflatePool.Get();
+                    deflater.Inflate(new(readBuffer, Unsafe.SizeOf<DatBlockHeader>(), (int) dbh.CompressedSize),
+                        new(_blockBuffer, 0, (int) dbh.DecompressedSize));
                 } else {
                     Array.Copy(readBuffer, 0, _blockBuffer, 0, dbh.DecompressedSize);
                 }
@@ -141,6 +122,8 @@ public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
             ArrayPool<byte>.Shared.Return(ref readBuffer);
             if (_bufferValidSize == 0)
                 ArrayPool<byte>.Shared.Return(ref _blockBuffer);
+            if (deflater is not null)
+                DeflatePool.Return(deflater);
         }
 
         // 3. Pad.
@@ -149,17 +132,17 @@ public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
         return totalRead;
     }
 
-    public override BaseVirtualFileStream Clone(bool keepOpen) => new StandardVirtualFileStream(this, keepOpen);
+    public override BaseVirtualFileStream Clone(bool keepOpen) => new StandardVirtualFileStream(this);
 
     protected override void Dispose(bool disposing) {
-        _offsetManager?.DecRef();
-        if (_keepOpen)
-            _offsetManager?.DecRefKeepOpen();
-        _offsetManager = null;
+        CloseButOpenAgainWhenNecessary();
         base.Dispose(disposing);
     }
 
-    public override void FreeUnnecessaryResources() => _offsetManager?.CloseReaderIfUnnecessary();
+    public override void CloseButOpenAgainWhenNecessary() {
+        _reader?.Dispose();
+        _reader = null;
+    }
 
     private class OffsetManager : BaseOffsetManager {
         public readonly int NumBlocks;
@@ -175,7 +158,8 @@ public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
             BlockOffsets = new uint[NumBlocks];
             BlockSizes = new ushort[NumBlocks];
 
-            var blockInfos = Reader
+            using var reader = CreateNewReader();
+            var blockInfos = reader
                 .WithSeek(BaseOffset + (uint) Unsafe.SizeOf<SqPackFileInfo>())
                 .ReadStructuresAsArray<DatStdFileBlockInfos>(NumBlocks);
 

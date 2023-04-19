@@ -2,17 +2,14 @@ using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
+using System.Drawing.Drawing2D;
 using System.Runtime.CompilerServices;
-using System.Threading.Channels;
-using System.Threading.Tasks;
 using BrightIdeasSoftware;
 using JetBrains.Annotations;
 using Lumina.Data.Structs;
 using LuminaExplorer.App.Utils;
 using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.Util;
-using static BrightIdeasSoftware.TreeListView;
 
 namespace LuminaExplorer.App.Window;
 
@@ -21,10 +18,8 @@ public partial class Explorer {
         ExplorerListViewDataSource : AbstractVirtualListDataSource, IDisposable, IReadOnlyList<VirtualObject> {
         private readonly VirtualSqPackTree _tree;
 
-        private readonly LruCache<VirtualObject, ResultDisposableTask<Bitmap?>> _previews = new(128, true);
+        private VirtualObjectImageLoader _previewCache;
         private int _previewSize;
-        private Channel<VirtualObject> _previewQueue = Channel.CreateUnbounded<VirtualObject>();
-        private CancellationTokenSource _previewCancellationTokenSource = new();
 
         private VirtualFolder? _currentFolder;
         private Task<VirtualFolder>? _fileNameResolver;
@@ -32,23 +27,51 @@ public partial class Explorer {
         private CancellationTokenSource _sorterCancel = new();
         private Task _sortTask = Task.CompletedTask;
 
-        public ExplorerListViewDataSource(VirtualObjectListView volv, VirtualSqPackTree tree) : base(volv) {
+        public ExplorerListViewDataSource(VirtualObjectListView volv, VirtualSqPackTree tree, int numPreviewerThreads)
+            : base(volv) {
             _tree = tree;
-
-            ResetBitmapLoader();
+            _previewCache = new(numPreviewerThreads);
+            _previewCache.ImageLoaded += PreviewImageLoaded;
         }
 
         public void Dispose() {
-            _previewCancellationTokenSource.Cancel();
             _sorterCancel.Cancel();
-            _previews.Dispose();
+            _previewCache.Dispose();
             _objects.AsParallel().ForAll(x => x.Dispose());
             _objects.Clear();
         }
 
+        public int SortThreads { get; set; }
+
+        public int PreviewThreads {
+            get => _previewCache.Threads;
+            set {
+                if (_previewCache.Threads == value)
+                    return;
+
+                var newPreviewCache = new VirtualObjectImageLoader(value) {
+                    Capacity = _previewCache.Capacity,
+                    CropThresholdAspectRatioRatio = _previewCache.CropThresholdAspectRatioRatio,
+                    InterpolationMode = _previewCache.InterpolationMode,
+                };
+                _previewCache.Dispose();
+                _previewCache = newPreviewCache;
+            }
+        }
+
         public int PreviewCacheCapacity {
-            get => _previews.Capacity;
-            set => _previews.Capacity = value;
+            get => _previewCache.Capacity;
+            set => _previewCache.Capacity = value;
+        }
+
+        public float PreviewCropThresholdAspectRatioRatio {
+            get => _previewCache.CropThresholdAspectRatioRatio;
+            set => _previewCache.CropThresholdAspectRatioRatio = value;
+        }
+
+        public InterpolationMode PreviewInterpolationMode {
+            get => _previewCache.InterpolationMode;
+            set => _previewCache.InterpolationMode = value;
         }
 
         public VirtualFolder? CurrentFolder {
@@ -63,22 +86,24 @@ public partial class Explorer {
                     return;
                 }
 
-                _previews.Flush();
-
                 var fileNameResolver = _fileNameResolver = _tree.AsFileNamesResolved(_currentFolder);
                 if (!fileNameResolver.IsCompletedSuccessfully)
                     listView.SetObjects(Array.Empty<object>());
                 else
                     listView.SelectedIndex = -1;
 
-                fileNameResolver.ContinueWith(_ => {
-                    if (_fileNameResolver != fileNameResolver)
-                        return;
-                    _fileNameResolver = null;
+                fileNameResolver
+                    .ContinueWith(_ => {
+                            if (_fileNameResolver != fileNameResolver)
+                                return;
+                            _fileNameResolver = null;
 
-                    listView.SetObjects(_tree.GetFolders(_currentFolder).Select(x => new VirtualObject(_tree, x))
-                        .Concat(_currentFolder.Files.Select(x => new VirtualObject(_tree, x))));
-                }, TaskScheduler.FromCurrentSynchronizationContext());
+                            listView.SetObjects(_tree.GetFolders(_currentFolder)
+                                .Select(x => new VirtualObject(_tree, x))
+                                .Concat(_currentFolder.Files.Select(x => new VirtualObject(_tree, x))));
+                        }, default,
+                        TaskContinuationOptions.DenyChildAttach,
+                        TaskScheduler.FromCurrentSynchronizationContext());
             }
         }
 
@@ -88,9 +113,7 @@ public partial class Explorer {
                 if (_previewSize == value)
                     return;
 
-                _previewSize = value;
-                ResetBitmapLoader();
-                listView.OwnerDraw = _previewSize > 0;
+                _previewCache.Width = _previewCache.Height = _previewSize = value;
 
                 var largeImageListSize = _previewSize == 0 ? 32 : _previewSize;
                 listView.LargeImageList!.ImageSize = new(largeImageListSize, largeImageListSize);
@@ -117,49 +140,56 @@ public partial class Explorer {
 
             var orderMultiplier = order == SortOrder.Descending ? -1 : 1;
             var syncContext = TaskScheduler.FromCurrentSynchronizationContext();
-            _sortTask = _sortTask.ContinueWith(_ => _objects.SortIntoNewListAsync()
-                .With(column.AspectName switch {
-                    nameof(VirtualObject.FullPath) => (a, b) =>
-                        string.Compare(a.FullPath, b.FullPath, StringComparison.InvariantCultureIgnoreCase) *
-                        orderMultiplier,
-                    nameof(VirtualObject.Name) => (a, b) =>
-                        (a.CompareByFolderOrFile(b) ?? a.CompareByName(b)) * orderMultiplier,
-                    nameof(VirtualObject.PackTypeString) => (a, b) => orderMultiplier * (
-                        a.CompareByFolderOrFile(b) ??
-                        (a.IsFolder ? a.CompareByName(b) : a.Lookup.Type.CompareTo(b.Lookup.Type))),
-                    nameof(VirtualObject.Hash1) => (a, b) => orderMultiplier * (
-                        a.CompareByFolderOrFile(b) ??
-                        (a.IsFolder ? a.CompareByName(b) : a.Hash1Value.CompareTo(b.Hash1Value))),
-                    nameof(VirtualObject.Hash2) => (a, b) => orderMultiplier * (
-                        a.CompareByFolderOrFile(b) ??
-                        (a.IsFolder ? a.CompareByName(b) : a.Hash2Value.CompareTo(b.Hash2Value))),
-                    nameof(VirtualObject.RawSize) => (a, b) => orderMultiplier * (
-                        a.CompareByFolderOrFile(b) ??
-                        (a.IsFolder ? a.CompareByName(b) : a.Lookup.Size.CompareTo(b.Lookup.Size))),
-                    nameof(VirtualObject.StoredSize) => (a, b) => orderMultiplier * (
-                        a.CompareByFolderOrFile(b) ??
-                        (a.IsFolder
-                            ? a.CompareByName(b)
-                            : a.Lookup.OccupiedSpaceUnits.CompareTo(b.Lookup.OccupiedSpaceUnits))),
-                    nameof(VirtualObject.ReservedSize) => (a, b) => orderMultiplier * (
-                        a.CompareByFolderOrFile(b) ??
-                        (a.IsFolder
-                            ? a.CompareByName(b)
-                            : a.Lookup.ReservedSpaceUnits.CompareTo(b.Lookup.ReservedSpaceUnits))),
-                    _ => throw new FailFastException($"Invalid column AspectName {column.AspectName}"),
-                })
-                .WithCancellationToken(_sorterCancel.Token)
-                .WithProgrssCallback(progress => Debug.Print("Sort progress: {0:0.00}%", 100 * progress))
-                .Sort()
-                .ContinueWith(result => {
-                    if (!result.IsCompletedSuccessfully)
-                        return;
+            _sortTask = _sortTask.ContinueWith(
+                _ => _objects.SortIntoNewListAsync()
+                    .With(column.AspectName switch {
+                        nameof(VirtualObject.FullPath) => (a, b) =>
+                            string.Compare(a.FullPath, b.FullPath, StringComparison.InvariantCultureIgnoreCase) *
+                            orderMultiplier,
+                        nameof(VirtualObject.Name) => (a, b) =>
+                            (a.CompareByFolderOrFile(b) ?? a.CompareByName(b)) * orderMultiplier,
+                        nameof(VirtualObject.PackTypeString) => (a, b) => orderMultiplier * (
+                            a.CompareByFolderOrFile(b) ??
+                            (a.IsFolder ? a.CompareByName(b) : a.Lookup.Type.CompareTo(b.Lookup.Type))),
+                        nameof(VirtualObject.Hash1) => (a, b) => orderMultiplier * (
+                            a.CompareByFolderOrFile(b) ??
+                            (a.IsFolder ? a.CompareByName(b) : a.Hash1Value.CompareTo(b.Hash1Value))),
+                        nameof(VirtualObject.Hash2) => (a, b) => orderMultiplier * (
+                            a.CompareByFolderOrFile(b) ??
+                            (a.IsFolder ? a.CompareByName(b) : a.Hash2Value.CompareTo(b.Hash2Value))),
+                        nameof(VirtualObject.RawSize) => (a, b) => orderMultiplier * (
+                            a.CompareByFolderOrFile(b) ??
+                            (a.IsFolder ? a.CompareByName(b) : a.Lookup.Size.CompareTo(b.Lookup.Size))),
+                        nameof(VirtualObject.StoredSize) => (a, b) => orderMultiplier * (
+                            a.CompareByFolderOrFile(b) ??
+                            (a.IsFolder
+                                ? a.CompareByName(b)
+                                : a.Lookup.OccupiedSpaceUnits.CompareTo(b.Lookup.OccupiedSpaceUnits))),
+                        nameof(VirtualObject.ReservedSize) => (a, b) => orderMultiplier * (
+                            a.CompareByFolderOrFile(b) ??
+                            (a.IsFolder
+                                ? a.CompareByName(b)
+                                : a.Lookup.ReservedSpaceUnits.CompareTo(b.Lookup.ReservedSpaceUnits))),
+                        _ => throw new FailFastException($"Invalid column AspectName {column.AspectName}"),
+                    })
+                    .WithTaskScheduler(TaskScheduler.Default)
+                    .WithThreads(SortThreads)
+                    .WithCancellationToken(_sorterCancel.Token)
+                    .WithProgrssCallback(progress => Debug.Print("Sort progress: {0:0.00}%", 100 * progress))
+                    .Sort()
+                    .ContinueWith(result => {
+                            if (!result.IsCompletedSuccessfully)
+                                return;
 
-                    _objects = result.Result;
-                    listView.ClearCachedInfo();
-                    listView.UpdateVirtualListSize();
-                    listView.Invalidate();
-                }, syncContext), syncContext);
+                            _objects = result.Result;
+                            listView.ClearCachedInfo();
+                            listView.UpdateVirtualListSize();
+                            listView.Invalidate();
+                        }, default,
+                        TaskContinuationOptions.DenyChildAttach,
+                        TaskScheduler.FromCurrentSynchronizationContext()), default,
+                TaskContinuationOptions.DenyChildAttach,
+                TaskScheduler.FromCurrentSynchronizationContext());
         }
 
         public override void AddObjects(ICollection modelObjects) => InsertObjects(_objects.Count, modelObjects);
@@ -183,9 +213,6 @@ public partial class Explorer {
                     }
                 }
             }
-
-            if (!_objects.Any())
-                ResetBitmapLoader();
         }
 
         public override void SetObjects(IEnumerable collection) {
@@ -196,7 +223,6 @@ public partial class Explorer {
                 o.Dispose();
 
             _objects.Clear();
-            ResetBitmapLoader();
             _objects.AddRange(collection.Cast<VirtualObject>());
         }
 
@@ -219,87 +245,11 @@ public partial class Explorer {
 
         public int Count => _objects.Count;
 
-        public bool TryGetThumbnail(VirtualObject virtualObject, [MaybeNullWhen(false)] out Bitmap bitmap) {
-            if (!_previews.TryGet(virtualObject, out var task)) {
-                if (!virtualObject.ThumbnailRequested) {
-                    virtualObject.ThumbnailRequested = true;
-                    _previewQueue.Writer.TryWrite(virtualObject);
-                }
-                bitmap = null!;
-                return false;
-            }
+        public bool TryGetThumbnail(VirtualObject virtualObject, [MaybeNullWhen(false)] out Bitmap bitmap) =>
+            _previewCache.TryGetBitmap(virtualObject, out bitmap);
 
-            if ((task.Task.IsCompletedSuccessfully ? task.Task.Result : null) is { } b) {
-                bitmap = b;
-                return true;
-            }
-
-            bitmap = null!;
-            return false;
-        }
-
-        void ResetBitmapLoader() {
-            _previews.Flush();
-            _previewCancellationTokenSource.Cancel();
-            _previewQueue.Writer.Complete();
-
-            _previewCancellationTokenSource = new();
-            _previewQueue = Channel.CreateUnbounded<VirtualObject>();
-
-            var uiSynchContext = TaskScheduler.FromCurrentSynchronizationContext();
-            Task.Factory.StartNew(async () => {
-                while (true) {
-                    var virtualObject = await _previewQueue.Reader.ReadAsync();
-
-                    while (_previewQueue.Reader.Count > PreviewCacheCapacity) {
-                        _previewCancellationTokenSource.Token.ThrowIfCancellationRequested();
-                        virtualObject = await _previewQueue.Reader.ReadAsync();
-                    }
-
-                    ResultDisposableTask<Bitmap?> task;
-                    _previews.Add(virtualObject, task = new(Task.Run(async () => {
-                        if (virtualObject.IsFolder)
-                            return null;
-
-                        var file = virtualObject.File;
-                        VirtualFileLookup lookup;
-                        try {
-                            lookup = virtualObject.Lookup;
-                        } catch (Exception) {
-                            return null;
-                        }
-
-                        var canBeTexture = false;
-                        canBeTexture |= lookup.Type == FileType.Texture;
-                        canBeTexture |= file.Name.EndsWith(".atex", StringComparison.InvariantCultureIgnoreCase);
-                        // may be an .atex file
-                        canBeTexture |= !file.NameResolved && lookup is { Type: FileType.Standard, Size: > 256 };
-
-                        if (!canBeTexture)
-                            return null;
-
-                        try {
-                            await using var stream = lookup.CreateStream();
-                            return await QueuedThumbnailer.Instance.LoadFromTexStream(
-                                ImageThumbnailSize,
-                                ImageThumbnailSize,
-                                stream,
-                                _tree.PlatformId,
-                                _previewCancellationTokenSource.Token).ConfigureAwait(false);
-                        } catch (Exception e) {
-                            Debug.WriteLine(e);
-                        }
-
-                        return null;
-                    })));
-
-                    _ = task.Task.ContinueWith(res => {
-                        if (res.IsCompletedSuccessfully)
-                            listView.RefreshObject(virtualObject);
-                    }, uiSynchContext);
-                }
-            }, _previewCancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-        }
+        private void PreviewImageLoaded(VirtualObject arg1, VirtualFile arg2, Bitmap arg3) =>
+            listView.BeginInvoke(() => listView.RefreshObject(arg1));
     }
 
     // ReSharper disable once ClassWithVirtualMembersNeverInherited.Local
@@ -312,9 +262,10 @@ public partial class Explorer {
         private Lazy<VirtualFileLookup>? _lookup;
         private Lazy<string> _fullPath;
 
-        public bool ThumbnailRequested;
+        public readonly PlatformId PlatformId;
 
         public VirtualObject(VirtualSqPackTree tree, VirtualFile file) {
+            PlatformId = tree.PlatformId;
             _file = file;
             _name = file.Name;
             _fullPath = new(() => tree.GetFullPath(file));
@@ -323,6 +274,7 @@ public partial class Explorer {
         }
 
         public VirtualObject(VirtualSqPackTree tree, VirtualFolder folder) {
+            PlatformId = tree.PlatformId;
             _folder = folder;
             _name = folder.Name.Trim('/');
             _fullPath = new(() => tree.GetFullPath(folder));
@@ -330,7 +282,7 @@ public partial class Explorer {
         }
 
         private void ReleaseUnmanagedResources() {
-            if (_lookup is { IsValueCreated: true }) {
+            if (_lookup is {IsValueCreated: true}) {
                 _lookup.Value.Dispose();
                 _lookup = null;
             }
@@ -352,6 +304,11 @@ public partial class Explorer {
         public VirtualFolder Folder => !IsFolder || _folder is null ? throw new InvalidOperationException() : _folder;
 
         public VirtualFileLookup Lookup => _lookup?.Value ?? throw new InvalidOperationException();
+
+        public bool TryGetLookup([MaybeNullWhen(false)] out VirtualFileLookup lookup) {
+            lookup = _lookup?.Value;
+            return lookup is not null;
+        }
 
         public uint Hash1Value => IsFolder ? Folder.FolderHash : File.FileHash;
 

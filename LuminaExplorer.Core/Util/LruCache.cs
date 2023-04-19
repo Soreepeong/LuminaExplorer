@@ -1,11 +1,11 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 
 namespace LuminaExplorer.Core.Util;
 
-public sealed class LruCache<TKey, TValue> : IDisposable
+public sealed class LruCache<TKey, TValue> : IDisposable, IEnumerable<LruCache<TKey, TValue>.LruCacheItem>
     where TKey : notnull
     where TValue : notnull {
-    private readonly object _syncRoot = new();
     private readonly Dictionary<TKey, LinkedListNode<LruCacheItem>> _entryLookup = new();
     private LinkedList<LruCacheItem> _entries = new();
 
@@ -19,22 +19,19 @@ public sealed class LruCache<TKey, TValue> : IDisposable
 
     public int Capacity {
         get => _capacity;
-        set{
+        set {
             _capacity = value;
-            lock (_syncRoot) {
-                while (_entryLookup.Count >= _capacity)
-                    RemoveFirst();
-            }}
+            while (_entryLookup.Count >= _capacity)
+                RemoveFirst();
+        }
     }
 
     public bool TryGet(TKey key, [MaybeNullWhen(false)] out TValue value) {
-        lock (_syncRoot) {
-            if (_entryLookup.TryGetValue(key, out var node)) {
-                value = node.Value.Value;
-                _entries.Remove(node);
-                _entries.AddLast(node);
-                return true;
-            }
+        if (_entryLookup.TryGetValue(key, out var node)) {
+            value = node.Value.Value;
+            _entries.Remove(node);
+            _entries.AddLast(node);
+            return true;
         }
 
         value = default!;
@@ -42,37 +39,37 @@ public sealed class LruCache<TKey, TValue> : IDisposable
     }
 
     public void Add(TKey key, TValue val) {
-        lock (_syncRoot) {
-            if (_entryLookup.TryGetValue(key, out var existingNode))
-                _entries.Remove(existingNode);
-            else if (_entryLookup.Count >= _capacity)
-                RemoveFirst();
+        if (_entryLookup.TryGetValue(key, out var existingNode)) {
+            _entries.Remove(existingNode);
+            if (!EqualityComparer<TValue>.Default.Equals(existingNode.Value.Value, val)) {
+                if (existingNode.Value.Value is IDisposable disposable)
+                    disposable.Dispose();
+            }
+        } else if (_entryLookup.Count >= _capacity)
+            RemoveFirst();
 
-            var cacheItem = new LruCacheItem(key, val);
-            var node = new LinkedListNode<LruCacheItem>(cacheItem);
-            _entries.AddLast(node);
-            _entryLookup[key] = node;
-        }
+        var cacheItem = new LruCacheItem(key, val);
+        var node = new LinkedListNode<LruCacheItem>(cacheItem);
+        _entries.AddLast(node);
+        _entryLookup[key] = node;
     }
 
     public void Flush() {
-        lock (_syncRoot) {
-            _entryLookup.Clear();
-            if (_disposeOnAnyThread) {
-                var entries = _entries;
-                Task.Run(() => {
-                    foreach (var e in entries) {
-                        if (e.Value is IDisposable disposable)
-                            disposable.Dispose();
-                    }
-                });
-                _entries = new();
-            } else {
-                foreach (var e in _entries)
+        _entryLookup.Clear();
+        if (_disposeOnAnyThread) {
+            var entries = _entries;
+            Task.Run(() => {
+                foreach (var e in entries) {
                     if (e.Value is IDisposable disposable)
                         disposable.Dispose();
-                _entries.Clear();
-            }
+                }
+            });
+            _entries = new();
+        } else {
+            foreach (var e in _entries)
+                if (e.Value is IDisposable disposable)
+                    disposable.Dispose();
+            _entries.Clear();
         }
     }
 
@@ -95,4 +92,8 @@ public sealed class LruCache<TKey, TValue> : IDisposable
     }
 
     public void Dispose() => Flush();
+
+    public IEnumerator<LruCacheItem> GetEnumerator() => _entries.GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }

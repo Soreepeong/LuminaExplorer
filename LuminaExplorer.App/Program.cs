@@ -16,14 +16,20 @@ static class Program {
         // see https://aka.ms/applicationconfiguration.
         ApplicationConfiguration.Initialize();
 
-        var gameData = new Lumina.GameData(@"C:\Program Files (x86)\SquareEnix\FINAL FANTASY XIV - A Realm Reborn\game\sqpack");
-        var hashCacheFile = new FileInfo(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "paths.dat"));
+        var appConfig = new AppConfig();
+        var gameData = new Lumina.GameData(appConfig.SqPackRootDirectoryPath);
+        var hashCacheFile = new FileInfo(Path.Combine(
+            Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!,
+                appConfig.CacheFilePath)));
         if (!hashCacheFile.Exists || hashCacheFile.Length == 0)
-            HashDatabase.WriteCachedFile(hashCacheFile.OpenWrite(), x => Debug.WriteLine($@"Progress: {x * 100:0.00}%"), new()).Wait();
+            HashDatabase.WriteCachedFile(hashCacheFile.OpenWrite(), x => Debug.WriteLine($@"Progress: {x * 100:0.00}%"),
+                new()).Wait();
         var hashdb = new HashDatabase(hashCacheFile);
 
-        var vsptree = new VirtualSqPackTree(hashdb, gameData);
-
-        Application.Run(new Explorer(vsptree));
+        using var vsptree = new VirtualSqPackTree(hashdb, gameData);
+        using var mainExplorer = new Explorer();
+        mainExplorer.AppConfig = appConfig;
+        mainExplorer.Tree = vsptree;
+        Application.Run(mainExplorer);
     }
 }

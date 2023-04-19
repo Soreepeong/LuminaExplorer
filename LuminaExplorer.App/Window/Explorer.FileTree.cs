@@ -8,7 +8,7 @@ public partial class Explorer {
     private sealed class FileTreeHandler : IDisposable {
         private readonly Explorer _explorer;
         private readonly TreeView _treeView;
-        
+
         private VirtualSqPackTree? _tree;
 
         public FileTreeHandler(Explorer explorer) {
@@ -52,7 +52,7 @@ public partial class Explorer {
 
                 _tree = value;
 
-                if (_tree is not null){
+                if (_tree is not null) {
                     _treeView.Nodes.Add(new FolderTreeNode(_tree));
                     _treeView.Nodes[0].Expand();
                     _treeView.SelectedNode = _treeView.Nodes[0];
@@ -66,7 +66,7 @@ public partial class Explorer {
             VirtualFolder[]? previousPathFromRoot) {
             if (_tree is not { } tree)
                 return;
-            
+
             if (previousPathFromRoot is null)
                 return;
 
@@ -74,8 +74,9 @@ public partial class Explorer {
                 return;
 
             foreach (var folder in previousPathFromRoot.Skip(1)) {
-                if (node.TryFindChildNode(folder, out node) is not true)
-                    break;
+                if (node.TryFindChildNode(folder, out var node2) is not true)
+                    return;
+                node = node2;
             }
 
             if (node.Folder != changedFolder)
@@ -93,8 +94,9 @@ public partial class Explorer {
                     break;
                 }
 
-                if (newParentNode.TryFindChildNode(folder, out newParentNode))
-                    break;
+                if (!newParentNode.TryFindChildNode(folder, out var parent2))
+                    return;
+                newParentNode = parent2;
             }
         }
 
@@ -126,19 +128,23 @@ public partial class Explorer {
                 }
 
                 node.Expand();
-                return _treeView_PostProcessFolderTreeNodeExpansion(node).ContinueWith(_ => {
-                    var i = 0;
-                    for (; i < node.Nodes.Count; i++) {
-                        if (node.Nodes[i] is FolderTreeNode subnode &&
-                            string.Compare(subnode.Folder.Name, name, StringComparison.InvariantCultureIgnoreCase) ==
-                            0) {
-                            return ExpandTreeToImpl(subnode, parts, partIndex + 1);
+                return _treeView_PostProcessFolderTreeNodeExpansion(node)
+                    .ContinueWith(_ => {
+                        var i = 0;
+                        for (; i < node.Nodes.Count; i++) {
+                            if (node.Nodes[i] is FolderTreeNode subnode &&
+                                string.Compare(subnode.Folder.Name, name, StringComparison.InvariantCultureIgnoreCase)
+                                ==
+                                0) {
+                                return ExpandTreeToImpl(subnode, parts, partIndex + 1);
+                            }
                         }
-                    }
 
-                    _explorer._navigationHandler?.NavigateTo(node.Folder, true);
-                    return Task.FromResult(node);
-                }, TaskScheduler.FromCurrentSynchronizationContext()).Unwrap();
+                        _explorer._navigationHandler?.NavigateTo(node.Folder, true);
+                        return Task.FromResult(node);
+                    }, default,
+                    TaskContinuationOptions.DenyChildAttach,
+                    TaskScheduler.FromCurrentSynchronizationContext()).Unwrap();
             }
 
             _explorer._navigationHandler?.NavigateTo(node.Folder, true);
@@ -153,24 +159,30 @@ public partial class Explorer {
             if (ln.CallerMustPopulate()) {
                 resolvedFolder = resolvedFolder
                     .ContinueWith(f => {
-                        if (_tree is not { } tree2)
-                            return f.Result;
-                        ln.Nodes.Clear();
-                        ln.Nodes.AddRange(tree2.GetFolders(ln.Folder)
-                            .OrderBy(x => x.Name.ToLowerInvariant())
-                            .Select(x => (TreeNode) new FolderTreeNode(tree2, x))
-                            .ToArray());
+                            if (_tree is not { } tree2)
+                                return f.Result;
+                            ln.Nodes.Clear();
+                            ln.Nodes.AddRange(tree2.GetFolders(ln.Folder)
+                                .OrderBy(x => x.Name.ToLowerInvariant())
+                                .Select(x => (TreeNode) new FolderTreeNode(tree2, x))
+                                .ToArray());
 
-                        return f.Result;
-                    }, TaskScheduler.FromCurrentSynchronizationContext());
+                            return f.Result;
+                        }, default,
+                        TaskContinuationOptions.DenyChildAttach,
+                        TaskScheduler.FromCurrentSynchronizationContext());
             }
 
-            return resolvedFolder.ContinueWith(_ => {
-                if (tree.GetKnownFolderCount(ln.Folder) == 1) {
-                    foreach (var n in ln.Nodes)
-                        ((TreeNode) n).Expand();
-                }
-            }, TaskScheduler.FromCurrentSynchronizationContext());
+            return resolvedFolder
+                .ContinueWith(_ => {
+                        if (tree.GetKnownFolderCount(ln.Folder) == 1) {
+                            foreach (var n in ln.Nodes)
+                                ((TreeNode) n).Expand();
+                        }
+                    },
+                    default,
+                    TaskContinuationOptions.DenyChildAttach,
+                    TaskScheduler.FromCurrentSynchronizationContext());
         }
 
         public class FolderTreeNode : TreeNode {

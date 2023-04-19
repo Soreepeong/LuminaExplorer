@@ -18,11 +18,13 @@ public partial class Explorer {
 
         private ExplorerListViewDataSource? _source;
         private VirtualSqPackTree? _tree;
+        private AppConfig _appConfig;
 
         public FileListHandler(Explorer explorer) {
             _explorer = explorer;
             _listView = explorer.lvwFiles;
             _cboView = explorer.cboView.ComboBox!;
+            _appConfig = explorer.AppConfig;
 
             _cboView.SelectedIndex = _cboView.Items.Count - 1; // detail view
             _cboView.SelectedIndexChanged += cboView_SelectedIndexChanged;
@@ -41,10 +43,14 @@ public partial class Explorer {
             _fileIconLarge = UiUtils.ExtractPeIcon("shell32.dll", 0, true);
             _folderIconLarge = UiUtils.ExtractPeIcon("shell32.dll", 4, true);
 
-            if (_explorer.Tree is { } tree)
-                _listView.VirtualListDataSource = _source = new(_listView, tree);
-            else
+            if (_explorer.Tree is { } tree) {
+                _listView.VirtualListDataSource = _source = new(_listView, tree, _appConfig.PreviewThumbnailerThreads) {
+                    SortThreads = _appConfig.SortThreads,
+                };
+            } else {
                 _listView.VirtualListDataSource = new AbstractVirtualListDataSource(_listView);
+            }
+
             _listView.PrimarySortColumn = _explorer.colFilesName;
             _listView.PrimarySortOrder = SortOrder.Ascending;
             _thumbnailDecoration = new(this);
@@ -86,7 +92,27 @@ public partial class Explorer {
                 if (_tree is not null) {
                     _tree.FolderChanged += VirtualFolderChanged;
                     _tree.FileChanged += VirtualFileChanged;
-                    _listView.VirtualListDataSource = _source = new(_listView, _tree);
+                    _listView.VirtualListDataSource = _source =
+                        new(_listView, _tree, _appConfig.PreviewThumbnailerThreads) {
+                            SortThreads = _appConfig.SortThreads,
+                        };
+                }
+            }
+        }
+
+        public AppConfig AppConfig {
+            get => _appConfig;
+            set {
+                if (_appConfig == value)
+                    return;
+
+                _appConfig = value;
+                if (_source is not null) {
+                    _source.PreviewCropThresholdAspectRatioRatio = value.CropThresholdAspectRatioRatio;
+                    _source.PreviewInterpolationMode = value.PreviewInterpolationMode;
+                    _source.PreviewThreads = value.PreviewThumbnailerThreads;
+                    _source.SortThreads = value.SortThreads;
+                    RecalculateNumberOfPreviewsToCache();
                 }
             }
         }
@@ -118,7 +144,7 @@ public partial class Explorer {
             _cboView.SelectedIndexChanged -= cboView_SelectedIndexChanged;
 
             _explorer.Resize -= WindowResized;
-            
+
             _folderIconLarge?.Dispose();
             _fileIconLarge?.Dispose();
         }
@@ -170,7 +196,7 @@ public partial class Explorer {
                 10 => View.Details,
                 _ => throw new FailFastException("cboView.SelectedIndex >= cboView.SelectedIndex.Items.Count?"),
             };
-            
+
             // 7 = LargeIcon(32px) but no thumbnails.
 
             if (_listView.VirtualListDataSource is ExplorerListViewDataSource source) {
@@ -318,18 +344,21 @@ public partial class Explorer {
         }
 
         private void RecalculateNumberOfPreviewsToCache() {
+            if (_explorer.WindowState == FormWindowState.Minimized)
+                return;
+
             if (_source is not { } source)
                 return;
 
-            if (source.ImageThumbnailSize == 0) {
-                source.PreviewCacheCapacity = 128;
+            if (source.ImageThumbnailSize == 0)
                 return;
-            }
 
             var size = _explorer.Size;
             var horz = (size.Width + source.ImageThumbnailSize - 1) / source.ImageThumbnailSize;
             var vert = (size.Height + source.ImageThumbnailSize - 1) / source.ImageThumbnailSize;
-            source.PreviewCacheCapacity = Math.Max(horz * vert * 4, 128);
+            source.PreviewCacheCapacity = Math.Max(
+                (int)Math.Ceiling(horz * vert * Math.Max(2.0f, _appConfig.PreviewThumbnailMinimumKeepInMemoryPages)),
+                _appConfig.PreviewThumbnailMinimumKeepInMemoryEntries);
         }
 
         private sealed class ThumbnailDecoration : IDecoration {
@@ -351,19 +380,27 @@ public partial class Explorer {
 
                 Bitmap? bitmap = null;
                 var imageWidth = olv.View == View.LargeIcon ? 32 : 16;
-                var imageHeight = olv.View == View.LargeIcon ? 32 : 16; 
-                if (source.ImageThumbnailSize != 0 && source.TryGetThumbnail(virtualObject, out bitmap)) {
-                    imageWidth = bitmap.Width;
-                    imageHeight = bitmap.Height;
+                var imageHeight = olv.View == View.LargeIcon ? 32 : 16;
+                var thumbnailSize = source.ImageThumbnailSize;
+                if (thumbnailSize != 0 && source.TryGetThumbnail(virtualObject, out bitmap)) {
+                    try {
+                        (imageWidth, imageHeight) = (bitmap.Width, bitmap.Height);
+                        if (imageWidth > thumbnailSize)
+                            (imageWidth, imageHeight) = (thumbnailSize, imageHeight * thumbnailSize / imageWidth);
+                        if (imageHeight > thumbnailSize)
+                            (imageWidth, imageHeight) = (imageWidth * thumbnailSize / imageHeight, thumbnailSize);
+                    } catch (Exception) {
+                        // pass
+                    }
                 }
 
-                var iconBounds = listItem.GetBounds(ItemBoundsPortion.Icon);                
+                var iconBounds = listItem.GetBounds(ItemBoundsPortion.Icon);
                 var x = iconBounds.Left + (iconBounds.Width - imageWidth) / 2;
                 var y = iconBounds.Top + (iconBounds.Height - imageHeight) / 2;
                 if (bitmap is not null) {
-                    g.DrawImage(bitmap, x, y);
+                    g.DrawImage(bitmap, x, y, imageWidth, imageHeight);
                     using var pen = new Pen(Color.LightGray);
-                    g.DrawRectangle(pen, x - 1, y - 1, bitmap.Width + 1, bitmap.Height + 1);
+                    g.DrawRectangle(pen, x - 1, y - 1, imageWidth + 1, imageHeight + 1);
                 } else if (imageWidth <= 16 && imageHeight <= 16)
                     olv.SmallImageList!.Draw(g, x, y, virtualObject.IsFolder ? 1 : 0);
                 else if ((virtualObject.IsFolder ? _handler._folderIconLarge : _handler._fileIconLarge) is { } icon)

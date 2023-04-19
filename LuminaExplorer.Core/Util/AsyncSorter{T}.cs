@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Microsoft.Extensions.ObjectPool;
 
 namespace LuminaExplorer.Core.Util;
 
@@ -13,6 +12,8 @@ public class AsyncListSorter<T> {
     private CancellationToken _cancellationToken;
     private Action<double>? _progressReport;
     private TimeSpan _progressReportInterval = TimeSpan.FromMilliseconds(200);
+    private int _numThreads = Environment.ProcessorCount;
+    private TaskScheduler? _taskScheduler;
 
     public AsyncListSorter(List<T> list) {
         _list = list;
@@ -20,6 +21,16 @@ public class AsyncListSorter<T> {
             .GetField("_items", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
             .GetValue(list)!;
         _mergeScratch = new T[_list.Count];
+    }
+
+    public AsyncListSorter<T> WithTaskScheduler(TaskScheduler taskScheduler) {
+        _taskScheduler = taskScheduler;
+        return this;
+    }
+
+    public AsyncListSorter<T> WithThreads(int numThreads) {
+        _numThreads = numThreads;
+        return this;
     }
 
     public AsyncListSorter<T> With(IComparer<T> comparison) {
@@ -83,14 +94,13 @@ public class AsyncListSorter<T> {
 
         MaybeReportProgress(true);
 
-        var taskCount = Environment.ProcessorCount;
-        var tasks = new List<Task<int>>(taskCount);
+        var tasks = new List<Task<int>>(_numThreads);
 
         for (int pass = 0, unit = minimumUnit; unit < count; unit *= 2, pass++) {
-            for (int i = index, remaining = count; ; i += unit * 2, remaining -= unit * 2) {
+            for (int i = index, remaining = count;; i += unit * 2, remaining -= unit * 2) {
                 _cancellationToken.ThrowIfCancellationRequested();
 
-                while (tasks.Count > taskCount || (remaining <= 0 && tasks.Any())) {
+                while (tasks.Count > _numThreads || (remaining <= 0 && tasks.Any())) {
                     _cancellationToken.ThrowIfCancellationRequested();
                     await Task.WhenAny(tasks);
                     tasks.RemoveAll(x => {
@@ -108,10 +118,23 @@ public class AsyncListSorter<T> {
                 if (pass == 0) {
                     var innerIndex = i;
                     var innerCount = Math.Min(unit * 2, remaining);
-                    tasks.Add(Task.Run(() => {
-                        Array.Sort(_array, innerIndex, innerCount, _comparer);
-                        return innerCount;
-                    }, _cancellationToken));
+                    if (_taskScheduler is { } scheduler) {
+                        tasks.Add(Task.Factory.StartNew(
+                            () => {
+                                Array.Sort(_array, innerIndex, innerCount, _comparer);
+                                return innerCount;
+                            },
+                            _cancellationToken,
+                            TaskCreationOptions.None,
+                            scheduler));
+                    } else {
+                        tasks.Add(Task.Factory.StartNew(
+                            () => {
+                                Array.Sort(_array, innerIndex, innerCount, _comparer);
+                                return innerCount;
+                            },
+                            _cancellationToken));
+                    }
                 } else {
                     var left = i;
                     var mid = left + Math.Min(unit, count - left);
@@ -119,8 +142,19 @@ public class AsyncListSorter<T> {
                     if (right == mid) {
                         currentProgress += right - mid;
                         MaybeReportProgress();
-                    } else
-                        tasks.Add(Task.Run(() => Merge(left, mid, right), _cancellationToken));
+                    } else {
+                        if (_taskScheduler is { } scheduler) {
+                            tasks.Add(Task.Factory.StartNew(
+                                () => Merge(left, mid, right),
+                                _cancellationToken,
+                                TaskCreationOptions.None,
+                                scheduler));
+                        } else {
+                            tasks.Add(Task.Factory.StartNew(
+                                () => Merge(left, mid, right),
+                                _cancellationToken));
+                        }
+                    }
                 }
             }
         }

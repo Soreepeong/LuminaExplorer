@@ -150,7 +150,6 @@ partial class Explorer {
         lvwFiles.FullRowSelect = true;
         lvwFiles.Location = new Point(0, 0);
         lvwFiles.Name = "lvwFiles";
-        lvwFiles.OwnerDraw = false;
         lvwFiles.ShowGroups = false;
         lvwFiles.Size = new Size(670, 687);
         lvwFiles.TabIndex = 0;

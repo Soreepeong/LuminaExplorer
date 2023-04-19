@@ -12,7 +12,9 @@ public partial class Explorer {
         
         public SearchHandler(Explorer explorer) {
             _explorer = explorer;
+            AppConfig = explorer._appConfig;
             _txtSearch = _explorer.txtSearch.TextBox!;
+            _txtSearch.PlaceholderText = @"Search...";
             _explorer.btnSearch.Click += btnSearch_Click;
             _explorer.txtSearch.KeyUp += txtSearch_KeyUp;
         }
@@ -24,7 +26,9 @@ public partial class Explorer {
         }
         
         public VirtualSqPackTree? Tree { get; set; }
-        
+
+        public AppConfig AppConfig { get; set; }
+
         private void btnSearch_Click(object? sender, EventArgs e) => Search(_txtSearch.Text);
 
         private void txtSearch_KeyUp(object? sender, KeyEventArgs e) {
@@ -124,7 +128,8 @@ public partial class Explorer {
                         throw new OperationCanceledException();
                     }
                 },
-                TimeSpan.FromSeconds(1000),
+                AppConfig.SearchThreads,
+                AppConfig.SearchEntryTimeout,
                 cancelSource.Token);
         }
     }
