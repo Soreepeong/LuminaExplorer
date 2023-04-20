@@ -68,7 +68,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
             if (r.LastException is not null)
                 continue;
 
-            if (r.HasImage) {
+            if (!r.HasImage) {
                 if (!r.LoadTexFile(fr, _currentMipmap, _currentDepth))
                     continue;
             }
@@ -95,7 +95,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     }
 
     public override Size GetPreferredSize(Size proposedSize) =>
-        _renderers.FirstOrDefault(x => x.LastException is null)?.Size ?? base.GetPreferredSize(proposedSize);
+        Viewport.Size.IsEmpty ? base.GetPreferredSize(proposedSize) : Viewport.Size;
 
     public void UpdateBitmap(int depth, int mipmap, bool force = false) {
         if (FileResourceTyped is not { } frt || (_currentDepth == depth && _currentMipmap == mipmap))

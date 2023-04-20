@@ -8,7 +8,7 @@ using Silk.NET.Maths;
 using WicNet;
 using Rectangle = System.Drawing.Rectangle;
 
-namespace LuminaExplorer.Controls.FileResourceViewerControls; 
+namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
 public partial class TexFileViewerControl {
     private sealed class D2DRenderer : ITexRenderer {
@@ -241,11 +241,11 @@ public partial class TexFileViewerControl {
             Size = new();
         }
 
-        public unsafe bool Draw(PaintEventArgs _) {
+        public bool Draw(PaintEventArgs _) {
             try {
                 _renderTarget.BeginDraw();
                 _renderTarget.FillRectangle(_control.ClientRectangle.ToSilkFloat(), _backColorBrush);
-                if (_bitmap.Handle is null) {
+                if (!HasImage) {
                     Marshal.ThrowExceptionForHR(_renderTarget.EndDraw(new Span<ulong>(), new Span<ulong>()));
                     return true;
                 }
@@ -257,45 +257,42 @@ public partial class TexFileViewerControl {
                     _control.Width - _control.Padding.Left - _control.Padding.Right,
                     _control.Height - _control.Padding.Bottom - _control.Padding.Top);
 
-                if (_bitmap.Handle is not null) {
-                    var cellSize = _control.TransparencyCellSize;
-                    if (cellSize > 0) {
-                        var controlSize = _control.Size;
-                        var c1 = false;
-                        for (var i = 0; i < controlSize.Width; i += cellSize) {
-                            var c2 = c1;
-                            c1 = !c1;
-                            for (var j = 0; j < controlSize.Height; j += cellSize) {
-                                if (c2) {
-                                    _renderTarget.FillRectangle(
-                                        new Box2D<float>(i, j, i + cellSize, j + cellSize),
-                                        _borderColorBrush);
-                                }
-
-                                c2 = !c2;
+                var cellSize = _control.TransparencyCellSize;
+                if (cellSize > 0) {
+                    var controlSize = _control.Size;
+                    var c1 = false;
+                    for (var i = 0; i < controlSize.Width; i += cellSize) {
+                        var c2 = c1;
+                        c1 = !c1;
+                        for (var j = 0; j < controlSize.Height; j += cellSize) {
+                            if (c2) {
+                                _renderTarget.FillRectangle(
+                                    new Box2D<float>(i, j, i + cellSize, j + cellSize),
+                                    _borderColorBrush);
                             }
+
+                            c2 = !c2;
                         }
                     }
-
-                    _renderTarget.DrawBitmap(
-                        _bitmap,
-                        imageRect.ToSilkFloat(),
-                        1f, // opacity
-                        BitmapInterpolationMode.Linear,
-                        new Box2D<float>(0, 0, Size.Width, Size.Height));
-
-                    _renderTarget.DrawRectangle(
-                        Rectangle.Inflate(imageRect, 1, 1).ToSilkFloat(),
-                        _borderColorBrush,
-                        1f, // stroke width
-                        new ComPtr<ID2D1StrokeStyle>());
-
-                    // TODO: draw text information
                 }
+
+                _renderTarget.DrawBitmap(
+                    _bitmap,
+                    imageRect.ToSilkFloat(),
+                    1f, // opacity
+                    BitmapInterpolationMode.Linear,
+                    new Box2D<float>(0, 0, Size.Width, Size.Height));
+
+                _renderTarget.DrawRectangle(
+                    Rectangle.Inflate(imageRect, 1, 1).ToSilkFloat(),
+                    _borderColorBrush,
+                    1f, // stroke width
+                    new ComPtr<ID2D1StrokeStyle>());
+
+                // TODO: draw text information
 
                 Marshal.ThrowExceptionForHR(_renderTarget.EndDraw(new Span<ulong>(), new Span<ulong>()));
                 return true;
-                
             } catch (Exception e) {
                 LastException = e;
                 return false;

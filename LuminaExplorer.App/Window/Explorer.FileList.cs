@@ -447,10 +447,17 @@ public partial class Explorer {
                 var x = iconBounds.Left + (iconBounds.Width - imageWidth) / 2;
                 var y = iconBounds.Top + (iconBounds.Height - imageHeight) / 2;
                 if (bitmap is not null) {
-                    g.DrawImage(bitmap, x, y, imageWidth, imageHeight);
-                    using var pen = new Pen(Color.LightGray);
-                    g.DrawRectangle(pen, x - 1, y - 1, imageWidth + 1, imageHeight + 1);
-                } else if (imageWidth <= 16 && imageHeight <= 16)
+                    try {
+                        g.DrawImage(bitmap, x, y, imageWidth, imageHeight);
+                        using var pen = new Pen(Color.LightGray);
+                        g.DrawRectangle(pen, x - 1, y - 1, imageWidth + 1, imageHeight + 1);
+                        return;
+                    } catch (Exception) {
+                        // pass
+                    }
+                }
+                
+                if (imageWidth <= 16 && imageHeight <= 16)
                     olv.SmallImageList!.Draw(g, x, y, virtualObject.IsFolder ? 1 : 0);
                 else if ((virtualObject.IsFolder ? _handler._folderIconLarge : _handler._fileIconLarge) is { } icon)
                     g.DrawIcon(icon, x, y);
