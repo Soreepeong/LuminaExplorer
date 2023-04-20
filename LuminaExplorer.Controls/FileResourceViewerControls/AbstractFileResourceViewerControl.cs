@@ -17,24 +17,11 @@ public abstract class AbstractFileResourceViewerControl : Control {
         MouseActivity = new(this);
     }
 
-    protected override void OnMouseDown(MouseEventArgs e) {
-        base.OnMouseDown(e);
-        MouseActivity.FeedMouseDown(e);
-    }
-
-    protected override void OnMouseMove(MouseEventArgs e) {
-        base.OnMouseMove(e);
-        MouseActivity.FeedMouseMove(e);
-    }
-
-    protected override void OnMouseUp(MouseEventArgs e) {
-        base.OnMouseUp(e);
-        MouseActivity.FeedMouseUp(e);
-    }
-
-    protected override void OnMouseLeave(EventArgs e) {
-        base.OnMouseLeave(e);
-        MouseActivity.FeedMouseLeave();
+    protected override void Dispose(bool disposing) {
+        if (disposing)
+            MouseActivity.Dispose();
+        
+        base.Dispose(disposing);
     }
 
     public virtual void SetFile(VirtualSqPackTree tree, VirtualFile file, FileResource fileResource) {
