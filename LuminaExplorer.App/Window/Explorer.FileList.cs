@@ -337,7 +337,7 @@ public partial class Explorer {
                         return;
                     }
 
-                    Control? viewerControl = null;
+                    AbstractFileResourceViewerControl? viewerControl = null;
                     if (fr.Result is TexFile texFile) {
                         var control = new TexFileViewerControl();
                         control.Anchor = AnchorStyles.Left | AnchorStyles.Top;
@@ -352,7 +352,9 @@ public partial class Explorer {
                     var viewerWindow = new Form();
                     viewerWindow.Text = tree.GetFullPath(file);
                     viewerWindow.Controls.Add(viewerControl);
-                    viewerWindow.Show();
+                    var rc = viewerControl.GetViewportRectangleSuggestion(_explorer);
+                    viewerWindow.SetBounds(rc.X, rc.Y, rc.Width, rc.Height);
+                    viewerWindow.Show(_explorer);
                 }, TaskScheduler.FromCurrentSynchronizationContext());
                 return;
             }

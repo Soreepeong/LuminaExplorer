@@ -1,30 +1,86 @@
 ﻿using Lumina.Data;
+using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.LazySqPackTree;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
-public abstract class AbstractFileResourceViewerControl<T> : Control
-    where T : FileResource {
-    
-    public VirtualSqPackTree? Tree { get; private set; }
-    
-    public VirtualFile? File { get; private set; }
-    
-    public T? FileResource { get; private set; }
+public abstract class AbstractFileResourceViewerControl : Control {
+    protected readonly MouseActivityTracker MouseActivity;
 
-    public virtual void SetFile(VirtualSqPackTree tree, VirtualFile file, T fileResource) {
+    public VirtualSqPackTree? Tree { get; private set; }
+
+    public VirtualFile? File { get; private set; }
+
+    public FileResource? FileResourceUntyped { get; private set; }
+
+    protected AbstractFileResourceViewerControl() {
+        MouseActivity = new(this);
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e) {
+        base.OnMouseDown(e);
+        MouseActivity.FeedMouseDown(e);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e) {
+        base.OnMouseMove(e);
+        MouseActivity.FeedMouseMove(e);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e) {
+        base.OnMouseUp(e);
+        MouseActivity.FeedMouseUp(e);
+    }
+
+    protected override void OnMouseLeave(EventArgs e) {
+        base.OnMouseLeave(e);
+        MouseActivity.FeedMouseLeave();
+    }
+
+    public virtual void SetFile(VirtualSqPackTree tree, VirtualFile file, FileResource fileResource) {
         Tree = tree;
         File = file;
-        FileResource = fileResource;
+        FileResourceUntyped = fileResource;
+        Text = file.Name;
     }
 
     public virtual void ClearFile() {
         Tree = null;
         File = null;
-        FileResource = null;
+        FileResourceUntyped = null;
+        Text = "";
     }
-    
-    public delegate void FileChangedEvent(object sender, VirtualFile file, T fileResource);
 
-    public delegate void FileClearedEvent(object sender);
+    public override Size GetPreferredSize(Size proposedSize) => new(320, 240);
+
+    public Rectangle GetViewportRectangleSuggestion(Control? opener) {
+        var screen = opener is null ? Screen.FromPoint(Cursor.Position) : Screen.FromControl(opener);
+
+        var pos = opener?.PointToScreen(new(opener.Width / 2, opener.Height / 2)) ?? new(
+            screen.WorkingArea.Left + screen.WorkingArea.Width / 2,
+            screen.WorkingArea.Left + screen.WorkingArea.Height / 2);
+        var size = GetPreferredSize(opener?.Size ?? new(320, 240));
+
+        if (Parent is { } parent) {
+            var rcParentClient = parent.RectangleToScreen(parent.ClientRectangle);
+
+            size = new(
+                Math.Min(size.Width + parent.Width - rcParentClient.Width, screen.WorkingArea.Width),
+                Math.Min(size.Height + parent.Height - rcParentClient.Height, screen.WorkingArea.Height));
+        } else {
+            size = new(
+                Math.Min(size.Width, screen.WorkingArea.Width),
+                Math.Min(size.Height, screen.WorkingArea.Height));
+        }
+
+        pos = new(
+            Math.Min(
+                Math.Max(pos.X - size.Width / 2, screen.WorkingArea.Left),
+                screen.WorkingArea.Right - size.Width),
+            Math.Min(
+                Math.Max(pos.Y - size.Height / 2, screen.WorkingArea.Top),
+                screen.WorkingArea.Bottom - size.Height));
+
+        return new(pos, size);
+    }
 }

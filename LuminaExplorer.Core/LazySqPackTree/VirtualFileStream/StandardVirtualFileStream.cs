@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using Lumina.Data;
 using Lumina.Data.Structs;
@@ -66,7 +67,6 @@ public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
             i = ~i - 1;
 
         byte[]? readBuffer = null;
-        DeflateBytes? deflater = null;
         try {
             for (; i < _offsetManager.NumBlocks; i++) {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -92,9 +92,13 @@ public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
 
                 _blockBuffer = ArrayPool<byte>.Shared.RentAsNecessary(_blockBuffer, (int) dbh.DecompressedSize);
                 if (dbh.IsCompressed) {
-                    deflater ??= DeflatePool.Get();
-                    deflater.Inflate(new(readBuffer, Unsafe.SizeOf<DatBlockHeader>(), (int) dbh.CompressedSize),
-                        new(_blockBuffer, 0, (int) dbh.DecompressedSize));
+                    unsafe {
+                        fixed (byte* b1 = &readBuffer[Unsafe.SizeOf<DatBlockHeader>()]) {
+                            using var s1 = new DeflateStream(new UnmanagedMemoryStream(b1, dbh.CompressedSize),
+                                CompressionMode.Decompress);
+                            s1.ReadExactly(new(_blockBuffer, 0, (int) dbh.DecompressedSize));
+                        }
+                    }
                 } else {
                     Array.Copy(readBuffer, 0, _blockBuffer, 0, dbh.DecompressedSize);
                 }
@@ -122,8 +126,6 @@ public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
             ArrayPool<byte>.Shared.Return(ref readBuffer);
             if (_bufferValidSize == 0)
                 ArrayPool<byte>.Shared.Return(ref _blockBuffer);
-            if (deflater is not null)
-                DeflatePool.Return(deflater);
         }
 
         // 3. Pad.

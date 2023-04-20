@@ -1,14 +1,9 @@
 ﻿using Lumina.Data;
 using Lumina.Data.Structs;
-using LuminaExplorer.Core.Util;
-using Microsoft.Extensions.ObjectPool;
 
 namespace LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
 
 public abstract class BaseVirtualFileStream : Stream, ICloneable {
-    protected static ObjectPool<DeflateBytes> DeflatePool =
-        ObjectPool.Create(new DefaultPooledObjectPolicy<DeflateBytes>());
-
     protected uint PositionUint;
 
     public readonly PlatformId PlatformId;
