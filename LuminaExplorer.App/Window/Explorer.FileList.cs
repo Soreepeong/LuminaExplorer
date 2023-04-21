@@ -31,9 +31,6 @@ public partial class Explorer {
             _cboView = explorer.cboView.ComboBox!;
             _appConfig = explorer.AppConfig;
 
-            _cboView.SelectedIndex = _cboView.Items.Count - 1; // detail view
-            _cboView.SelectedIndexChanged += cboView_SelectedIndexChanged;
-
             _listView.SmallImageList = new();
             _listView.SmallImageList.ColorDepth = ColorDepth.Depth32Bit;
             _listView.SmallImageList.ImageSize = new(16, 16);
@@ -75,6 +72,9 @@ public partial class Explorer {
                 _tree.FolderChanged += VirtualFolderChanged;
                 _tree.FileChanged += VirtualFileChanged;
             }
+
+            _cboView.SelectedIndex = _appConfig.ListViewMode;
+            _cboView.SelectedIndexChanged += cboView_SelectedIndexChanged;
         }
 
         public VirtualSqPackTree? Tree {
@@ -117,6 +117,26 @@ public partial class Explorer {
                     _source.PreviewInterpolationMode = value.PreviewInterpolationMode;
                     _source.PreviewThreads = value.PreviewThumbnailerThreads;
                     _source.SortThreads = value.SortThreads;
+                    
+                    _cboView.SelectedIndex = value.ListViewMode;
+                    _listView.View = value.ListViewMode switch {
+                        <= 7 => View.LargeIcon,
+                        8 => View.SmallIcon,
+                        9 => View.List,
+                        10 => View.Details,
+                        _ => throw new FailFastException(
+                            "cboView.SelectedIndex >= cboView.SelectedIndex.Items.Count?"),
+                    };
+
+                    // 7 = LargeIcon(32px) but no thumbnails.
+
+                    if (_listView.VirtualListDataSource is ExplorerListViewDataSource source) {
+                        source.ImageThumbnailSize = value.ListViewMode switch {
+                            <= 6 => 256 - 32 * value.ListViewMode,
+                            _ => 0,
+                        };
+                    }
+
                     RecalculateNumberOfPreviewsToCache();
                 }
             }
@@ -193,25 +213,8 @@ public partial class Explorer {
             }
         }
 
-        private void cboView_SelectedIndexChanged(object? sender, EventArgs e) {
-            _listView.View = _cboView.SelectedIndex switch {
-                <= 7 => View.LargeIcon,
-                8 => View.SmallIcon,
-                9 => View.List,
-                10 => View.Details,
-                _ => throw new FailFastException("cboView.SelectedIndex >= cboView.SelectedIndex.Items.Count?"),
-            };
-
-            // 7 = LargeIcon(32px) but no thumbnails.
-
-            if (_listView.VirtualListDataSource is ExplorerListViewDataSource source) {
-                source.ImageThumbnailSize = _cboView.SelectedIndex switch {
-                    <= 6 => 256 - 32 * _cboView.SelectedIndex,
-                    _ => 0,
-                };
-                RecalculateNumberOfPreviewsToCache();
-            }
-        }
+        private void cboView_SelectedIndexChanged(object? sender, EventArgs e) =>
+            _explorer.AppConfig = _appConfig with {ListViewMode = _cboView.SelectedIndex};
 
         private void MouseUp(object? sender, MouseEventArgs e) {
             switch (e.Button) {
@@ -322,7 +325,7 @@ public partial class Explorer {
                 Task<FileResource> fileResourceTask;
                 if (_tree is not { } tree)
                     return;
-                if (_explorer._previewHandler is {} previewHandler && 
+                if (_explorer._previewHandler is { } previewHandler &&
                     previewHandler.TryGetAvailableFileResource(file, out var fileResource))
                     fileResourceTask = Task.FromResult(fileResource);
                 else
@@ -348,7 +351,7 @@ public partial class Explorer {
 
                     if (viewerControl is null)
                         return;
-                    
+
                     var viewerWindow = new Form();
                     viewerWindow.Text = tree.GetFullPath(file);
                     viewerWindow.Controls.Add(viewerControl);
@@ -406,7 +409,7 @@ public partial class Explorer {
             var horz = (size.Width + source.ImageThumbnailSize - 1) / source.ImageThumbnailSize;
             var vert = (size.Height + source.ImageThumbnailSize - 1) / source.ImageThumbnailSize;
             source.PreviewCacheCapacity = Math.Max(
-                (int)Math.Ceiling(horz * vert * Math.Max(2.0f, _appConfig.PreviewThumbnailMinimumKeepInMemoryPages)),
+                (int) Math.Ceiling(horz * vert * Math.Max(2.0f, _appConfig.PreviewThumbnailMinimumKeepInMemoryPages)),
                 _appConfig.PreviewThumbnailMinimumKeepInMemoryEntries);
         }
 
@@ -456,7 +459,7 @@ public partial class Explorer {
                         // pass
                     }
                 }
-                
+
                 if (imageWidth <= 16 && imageHeight <= 16)
                     olv.SmallImageList!.Draw(g, x, y, virtualObject.IsFolder ? 1 : 0);
                 else if ((virtualObject.IsFolder ? _handler._folderIconLarge : _handler._fileIconLarge) is { } icon)

@@ -10,6 +10,8 @@ public record AppConfig {
 
     public string CacheFilePath { get; init; } = "paths.dat";
 
+    public int ListViewMode { get; init; } = 10; // Details
+
     public float CropThresholdAspectRatioRatio { get; init; } = 2;
 
     public int PreviewThumbnailMinimumKeepInMemoryEntries { get; init; } = 128;

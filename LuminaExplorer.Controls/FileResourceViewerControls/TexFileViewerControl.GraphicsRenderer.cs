@@ -28,9 +28,9 @@ public partial class TexFileViewerControl {
         public Color BackColor { get; set; }
         public Color BorderColor { get; set; }
 
-        public bool LoadTexFile(TexFile texFile, int mipIndex, int depth) {
+        public bool LoadTexFile(TexFile texFile, int mipIndex, int slice) {
             try {
-                var texBuf = texFile.TextureBuffer.Filter(mipIndex, depth, TexFile.TextureFormat.B8G8R8A8);
+                var texBuf = texFile.TextureBuffer.Filter(mipIndex, slice, TexFile.TextureFormat.B8G8R8A8);
                 var width = texBuf.Width;
                 var height = texBuf.Height;
 

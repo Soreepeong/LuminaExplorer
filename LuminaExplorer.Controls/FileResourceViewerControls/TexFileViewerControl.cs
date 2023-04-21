@@ -10,7 +10,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     public readonly PanZoomTracker Viewport;
 
-    private int _currentDepth;
+    private int _currentSlice;
     private int _currentMipmap;
     private Color _borderColor = Color.LightGray;
     private int _transparencyCellSize = 8;
@@ -69,7 +69,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                 continue;
 
             if (!r.HasImage) {
-                if (!r.LoadTexFile(fr, _currentMipmap, _currentDepth))
+                if (!r.LoadTexFile(fr, _currentMipmap, _currentSlice))
                     continue;
             }
 
@@ -97,10 +97,10 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     public override Size GetPreferredSize(Size proposedSize) =>
         Viewport.Size.IsEmpty ? base.GetPreferredSize(proposedSize) : Viewport.Size;
 
-    public void UpdateBitmap(int depth, int mipmap, bool force = false) {
-        if (FileResourceTyped is not { } frt || (_currentDepth == depth && _currentMipmap == mipmap))
+    public void UpdateBitmap(int slice, int mipmap, bool force = false) {
+        if (FileResourceTyped is not { } frt || (_currentSlice == slice && _currentMipmap == mipmap))
             return;
-        _currentDepth = _currentMipmap = 0;
+        _currentSlice = _currentMipmap = 0;
 
         foreach (var r in _renderers)
             r.Reset();
@@ -122,7 +122,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     }
 
     private void ClearFileImpl() {
-        _currentDepth = _currentMipmap = -1;
+        _currentSlice = _currentMipmap = -1;
         foreach (var r in _renderers)
             r.Reset();
         Viewport.Reset(new());
@@ -137,7 +137,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         Color BorderColor { get; set; }
 
         void Reset();
-        bool LoadTexFile(TexFile texFile, int mipIndex, int depth);
+        bool LoadTexFile(TexFile texFile, int mipIndex, int slice);
         bool Draw(PaintEventArgs e);
     }
 }

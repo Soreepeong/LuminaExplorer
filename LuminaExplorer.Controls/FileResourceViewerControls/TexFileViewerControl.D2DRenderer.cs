@@ -1,11 +1,19 @@
 ﻿using System.Runtime.InteropServices;
+using DirectN;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.Util;
+using LuminaExplorer.Core.Util.TexToDds;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.DXGI;
 using Silk.NET.Maths;
 using WicNet;
+using ID2D1Bitmap = Silk.NET.Direct2D.ID2D1Bitmap;
+using ID2D1Factory = Silk.NET.Direct2D.ID2D1Factory;
+using ID2D1HwndRenderTarget = Silk.NET.Direct2D.ID2D1HwndRenderTarget;
+using ID2D1SolidColorBrush = Silk.NET.Direct2D.ID2D1SolidColorBrush;
+using ID2D1StrokeStyle = Silk.NET.Direct2D.ID2D1StrokeStyle;
+using IWICBitmapSource = Silk.NET.Direct2D.IWICBitmapSource;
 using Rectangle = System.Drawing.Rectangle;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
@@ -160,78 +168,30 @@ public partial class TexFileViewerControl {
             ReleaseUnmanagedResources();
         }
 
-        public unsafe bool LoadTexFile(TexFile texFile, int mipIndex, int depth) {
+        public unsafe bool LoadTexFile(TexFile texFile, int mipIndex, int slice) {
+            ComPtr<ID2D1Bitmap> newBitmap = null;
+
             try {
-                using var stream = texFile.ToDds();
-                using var decoder = DirectN.WICImagingFactory.CreateDecoderFromStream(
-                    stream,
-                    WicImagingComponent.CLSID_WICDdsDecoder);
-                using var ddsDecoder = decoder.AsComObject<DirectN.IWICDdsDecoder>();
-
-                ddsDecoder.Object.GetFrame(0, (uint) mipIndex, (uint) depth, out var pFrame).ThrowOnError();
-                using var source = new WicBitmapSource(pFrame);
-
-                using var converter = DirectN.WICImagingFactory.WithFactory(x => {
-                    x.CreateFormatConverter(out var y).ThrowOnError();
-                    return new DirectN.ComObject<DirectN.IWICFormatConverter>(y);
-                });
-                converter.Object.Initialize(source.ComObject.Object, WicPixelFormat.GUID_WICPixelFormat32bppPBGRA,
-                    DirectN.WICBitmapDitherType.WICBitmapDitherTypeNone,
-                    null, 0, DirectN.WICBitmapPaletteType.WICBitmapPaletteTypeMedianCut).ThrowOnError();
-                ComPtr<ID2D1Bitmap> newBitmap = null;
+                using var wicBitmap = texFile.ToWicBitmap(mipIndex, slice);
+                wicBitmap.ConvertTo(
+                    WicPixelFormat.GUID_WICPixelFormat32bppPBGRA,
+                    paletteTranslate: WICBitmapPaletteType.WICBitmapPaletteTypeMedianCut);
                 Marshal.ThrowExceptionForHR(_renderTarget.CreateBitmapFromWicBitmap(
-                    (IWICBitmapSource*) converter.GetInterfacePointer<DirectN.IWICBitmapSource>().ToPointer(),
+                    (IWICBitmapSource*) wicBitmap.ComObject.GetInterfacePointer<DirectN.IWICBitmapSource>(),
                     null,
                     ref newBitmap));
 
-                _bitmap.Release();
-                _bitmap = newBitmap;
-                var ps = _bitmap.GetPixelSize();
-                Size = new((int) ps.X, (int) ps.Y);
-            } catch (Exception) {
-                // TODO: make ToDds reliable so that the below becomes unnecessary
-            }
+                (_bitmap, newBitmap) = (newBitmap, _bitmap);
 
-            try {
-                var texBuf = texFile.TextureBuffer.Filter(mip: mipIndex, z: depth, TexFile.TextureFormat.B8G8R8A8);
-
-                ComPtr<ID2D1Bitmap> newBitmap = null;
-                var bp = new BitmapProperties(pixelFormat: new(
-                    Format.FormatB8G8R8A8Unorm,
-                    Silk.NET.Direct2D.AlphaMode.Premultiplied));
-                var buf = (byte[]) texBuf.RawData.Clone();
-                for (var i = 0; i < buf.Length; i += 4) {
-                    var a = buf[i + 3];
-                    switch (a) {
-                        case 0:
-                            buf[i] = buf[i + 1] = buf[i + 2] = 0;
-                            break;
-                        case 255:
-                            continue;
-                        default:
-                            buf[i] = (byte) (buf[i] * a / 255);
-                            buf[i + 1] = (byte) (buf[i + 1] * a / 255);
-                            buf[i + 2] = (byte) (buf[i + 2] * a / 255);
-                            continue;
-                    }
-                }
-
-                fixed (void* p = buf)
-                    Marshal.ThrowExceptionForHR(_renderTarget.CreateBitmap(
-                        new((uint) texBuf.Width, (uint) texBuf.Height),
-                        p,
-                        (uint) texBuf.Width * 4,
-                        &bp,
-                        ref newBitmap));
-
-                _bitmap.Release();
-                _bitmap = newBitmap;
                 var ps = _bitmap.GetPixelSize();
                 Size = new((int) ps.X, (int) ps.Y);
                 return true;
+
             } catch (Exception e) {
                 LastException = e;
                 return false;
+            } finally {
+                newBitmap.Release();
             }
         }
 
@@ -283,7 +243,7 @@ public partial class TexFileViewerControl {
                     BitmapInterpolationMode.Linear,
                     new Box2D<float>(0, 0, Size.Width, Size.Height));
 
-                _renderTarget.DrawRectangle(
+                _renderTarget.DrawRectangle<ID2D1SolidColorBrush, ID2D1StrokeStyle>(
                     Rectangle.Inflate(imageRect, 1, 1).ToSilkFloat(),
                     _borderColorBrush,
                     1f, // stroke width

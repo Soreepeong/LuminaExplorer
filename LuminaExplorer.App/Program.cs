@@ -24,7 +24,7 @@ static class Program {
             using var f = File.OpenRead(Path.Combine(baseDir, "config.json"));
             appConfig = JsonSerializer.Deserialize<AppConfig>(f);
         } catch (Exception) {
-            using var f = File.OpenWrite(Path.Combine(baseDir, "config.json"));
+            using var f = File.Open(Path.Combine(baseDir, "config.json"), FileMode.Create, FileAccess.Write);
             JsonSerializer.Serialize(f, appConfig = new());
         }
 
@@ -49,7 +49,7 @@ static class Program {
             Application.Run(mainExplorer);
             appConfig = mainExplorer.AppConfig;
         } finally {
-            using var f = File.OpenWrite(Path.Combine(baseDir, "config.json"));
+            using var f = File.Open(Path.Combine(baseDir, "config.json"), FileMode.Create, FileAccess.Write);
             JsonSerializer.Serialize(f, appConfig);
         }
     }
