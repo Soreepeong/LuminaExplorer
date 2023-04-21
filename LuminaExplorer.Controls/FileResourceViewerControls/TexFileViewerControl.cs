@@ -6,9 +6,9 @@ using LuminaExplorer.Core.LazySqPackTree;
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
 public partial class TexFileViewerControl : AbstractFileResourceViewerControl<TexFile> {
-    private readonly ITexRenderer[] _renderers;
-
     public readonly PanZoomTracker Viewport;
+
+    private ITexRenderer[]? _renderers;
 
     private int _currentSlice;
     private int _currentMipmap;
@@ -23,8 +23,6 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
         Viewport = new(MouseActivity);
         Viewport.ViewportChanged += Invalidate;
-
-        _renderers = new ITexRenderer[] {new D2DRenderer(this), new GraphicsRenderer(this)};
     }
 
     public Color BorderColor {
@@ -33,7 +31,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
             if (_borderColor == value)
                 return;
             _borderColor = value;
-            foreach (var r in _renderers)
+            foreach (var r in _renderers ?? Array.Empty<ITexRenderer>())
                 r.BorderColor = value;
             Invalidate();
         }
@@ -51,7 +49,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     protected override void Dispose(bool disposing) {
         if (disposing) {
-            foreach (var r in _renderers)
+            foreach (var r in _renderers ?? Array.Empty<ITexRenderer>())
                 r.Dispose();
             Viewport.Dispose();
         }
@@ -64,7 +62,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         if (FileResourceTyped is not { } fr)
             return;
 
-        foreach (var r in _renderers) {
+        foreach (var r in _renderers ?? Array.Empty<ITexRenderer>()) {
             if (r.LastException is not null)
                 continue;
 
@@ -84,32 +82,37 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     protected override void OnForeColorChanged(EventArgs e) {
         base.OnForeColorChanged(e);
-        foreach (var r in _renderers)
+        foreach (var r in _renderers ?? Array.Empty<ITexRenderer>())
             r.ForeColor = ForeColor;
     }
 
     protected override void OnBackColorChanged(EventArgs e) {
         base.OnBackColorChanged(e);
-        foreach (var r in _renderers)
+        foreach (var r in _renderers ?? Array.Empty<ITexRenderer>())
             r.BackColor = BackColor;
     }
 
-    public override Size GetPreferredSize(Size proposedSize) {
-        if (Viewport.Size.IsEmpty)
-            return base.GetPreferredSize(proposedSize);
-
-        var s = Viewport.Size;
-        s.Width = Math.Max(s.Width + 64, 320);
-        s.Height = Math.Max(s.Height + 64, 240);
-        return s;
+    protected override void OnMarginChanged(EventArgs e) {
+        base.OnMarginChanged(e);
+        Invalidate();
     }
 
-    public void UpdateBitmap(int slice, int mipmap, bool force = false) {
-        if (FileResourceTyped is not { } frt || (_currentSlice == slice && _currentMipmap == mipmap))
-            return;
-        _currentSlice = _currentMipmap = 0;
+    protected override void OnPaddingChanged(EventArgs e) {
+        base.OnPaddingChanged(e);
+        Invalidate();
+    }
 
-        foreach (var r in _renderers)
+    public override Size GetPreferredSize(Size proposedSize) => 
+        Viewport.Size.IsEmpty ? base.GetPreferredSize(proposedSize) : Viewport.Size;
+
+    public void UpdateBitmap(int slice, int mipmap, bool force = false) {
+        if (FileResourceTyped is not { } frt || (!force && _currentSlice == slice && _currentMipmap == mipmap))
+            return;
+        
+        _currentSlice = slice;
+        _currentMipmap = mipmap;
+
+        foreach (var r in _renderers ?? Array.Empty<ITexRenderer>())
             r.Reset();
 
         Viewport.Reset(new(
@@ -121,6 +124,8 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         base.SetFile(tree, file, fileResource);
         ClearFileImpl();
         UpdateBitmap(0, 0);
+
+        _renderers ??= new ITexRenderer[] {new D2DRenderer(this), new GraphicsRenderer(this)};
     }
 
     public override void ClearFile() {
@@ -130,7 +135,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     private void ClearFileImpl() {
         _currentSlice = _currentMipmap = -1;
-        foreach (var r in _renderers)
+        foreach (var r in _renderers ?? Array.Empty<ITexRenderer>())
             r.Reset();
         Viewport.Reset(new());
     }

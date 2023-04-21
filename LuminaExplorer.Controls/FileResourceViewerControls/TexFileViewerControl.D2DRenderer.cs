@@ -3,7 +3,6 @@ using LuminaExplorer.Controls.Util;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.DirectWrite;
-using Silk.NET.DXGI;
 using Silk.NET.Maths;
 using IDWriteTextFormat = Silk.NET.Direct2D.IDWriteTextFormat;
 using Rectangle = System.Drawing.Rectangle;
@@ -82,11 +81,11 @@ public partial class TexFileViewerControl {
             pRenderTarget->FillRectangle(&box, BackColorBrush);
 
             var imageRect = Control.Viewport.EffectiveRect;
-            var insetRect = new Rectangle(
-                Control.Padding.Left,
-                Control.Padding.Top,
-                Control.Width - Control.Padding.Left - Control.Padding.Right,
-                Control.Height - Control.Padding.Bottom - Control.Padding.Top);
+            var overlayRect = new Rectangle(
+                Control.Padding.Left + Control.Margin.Left,
+                Control.Padding.Top + Control.Margin.Top,
+                Control.Width - Control.Padding.Horizontal - Control.Margin.Horizontal,
+                Control.Height - Control.Padding.Vertical - Control.Margin.Vertical);
 
             var cellSize = Control.TransparencyCellSize;
             if (cellSize > 0) {
@@ -125,12 +124,12 @@ public partial class TexFileViewerControl {
             pTextFormat->SetParagraphAlignment(ParagraphAlignment.Far);
 
             var zoomText = $"Zoom {Control.Viewport.EffectiveZoom * 100:0.00}%";
-            box = insetRect.ToSilkFloat();
+            box = overlayRect.ToSilkFloat();
             for (var i = -2; i <= 2; i++) {
                 for (var j = -2; j <= 2; j++) {
                     if (i == 0 && j == 0)
                         continue;
-                    box = (insetRect with {Width = insetRect.Width + i, Height = insetRect.Height + j}).ToSilkFloat();
+                    box = (overlayRect with {X = overlayRect.X + i, Y = overlayRect.Y + j}).ToSilkFloat();
                     fixed (char* v = zoomText.AsSpan())
                         pRenderTarget->DrawTextA(
                             v,
@@ -143,7 +142,7 @@ public partial class TexFileViewerControl {
                 }
             }
 
-            box = insetRect.ToSilkFloat();
+            box = overlayRect.ToSilkFloat();
             fixed (char* v = zoomText.AsSpan())
                 pRenderTarget->DrawTextA(
                     v,

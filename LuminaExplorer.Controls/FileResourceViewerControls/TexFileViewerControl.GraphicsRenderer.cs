@@ -1,7 +1,7 @@
 ﻿using System.Drawing.Imaging;
 using Lumina.Data.Files;
 
-namespace LuminaExplorer.Controls.FileResourceViewerControls; 
+namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
 public partial class TexFileViewerControl {
     private sealed class GraphicsRenderer : ITexRenderer {
@@ -67,7 +67,7 @@ public partial class TexFileViewerControl {
 
                 using var backBrush = new SolidBrush(BackColor);
 
-                g.FillRectangle(backBrush, e.ClipRectangle);
+                g.FillRectangle(backBrush, new(new(), _control.Size));
                 var cellSize = _control.TransparencyCellSize;
                 if (cellSize > 0) {
                     var controlSize = Size;
@@ -91,11 +91,11 @@ public partial class TexFileViewerControl {
                 }
 
                 var imageRect = _control.Viewport.EffectiveRect;
-                var insetRect = new Rectangle(
-                    _control.Padding.Left,
-                    _control.Padding.Top,
-                    _control.Width - _control.Padding.Left - _control.Padding.Right,
-                    _control.Height - _control.Padding.Bottom - _control.Padding.Top);
+                var overlayRect = new Rectangle(
+                    _control.Padding.Left + _control.Margin.Left,
+                    _control.Padding.Top + _control.Margin.Top,
+                    _control.Width - _control.Padding.Horizontal - _control.Margin.Horizontal,
+                    _control.Height - _control.Padding.Vertical - _control.Margin.Vertical);
 
                 g.DrawImage(bitmap, imageRect);
                 using (var borderPen = new Pen(Color.LightGray))
@@ -116,7 +116,7 @@ public partial class TexFileViewerControl {
                             zoomText,
                             _control.Font,
                             backBrush,
-                            insetRect with {Width = insetRect.Width + i, Height = insetRect.Height + j},
+                            overlayRect with {X = overlayRect.X + i, Y = overlayRect.Y + j},
                             stringFormat);
                     }
                 }
@@ -126,7 +126,7 @@ public partial class TexFileViewerControl {
                     zoomText,
                     _control.Font,
                     foreBrush,
-                    insetRect,
+                    overlayRect,
                     stringFormat);
 
                 buffer.Render();

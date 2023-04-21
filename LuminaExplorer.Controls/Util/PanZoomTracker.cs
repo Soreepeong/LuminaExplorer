@@ -22,6 +22,7 @@ public sealed class PanZoomTracker : IDisposable {
         MouseActivity.ZoomWheel += MouseActivityTrackerOnZoomWheel;
         MouseActivity.LeftDoubleClick += MouseActivityOnLeftDoubleClick;
         Control.Resize += ControlOnResize;
+        Control.MarginChanged += ControlOnMarginChanged;
 
         ZoomExponentUnit = Math.Max(1, (1 << 8) * SystemInformation.MouseWheelScrollDelta);
         ZoomExponentRange = Math.Max(1, ZoomExponentUnit << 8);
@@ -35,6 +36,7 @@ public sealed class PanZoomTracker : IDisposable {
         MouseActivity.ZoomWheel -= MouseActivityTrackerOnZoomWheel;
         MouseActivity.LeftDoubleClick -= MouseActivityOnLeftDoubleClick;
         Control.Resize -= ControlOnResize;
+        Control.MarginChanged -= ControlOnMarginChanged;
     }
 
     public event Action? ViewportChanged;
@@ -149,11 +151,21 @@ public sealed class PanZoomTracker : IDisposable {
 
     public bool UpdatePan(Point value) {
         var scaled = EffectiveSize;
-        var xrange = scaled.Width / 2;
-        var yrange = scaled.Height / 2;
+        var xrange = (scaled.Width - Control.Width) / 2;
+        var yrange = (scaled.Height - Control.Height) / 2;
 
-        value.X = scaled.Width <= Control.Width ? 0 : Math.Clamp(value.X, -xrange, xrange);
-        value.Y = scaled.Height <= Control.Height ? 0 : Math.Clamp(value.Y, -yrange, yrange);
+        value.X = scaled.Width <= Control.Width - Control.Margin.Horizontal
+            ? 0
+            : Math.Clamp(
+                value.X,
+                -xrange - Control.Margin.Right,
+                xrange + Control.Margin.Left);
+        value.Y = scaled.Height <= Control.Height - Control.Margin.Vertical
+            ? 0
+            : Math.Clamp(
+                value.Y,
+                -yrange - Control.Margin.Bottom,
+                yrange + Control.Margin.Top);
 
         if (value == _pan)
             return false;
@@ -227,4 +239,6 @@ public sealed class PanZoomTracker : IDisposable {
     }
 
     private void ControlOnResize(object? sender, EventArgs e) => EnforceLimits();
+
+    private void ControlOnMarginChanged(object? sender, EventArgs e) => EnforceLimits();
 }
