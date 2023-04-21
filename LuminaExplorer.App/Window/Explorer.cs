@@ -35,6 +35,8 @@ public partial class Explorer : Form {
             _appConfig = value with { };
             if (_fileListHandler is not null)
                 _fileListHandler.AppConfig = _appConfig;
+            if (_navigationHandler is not null)
+                _navigationHandler.AppConfig = _appConfig;
             if (_searchHandler is not null)
                 _searchHandler.AppConfig = _appConfig;
         }

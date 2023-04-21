@@ -139,7 +139,6 @@ public partial class Explorer {
             _sorterCancel = new();
 
             var orderMultiplier = order == SortOrder.Descending ? -1 : 1;
-            var syncContext = TaskScheduler.FromCurrentSynchronizationContext();
             _sortTask = _sortTask.ContinueWith(
                 _ => _objects.SortIntoNewListAsync()
                     .With(column.AspectName switch {
@@ -176,14 +175,24 @@ public partial class Explorer {
                     .WithThreads(SortThreads)
                     .WithCancellationToken(_sorterCancel.Token)
                     .WithProgrssCallback(progress => Debug.Print("Sort progress: {0:0.00}%", 100 * progress))
+                    .WithOrderMap()
                     .Sort()
                     .ContinueWith(result => {
                             if (!result.IsCompletedSuccessfully)
                                 return;
 
-                            _objects = result.Result;
+                            var newSelectedIndices = listView.SelectedIndices
+                                .Cast<int>()
+                                .Select(x => result.Result.ReverseOrderMap![x])
+                                .ToArray();
+                            var focusedObject = listView.FocusedObject;
+                            _objects = result.Result.Data;
                             listView.ClearCachedInfo();
                             listView.UpdateVirtualListSize();
+                            listView.SelectedIndices.Clear();
+                            foreach (var si in newSelectedIndices)
+                                listView.SelectedIndices.Add(si);
+                            listView.FocusedObject =focusedObject;
                             listView.Invalidate();
                         }, default,
                         TaskContinuationOptions.DenyChildAttach,

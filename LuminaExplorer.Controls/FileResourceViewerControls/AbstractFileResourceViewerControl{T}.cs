@@ -13,8 +13,18 @@ public abstract class AbstractFileResourceViewerControl<T> : AbstractFileResourc
         base.SetFile(tree, file, fileResource);
     }
 
+    public override Task SetFileAsync(VirtualSqPackTree tree, VirtualFile file, FileResource fileResource) {
+        FileResourceTyped = fileResource as T;
+        return base.SetFileAsync(tree, file, fileResource);
+    }
+
     public override void ClearFile() {
         FileResourceTyped = null;
         base.ClearFile();
+    }
+
+    public override Task ClearFileAsync() {
+        FileResourceTyped = null;
+        return base.ClearFileAsync();
     }
 }

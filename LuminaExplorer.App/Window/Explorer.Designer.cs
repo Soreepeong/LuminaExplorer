@@ -35,7 +35,6 @@ partial class Explorer {
         ppgPreview = new PropertyGrid();
         tabPreviewRawBytes = new TabPage();
         hbxPreview = new Be.Windows.Forms.HexBox();
-        picPreview = new PictureBox();
         tspNavigation = new ToolStrip();
         btnNavBack = new ToolStripButton();
         btnNavForward = new ToolStripButton();
@@ -47,6 +46,7 @@ partial class Explorer {
         toolStripContainer1 = new ToolStripContainer();
         tspActions = new ToolStrip();
         cboView = new ToolStripComboBox();
+        texPreview = new Controls.FileResourceViewerControls.TexFileViewerControl();
         menuStrip1.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize) splMain).BeginInit();
         splMain.Panel1.SuspendLayout();
@@ -64,7 +64,6 @@ partial class Explorer {
         tabPreview.SuspendLayout();
         tabPreviewFileResource.SuspendLayout();
         tabPreviewRawBytes.SuspendLayout();
-        ((System.ComponentModel.ISupportInitialize) picPreview).BeginInit();
         tspNavigation.SuspendLayout();
         toolStripContainer1.ContentPanel.SuspendLayout();
         toolStripContainer1.TopToolStripPanel.SuspendLayout();
@@ -150,6 +149,7 @@ partial class Explorer {
         lvwFiles.FullRowSelect = true;
         lvwFiles.Location = new Point(0, 0);
         lvwFiles.Name = "lvwFiles";
+        lvwFiles.OwnerDraw = false;
         lvwFiles.ShowGroups = false;
         lvwFiles.Size = new Size(670, 687);
         lvwFiles.TabIndex = 0;
@@ -212,9 +212,8 @@ partial class Explorer {
         // 
         colFilesFullPath.AspectName = "FullPath";
         colFilesFullPath.IsEditable = false;
-        colFilesFullPath.Text = "Path";
-        colFilesFullPath.TextAlign = HorizontalAlignment.Left;
         colFilesFullPath.IsVisible = false;
+        colFilesFullPath.Text = "Path";
         // 
         // splPreview
         // 
@@ -229,7 +228,7 @@ partial class Explorer {
         // 
         // splPreview.Panel2
         // 
-        splPreview.Panel2.Controls.Add(picPreview);
+        splPreview.Panel2.Controls.Add(texPreview);
         splPreview.Size = new Size(320, 687);
         splPreview.SplitterDistance = 486;
         splPreview.TabIndex = 0;
@@ -292,16 +291,6 @@ partial class Explorer {
         hbxPreview.StringViewVisible = true;
         hbxPreview.TabIndex = 0;
         hbxPreview.VScrollBarVisible = true;
-        // 
-        // picPreview
-        // 
-        picPreview.Dock = DockStyle.Fill;
-        picPreview.Location = new Point(0, 0);
-        picPreview.Name = "picPreview";
-        picPreview.Size = new Size(320, 197);
-        picPreview.TabIndex = 0;
-        picPreview.TabStop = false;
-        picPreview.SizeMode = PictureBoxSizeMode.Zoom;
         // 
         // tspNavigation
         // 
@@ -410,9 +399,21 @@ partial class Explorer {
         cboView.Alignment = ToolStripItemAlignment.Right;
         cboView.DropDownStyle = ComboBoxStyle.DropDownList;
         cboView.FlatStyle = FlatStyle.System;
-        cboView.Items.AddRange(new object[] { "Thumbnails (256px)", "Thumbnails (224px)", "Thumbnails (192px)", "Thumbnails (160px)",  "Thumbnails (128px)", "Thumbnails (96px)", "Thumbnails (64px)", "Large Icons", "Small Icons", "List", "Details" });
+        cboView.Items.AddRange(new object[] { "Thumbnails (256px)", "Thumbnails (224px)", "Thumbnails (192px)", "Thumbnails (160px)", "Thumbnails (128px)", "Thumbnails (96px)", "Thumbnails (64px)", "Large Icons", "Small Icons", "List", "Details" });
         cboView.Name = "cboView";
         cboView.Size = new Size(160, 25);
+        // 
+        // texPreview
+        // 
+        texPreview.BorderColor = Color.LightGray;
+        texPreview.Dock = DockStyle.Fill;
+        texPreview.Location = new Point(0, 0);
+        texPreview.Margin = new Padding(0);
+        texPreview.Name = "texPreview";
+        texPreview.Size = new Size(320, 197);
+        texPreview.TabIndex = 0;
+        texPreview.Text = "texFileViewerControl1";
+        texPreview.TransparencyCellSize = 8;
         // 
         // Explorer
         // 
@@ -443,7 +444,6 @@ partial class Explorer {
         tabPreview.ResumeLayout(false);
         tabPreviewFileResource.ResumeLayout(false);
         tabPreviewRawBytes.ResumeLayout(false);
-        ((System.ComponentModel.ISupportInitialize) picPreview).EndInit();
         tspNavigation.ResumeLayout(false);
         tspNavigation.PerformLayout();
         toolStripContainer1.ContentPanel.ResumeLayout(false);
@@ -485,10 +485,10 @@ partial class Explorer {
     private ToolStrip tspActions;
     private ToolStripComboBox cboView;
     private SplitContainer splPreview;
-    private PictureBox picPreview;
     private TabControl tabPreview;
     private TabPage tabPreviewFileResource;
     private PropertyGrid ppgPreview;
     private TabPage tabPreviewRawBytes;
     private Be.Windows.Forms.HexBox hbxPreview;
+    private Controls.FileResourceViewerControls.TexFileViewerControl texPreview;
 }

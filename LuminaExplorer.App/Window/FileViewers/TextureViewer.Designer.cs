@@ -59,8 +59,10 @@
             PropertyPanelGrid.Dock = DockStyle.Fill;
             PropertyPanelGrid.Location = new Point(4, 0);
             PropertyPanelGrid.Name = "PropertyPanelGrid";
+            PropertyPanelGrid.PropertySort = PropertySort.Categorized;
             PropertyPanelGrid.Size = new Size(313, 693);
             PropertyPanelGrid.TabIndex = 0;
+            PropertyPanelGrid.ToolbarVisible = false;
             // 
             // TextureViewer
             // 

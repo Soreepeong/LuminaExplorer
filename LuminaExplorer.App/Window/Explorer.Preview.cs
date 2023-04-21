@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics.CodeAnalysis;
-using System.Drawing.Imaging;
 using Lumina.Data;
 using Lumina.Data.Files;
 using LuminaExplorer.App.Utils;
@@ -31,8 +30,7 @@ public partial class Explorer {
             _previewingFileResource = null;
             _explorer.ppgPreview.SelectedObject = null;
             _explorer.hbxPreview.ByteProvider = null;
-            _explorer.picPreview.Image?.Dispose();
-            _explorer.picPreview.Image = null;
+            _explorer.texPreview.ClearFile();
         }
 
         public bool TryGetAvailableFileResource(VirtualFile file, [MaybeNullWhen(false)] out FileResource fileResource) {
@@ -71,26 +69,11 @@ public partial class Explorer {
                     if (!fr.IsCompletedSuccessfully || fr.Result is null || _previewingFile != file)
                         return;
 
-                    if (fr.Result is TexFile tf)
-                        PreviewTexFile(file, tf, mainThreadScheduler);
+                    if (fr.Result is TexFile tf) {
+                        if (_explorer.Tree is { } tree)
+                            _explorer.texPreview.SetFileAsync(tree, file, tf);
+                    }
                 }, token);
-        }
-
-        private unsafe void PreviewTexFile(VirtualFile file, TexFile tf, TaskScheduler mainThreadScheduler) {
-            var buf = tf.TextureBuffer.Filter(format: TexFile.TextureFormat.B8G8R8A8);
-            Bitmap bitmap;
-            fixed (void* p = buf.RawData) {
-                using var b = new Bitmap(buf.Width, buf.Height, 4 * buf.Width,
-                    PixelFormat.Format32bppArgb, (nint) p);
-                bitmap = new(b);
-            }
-
-            Task.Factory.StartNew(() => {
-                if (_previewingFile != file)
-                    bitmap.Dispose();
-                else
-                    _explorer.picPreview.Image = bitmap;
-            }, default, TaskCreationOptions.None, mainThreadScheduler);
         }
     }
 }

@@ -5,6 +5,8 @@ using LuminaExplorer.Core.LazySqPackTree;
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
 public abstract class AbstractFileResourceViewerControl : Control {
+    protected readonly TaskScheduler MainTaskScheduler = TaskScheduler.FromCurrentSynchronizationContext();
+    
     public readonly MouseActivityTracker MouseActivity;
 
     public VirtualSqPackTree? Tree { get; private set; }
@@ -31,11 +33,25 @@ public abstract class AbstractFileResourceViewerControl : Control {
         Text = file.Name;
     }
 
+    public virtual Task SetFileAsync(VirtualSqPackTree tree, VirtualFile file, FileResource fileResource) {
+        Tree = tree;
+        File = file;
+        FileResourceUntyped = fileResource;
+        return Task.Factory.StartNew(() => Text = file.Name, default, TaskCreationOptions.None, MainTaskScheduler);
+    }
+
     public virtual void ClearFile() {
         Tree = null;
         File = null;
         FileResourceUntyped = null;
         Text = "";
+    }
+
+    public virtual Task ClearFileAsync() {
+        Tree = null;
+        File = null;
+        FileResourceUntyped = null;
+        return Task.Factory.StartNew(() => Text = "", default, TaskCreationOptions.None, MainTaskScheduler);
     }
 
     public override Size GetPreferredSize(Size proposedSize) => new(320, 240);

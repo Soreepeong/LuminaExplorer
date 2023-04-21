@@ -116,9 +116,8 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                     return;
             }
         }
-
-        using var brush = new SolidBrush(Color.Black);
-        e.Graphics.FillRectangle(brush, e.ClipRectangle);
+        
+        base.OnPaintBackground(e);
     }
 
     protected override void OnMouseMove(MouseEventArgs e) {
@@ -198,9 +197,27 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         _renderers ??= new ITexRenderer[] {new D2DRenderer(this), new GraphicsRenderer(this)};
     }
 
+    public override Task SetFileAsync(VirtualSqPackTree tree, VirtualFile file, FileResource fileResource) {
+        return Task.Run(async () => {
+            await base.SetFileAsync(tree, file, fileResource);
+            // TODO: actually load async
+            await Task.Factory.StartNew(() => {
+                ClearFileImpl();
+                UpdateBitmap(0, 0);
+                _renderers ??= new ITexRenderer[] {new D2DRenderer(this), new GraphicsRenderer(this)};
+            }, default, TaskCreationOptions.None, MainTaskScheduler);
+        });
+    }
+
     public override void ClearFile() {
         ClearFileImpl();
         base.ClearFile();
+    }
+
+    public override Task ClearFileAsync() {
+        // TODO: asyncize
+        ClearFileImpl();
+        return base.ClearFileAsync();
     }
 
     public void ShowDescriptionForFromNow(long durationMilliseconds) {
