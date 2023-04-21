@@ -1,129 +1,27 @@
-﻿using System.Runtime.InteropServices;
-using DirectN;
+using System.Runtime.InteropServices;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.Util;
-using LuminaExplorer.Core.Util.TexToDds;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.DXGI;
 using Silk.NET.Maths;
-using WicNet;
-using ID2D1Bitmap = Silk.NET.Direct2D.ID2D1Bitmap;
-using ID2D1Factory = Silk.NET.Direct2D.ID2D1Factory;
-using ID2D1HwndRenderTarget = Silk.NET.Direct2D.ID2D1HwndRenderTarget;
-using ID2D1SolidColorBrush = Silk.NET.Direct2D.ID2D1SolidColorBrush;
-using ID2D1StrokeStyle = Silk.NET.Direct2D.ID2D1StrokeStyle;
-using IWICBitmapSource = Silk.NET.Direct2D.IWICBitmapSource;
 using Rectangle = System.Drawing.Rectangle;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
 public partial class TexFileViewerControl {
-    private sealed class D2DRenderer : ITexRenderer {
-        private static D2D? _d2dApi;
-        private static Exception? _apiInitializationException;
-
-        private readonly TexFileViewerControl _control;
-        private ComPtr<ID2D1HwndRenderTarget> _renderTarget;
+    private sealed class D2DRenderer : BaseD2DRenderer<TexFileViewerControl>, ITexRenderer {
         private ComPtr<ID2D1Bitmap> _bitmap;
-        private ComPtr<ID2D1SolidColorBrush> _foreColorBrush;
-        private ComPtr<ID2D1SolidColorBrush> _backColorBrush;
         private ComPtr<ID2D1SolidColorBrush> _borderColorBrush;
-        private Color _foreColor;
-        private Color _backColor;
         private Color _borderColor;
 
-        public unsafe D2DRenderer(TexFileViewerControl control) {
-            _control = control;
-
-            try {
-                if (_apiInitializationException is not null)
-                    throw _apiInitializationException;
-
-                try {
-                    _d2dApi ??= D2D.GetApi();
-                } catch (Exception e) {
-                    _apiInitializationException = e;
-                    throw;
-                }
-
-                void* dfactory = null;
-                var guid = ID2D1Factory.Guid;
-                var fo = new FactoryOptions();
-                Marshal.ThrowExceptionForHR(_d2dApi.D2D1CreateFactory(FactoryType.SingleThreaded, ref guid, fo,
-                    ref dfactory));
-                using var d2d1Factory = new ComPtr<ID2D1Factory>((ID2D1Factory*) dfactory);
-
-                var rto = new RenderTargetProperties();
-                var hrto = new HwndRenderTargetProperties(
-                    hwnd: _control.Handle,
-                    pixelSize: new((uint) _control.Width, (uint) _control.Height));
-
-                // for some reason it returns success but renderTarget is null occasionally
-                for (var i = 0; i < 10 && _renderTarget.Handle is null; i++)
-                    Marshal.ThrowExceptionForHR(d2d1Factory.CreateHwndRenderTarget(rto, hrto, ref _renderTarget));
-
-                if (_renderTarget.Handle is null)
-                    throw new("Fail");
-
-                ForeColor = _control.ForeColor;
-                BackColor = _control.BackColor;
-                BorderColor = Color.LightGray;
-                _control.Resize += ControlOnResize;
-            } catch (Exception e) {
-                LastException = e;
-            }
+        public D2DRenderer(TexFileViewerControl control) : base(control) {
+            BorderColor = Color.LightGray;
         }
 
         public unsafe bool HasImage => _bitmap.Handle is not null;
 
-        public Exception? LastException { get; private set; }
-
         public Size Size { get; private set; }
-
-        public Color ForeColor {
-            get => _foreColor;
-            set {
-                if (_foreColor == value)
-                    return;
-                _foreColor = value;
-
-                try {
-                    unsafe {
-                        _foreColorBrush.Dispose();
-                        _foreColorBrush = null;
-                        Marshal.ThrowExceptionForHR(_renderTarget.CreateSolidColorBrush(
-                            new D3Dcolorvalue(value.R / 255f, value.G / 255f, value.B / 255f, value.A / 255f),
-                            null,
-                            ref _foreColorBrush));
-                    }
-                } catch (Exception e) {
-                    LastException = e;
-                }
-            }
-        }
-
-        public Color BackColor {
-            get => _backColor;
-            set {
-                if (_backColor == value)
-                    return;
-                _backColor = value;
-
-                try {
-                    unsafe {
-                        _backColorBrush.Dispose();
-                        _backColorBrush = null;
-                        Marshal.ThrowExceptionForHR(_renderTarget.CreateSolidColorBrush(
-                            new D3Dcolorvalue(value.R / 255f, value.G / 255f, value.B / 255f, value.A / 255f),
-                            null,
-                            ref _backColorBrush));
-                    }
-                } catch (Exception e) {
-                    LastException = e;
-                }
-            }
-        }
 
         public Color BorderColor {
             get => _borderColor;
@@ -131,12 +29,12 @@ public partial class TexFileViewerControl {
                 if (_borderColor == value)
                     return;
                 _borderColor = value;
+                _borderColorBrush.Dispose();
+                _borderColorBrush = null;
 
                 try {
                     unsafe {
-                        _borderColorBrush.Dispose();
-                        _borderColorBrush = null;
-                        Marshal.ThrowExceptionForHR(_renderTarget.CreateSolidColorBrush(
+                        Marshal.ThrowExceptionForHR(RenderTarget.CreateSolidColorBrush(
                             new D3Dcolorvalue(value.R / 255f, value.G / 255f, value.B / 255f, value.A / 255f),
                             null,
                             ref _borderColorBrush));
@@ -147,25 +45,26 @@ public partial class TexFileViewerControl {
             }
         }
 
-        private void ReleaseUnmanagedResources() {
-            _foreColorBrush.Dispose();
-            _foreColorBrush = null;
-            _backColorBrush.Dispose();
-            _backColorBrush = null;
+        private unsafe ComPtr<ID2D1SolidColorBrush> BorderColorBrush {
+            get {
+                if (_borderColorBrush.Handle is null)
+                    Marshal.ThrowExceptionForHR(RenderTarget.CreateSolidColorBrush(
+                        new D3Dcolorvalue(
+                            BorderColor.R / 255f,
+                            BorderColor.G / 255f,
+                            BorderColor.B / 255f,
+                            BorderColor.A / 255f),
+                        null,
+                        ref _borderColorBrush));
+                return _borderColorBrush;
+            }
+        }
+
+        protected override void Dispose(bool disposing) {
+            _borderColorBrush.Dispose();
+            _borderColorBrush = null;
             _bitmap.Dispose();
             _bitmap = null;
-            _renderTarget.Dispose();
-            _renderTarget = null;
-        }
-
-        public void Dispose() {
-            ReleaseUnmanagedResources();
-            _control.Resize -= ControlOnResize;
-            GC.SuppressFinalize(this);
-        }
-
-        ~D2DRenderer() {
-            ReleaseUnmanagedResources();
         }
 
         public unsafe bool LoadTexFile(TexFile texFile, int mipIndex, int slice) {
@@ -174,9 +73,9 @@ public partial class TexFileViewerControl {
             try {
                 using var wicBitmap = texFile.ToWicBitmap(mipIndex, slice);
                 wicBitmap.ConvertTo(
-                    WicPixelFormat.GUID_WICPixelFormat32bppPBGRA,
-                    paletteTranslate: WICBitmapPaletteType.WICBitmapPaletteTypeMedianCut);
-                Marshal.ThrowExceptionForHR(_renderTarget.CreateBitmapFromWicBitmap(
+                    WicNet.WicPixelFormat.GUID_WICPixelFormat32bppPBGRA,
+                    paletteTranslate: DirectN.WICBitmapPaletteType.WICBitmapPaletteTypeMedianCut);
+                Marshal.ThrowExceptionForHR(RenderTarget.CreateBitmapFromWicBitmap(
                     (IWICBitmapSource*) wicBitmap.ComObject.GetInterfacePointer<DirectN.IWICBitmapSource>(),
                     null,
                     ref newBitmap));
@@ -186,7 +85,6 @@ public partial class TexFileViewerControl {
                 var ps = _bitmap.GetPixelSize();
                 Size = new((int) ps.X, (int) ps.Y);
                 return true;
-
             } catch (Exception e) {
                 LastException = e;
                 return false;
@@ -201,68 +99,51 @@ public partial class TexFileViewerControl {
             Size = new();
         }
 
-        public bool Draw(PaintEventArgs _) {
-            try {
-                _renderTarget.BeginDraw();
-                _renderTarget.FillRectangle(_control.ClientRectangle.ToSilkFloat(), _backColorBrush);
-                if (!HasImage) {
-                    Marshal.ThrowExceptionForHR(_renderTarget.EndDraw(new Span<ulong>(), new Span<ulong>()));
-                    return true;
-                }
+        protected override void DrawInternal() {
+            var renderTarget = RenderTarget;
 
-                var imageRect = _control.Viewport.EffectiveRect;
-                var insetRect = new Rectangle(
-                    _control.Padding.Left,
-                    _control.Padding.Top,
-                    _control.Width - _control.Padding.Left - _control.Padding.Right,
-                    _control.Height - _control.Padding.Bottom - _control.Padding.Top);
+            renderTarget.FillRectangle(Control.ClientRectangle.ToSilkFloat(), BackColorBrush);
 
-                var cellSize = _control.TransparencyCellSize;
-                if (cellSize > 0) {
-                    var controlSize = _control.Size;
-                    var c1 = false;
-                    for (var i = 0; i < controlSize.Width; i += cellSize) {
-                        var c2 = c1;
-                        c1 = !c1;
-                        for (var j = 0; j < controlSize.Height; j += cellSize) {
-                            if (c2) {
-                                _renderTarget.FillRectangle(
-                                    new Box2D<float>(i, j, i + cellSize, j + cellSize),
-                                    _borderColorBrush);
-                            }
+            var imageRect = Control.Viewport.EffectiveRect;
+            var insetRect = new Rectangle(
+                Control.Padding.Left,
+                Control.Padding.Top,
+                Control.Width - Control.Padding.Left - Control.Padding.Right,
+                Control.Height - Control.Padding.Bottom - Control.Padding.Top);
 
-                            c2 = !c2;
+            var cellSize = Control.TransparencyCellSize;
+            if (cellSize > 0) {
+                var controlSize = Control.Size;
+                var c1 = false;
+                for (var i = 0; i < controlSize.Width; i += cellSize) {
+                    var c2 = c1;
+                    c1 = !c1;
+                    for (var j = 0; j < controlSize.Height; j += cellSize) {
+                        if (c2) {
+                            renderTarget.FillRectangle(
+                                new Box2D<float>(i, j, i + cellSize, j + cellSize),
+                                BorderColorBrush);
                         }
+
+                        c2 = !c2;
                     }
                 }
-
-                _renderTarget.DrawBitmap(
-                    _bitmap,
-                    imageRect.ToSilkFloat(),
-                    1f, // opacity
-                    BitmapInterpolationMode.Linear,
-                    new Box2D<float>(0, 0, Size.Width, Size.Height));
-
-                _renderTarget.DrawRectangle<ID2D1SolidColorBrush, ID2D1StrokeStyle>(
-                    Rectangle.Inflate(imageRect, 1, 1).ToSilkFloat(),
-                    _borderColorBrush,
-                    1f, // stroke width
-                    new ComPtr<ID2D1StrokeStyle>());
-
-                // TODO: draw text information
-
-                Marshal.ThrowExceptionForHR(_renderTarget.EndDraw(new Span<ulong>(), new Span<ulong>()));
-                return true;
-            } catch (Exception e) {
-                LastException = e;
-                return false;
             }
-        }
 
-        // Ignore errors, as it'll be thrown again on EndDraw
-        private void ControlOnResize(object? sender, EventArgs e) {
-            _renderTarget.Resize(new Vector2D<uint>((uint) _control.Width, (uint) _control.Height));
-            _control.Invalidate();
+            renderTarget.DrawBitmap(
+                _bitmap,
+                imageRect.ToSilkFloat(),
+                1f, // opacity
+                BitmapInterpolationMode.Linear,
+                new Box2D<float>(0, 0, Size.Width, Size.Height));
+
+            renderTarget.DrawRectangle(
+                Rectangle.Inflate(imageRect, 1, 1).ToSilkFloat(),
+                BorderColorBrush,
+                1f, // stroke width
+                new ComPtr<ID2D1StrokeStyle>());
+
+            // TODO: draw text information
         }
     }
 }
