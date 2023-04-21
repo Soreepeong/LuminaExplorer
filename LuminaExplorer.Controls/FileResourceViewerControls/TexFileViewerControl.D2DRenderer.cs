@@ -35,43 +35,9 @@ public partial class TexFileViewerControl {
             }
         }
 
-        private ID2D1Brush* BorderColorBrush {
-            get {
-                if (_pBorderColorBrush is null) {
-                    ID2D1SolidColorBrush* pBrush = null;
-                    ThrowH(RenderTarget->CreateSolidColorBrush(
-                        new D3Dcolorvalue(
-                            BorderColor.R / 255f,
-                            BorderColor.G / 255f,
-                            BorderColor.B / 255f,
-                            BorderColor.A / 255f),
-                        null,
-                        &pBrush));
-                    _pBorderColorBrush = (ID2D1Brush*) pBrush;
-                }
+        private ID2D1Brush* BorderColorBrush => GetOrCreateSolidColorBrush(ref _pBorderColorBrush, BorderColor);
 
-                return _pBorderColorBrush;
-            }
-        }
-
-        private ID2D1Bitmap* Bitmap {
-            get {
-                if (_pBitmap is not null)
-                    return _pBitmap;
-                if (_wicBitmap is null)
-                    return null;
-
-                ID2D1Bitmap* newBitmap = null;
-                ThrowH(RenderTarget->CreateBitmapFromWicBitmap(
-                    (IWICBitmapSource*) _wicBitmap.ComObject.GetInterfacePointer<DirectN.IWICBitmapSource>(),
-                    null,
-                    &newBitmap));
-
-                SafeRelease(ref _pBitmap);
-                _pBitmap = newBitmap;
-                return _pBitmap;
-            }
-        }
+        private ID2D1Bitmap* Bitmap => GetOrCreateFromWicBitmap(ref _pBitmap, _wicBitmap);
 
         protected override void Dispose(bool disposing) {
             SafeRelease(ref _pBorderColorBrush);
