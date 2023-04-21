@@ -3,14 +3,17 @@ using Lumina.Data.Files;
 using LuminaExplorer.Controls.Util;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
+using Silk.NET.DirectWrite;
 using Silk.NET.DXGI;
 using Silk.NET.Maths;
+using IDWriteTextFormat = Silk.NET.Direct2D.IDWriteTextFormat;
 using Rectangle = System.Drawing.Rectangle;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
 public partial class TexFileViewerControl {
     private sealed class D2DRenderer : BaseD2DRenderer<TexFileViewerControl>, ITexRenderer {
+        private WicNet.WicBitmapSource? _wicBitmap;
         private ComPtr<ID2D1Bitmap> _bitmap;
         private ComPtr<ID2D1SolidColorBrush> _borderColorBrush;
         private Color _borderColor;
@@ -31,17 +34,6 @@ public partial class TexFileViewerControl {
                 _borderColor = value;
                 _borderColorBrush.Dispose();
                 _borderColorBrush = null;
-
-                try {
-                    unsafe {
-                        Marshal.ThrowExceptionForHR(RenderTarget.CreateSolidColorBrush(
-                            new D3Dcolorvalue(value.R / 255f, value.G / 255f, value.B / 255f, value.A / 255f),
-                            null,
-                            ref _borderColorBrush));
-                    }
-                } catch (Exception e) {
-                    LastException = e;
-                }
             }
         }
 
@@ -60,36 +52,56 @@ public partial class TexFileViewerControl {
             }
         }
 
-        protected override void Dispose(bool disposing) {
-            _borderColorBrush.Dispose();
-            _borderColorBrush = null;
-            _bitmap.Dispose();
-            _bitmap = null;
-        }
+        private unsafe ComPtr<ID2D1Bitmap> Bitmap {
+            get {
+                if (_bitmap.Handle is not null)
+                    return _bitmap;
+                if (_wicBitmap is null)
+                    return new();
 
-        public unsafe bool LoadTexFile(TexFile texFile, int mipIndex, int slice) {
-            ComPtr<ID2D1Bitmap> newBitmap = null;
-
-            try {
-                using var wicBitmap = texFile.ToWicBitmap(mipIndex, slice);
-                wicBitmap.ConvertTo(
-                    WicNet.WicPixelFormat.GUID_WICPixelFormat32bppPBGRA,
-                    paletteTranslate: DirectN.WICBitmapPaletteType.WICBitmapPaletteTypeMedianCut);
+                ComPtr<ID2D1Bitmap> newBitmap = new();                
                 Marshal.ThrowExceptionForHR(RenderTarget.CreateBitmapFromWicBitmap(
-                    (IWICBitmapSource*) wicBitmap.ComObject.GetInterfacePointer<DirectN.IWICBitmapSource>(),
+                    (IWICBitmapSource*) _wicBitmap.ComObject.GetInterfacePointer<DirectN.IWICBitmapSource>(),
                     null,
                     ref newBitmap));
 
                 (_bitmap, newBitmap) = (newBitmap, _bitmap);
+                newBitmap.Dispose();
+                return _bitmap;
+            }
+        }
 
-                var ps = _bitmap.GetPixelSize();
-                Size = new((int) ps.X, (int) ps.Y);
+        protected override void Dispose(bool disposing) {
+            _borderColorBrush.Dispose();
+            _borderColorBrush = null;
+            _wicBitmap?.Dispose();
+            _wicBitmap = null;
+            _bitmap.Dispose();
+            _bitmap = null;
+        }
+
+        public bool LoadTexFile(TexFile texFile, int mipIndex, int slice) {
+            ComPtr<ID2D1Bitmap> newBitmap = null;
+
+            WicNet.WicBitmapSource? wicBitmap = null;
+            try {
+                wicBitmap = texFile.ToWicBitmap(mipIndex, slice);
+                wicBitmap.ConvertTo(
+                    WicNet.WicPixelFormat.GUID_WICPixelFormat32bppPBGRA,
+                    paletteTranslate: DirectN.WICBitmapPaletteType.WICBitmapPaletteTypeMedianCut);
+                Size = new(wicBitmap.Width, wicBitmap.Height);
+                
+                (_wicBitmap, wicBitmap) = (wicBitmap, _wicBitmap);
+                _bitmap.Dispose();
+                _bitmap = null;
+                
                 return true;
             } catch (Exception e) {
                 LastException = e;
                 return false;
             } finally {
                 newBitmap.Release();
+                wicBitmap?.Dispose();
             }
         }
 
@@ -99,7 +111,7 @@ public partial class TexFileViewerControl {
             Size = new();
         }
 
-        protected override void DrawInternal() {
+        protected override unsafe void DrawInternal() {
             var renderTarget = RenderTarget;
 
             renderTarget.FillRectangle(Control.ClientRectangle.ToSilkFloat(), BackColorBrush);
@@ -131,7 +143,7 @@ public partial class TexFileViewerControl {
             }
 
             renderTarget.DrawBitmap(
-                _bitmap,
+                Bitmap,
                 imageRect.ToSilkFloat(),
                 1f, // opacity
                 BitmapInterpolationMode.Linear,
@@ -143,7 +155,37 @@ public partial class TexFileViewerControl {
                 1f, // stroke width
                 new ComPtr<ID2D1StrokeStyle>());
 
-            // TODO: draw text information
+            var format = FontTextFormat;
+            format.SetTextAlignment(TextAlignment.Trailing);
+            format.SetParagraphAlignment(ParagraphAlignment.Far);
+
+            var zoomText = $"Zoom {Control.Viewport.EffectiveZoom * 100:0.00}%";
+            var box = insetRect.ToSilkFloat();
+            for (var i = -2; i <= 2; i++) {
+                for (var j = -2; j <= 2; j++) {
+                    if (i == 0 && j == 0)
+                        continue;
+                    box = (insetRect with {Width = insetRect.Width + i, Height = insetRect.Height + j}).ToSilkFloat();
+                    renderTarget.DrawTextA(
+                        zoomText.AsSpan(),
+                        (uint) zoomText.Length,
+                        (IDWriteTextFormat*) format.Handle,
+                        &box,
+                        (ID2D1Brush*) BackColorBrush.Handle,
+                        DrawTextOptions.None,
+                        DwriteMeasuringMode.GdiNatural);
+                }
+            }
+
+            box = insetRect.ToSilkFloat();
+            renderTarget.DrawTextA(
+                zoomText.AsSpan(),
+                (uint) zoomText.Length,
+                (IDWriteTextFormat*) format.Handle,
+                &box,
+                (ID2D1Brush*) ForeColorBrush.Handle,
+                DrawTextOptions.None,
+                DwriteMeasuringMode.GdiNatural);
         }
     }
 }

@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "LuminaExplorer.App": {
+      "commandName": "Project",
+      "nativeDebugging": true
+    }
+  }
+}
