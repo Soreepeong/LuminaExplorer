@@ -14,18 +14,18 @@ using IDWriteTextFormat = Silk.NET.DirectWrite.IDWriteTextFormat;
 
 namespace LuminaExplorer.Controls.Util;
 
-public abstract class BaseD2DRenderer : IDisposable {
+public abstract unsafe class BaseD2DRenderer : IDisposable {
     protected const int ReattemptCount = 16;
     private static DXGI? _dxgiApi;
     private static D3D11? _d3d11Api;
     private static D2D? _d2dApi;
     private static DWrite? _dwriteApi;
     private static Exception? _apiInitializationException;
-    private static ComPtr<ID2D1Factory> _d2d1Factory;
-    private static ComPtr<IDWriteFactory> _dwriteFactory;
-    private static ComPtr<IDXGIFactory> _dxgiFactory;
+    private static ID2D1Factory* _d2d1Factory;
+    private static IDWriteFactory* _dwriteFactory;
+    private static IDXGIFactory* _dxgiFactory;
 
-    protected static unsafe void TryInitializeApis() {
+    protected static void TryInitializeApis() {
         if (_apiInitializationException is not null)
             throw _apiInitializationException;
 
@@ -45,7 +45,7 @@ public abstract class BaseD2DRenderer : IDisposable {
                     continue;
                 }
 
-                _dxgiFactory = new(pFactory);
+                _dxgiFactory = pFactory;
                 break;
             }
 
@@ -62,8 +62,8 @@ public abstract class BaseD2DRenderer : IDisposable {
                         throw new FailFastException("???[ID2D1Factory]");
                     continue;
                 }
-                
-                _d2d1Factory = new(pFactory);
+
+                _d2d1Factory = pFactory;
                 break;
             }
 
@@ -71,7 +71,7 @@ public abstract class BaseD2DRenderer : IDisposable {
                 IDWriteFactory* pFactory = null;
                 fixed (Guid* g = &IDWriteFactory.Guid) {
                     Marshal.ThrowExceptionForHR(_dwriteApi.DWriteCreateFactory(
-                        Silk.NET.DirectWrite.FactoryType.Isolated, g, (IUnknown**)&pFactory));
+                        Silk.NET.DirectWrite.FactoryType.Isolated, g, (IUnknown**) &pFactory));
                 }
 
                 if (pFactory is null) {
@@ -79,8 +79,8 @@ public abstract class BaseD2DRenderer : IDisposable {
                         throw new FailFastException("???[ID2D1Factory]");
                     continue;
                 }
-                
-                _dwriteFactory = new(pFactory);
+
+                _dwriteFactory = pFactory;
                 break;
             }
         } catch (Exception e) {
@@ -107,68 +107,93 @@ public abstract class BaseD2DRenderer : IDisposable {
     protected static D2D D2D => _d2dApi ?? throw InitializationException;
     protected static DWrite DWrite => _dwriteApi ?? throw InitializationException;
 
-    protected static unsafe ComPtr<IDXGIFactory> DxgiFactory => _d2d1Factory.Handle is not null
+    protected static IDXGIFactory* DxgiFactory => _d2d1Factory is not null
         ? _dxgiFactory
         : throw InitializationException;
 
-    protected static unsafe ComPtr<ID2D1Factory> D2DFactory => _d2d1Factory.Handle is not null
+    protected static ID2D1Factory* D2DFactory => _d2d1Factory is not null
         ? _d2d1Factory
         : throw InitializationException;
 
-    protected static unsafe ComPtr<IDWriteFactory> DWriteFactory => _dwriteFactory.Handle is not null
+    protected static IDWriteFactory* DWriteFactory => _dwriteFactory is not null
         ? _dwriteFactory
         : throw InitializationException;
 
     private static Exception InitializationException => _apiInitializationException ?? new Exception("Uninitialized");
+
+    protected static void SafeRelease<T>(ref T* u) where T : unmanaged {
+        if (u is not null)
+            ((IUnknown*) u)->Release();
+        u = null;
+    }
 
     private class NullNativeWindowSource : INativeWindowSource {
         public INativeWindow? Native => null;
     }
 }
 
-public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
+public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
     protected readonly T Control;
 
-    private ComPtr<IDXGIAdapter> _adapter;
-    private ComPtr<ID3D11Device> _d3dDevice;
-    private ComPtr<IDXGISwapChain> _dxgiSwapChain;
-    private ComPtr<ID3D11DeviceContext> _d3dContext;
-    private ComPtr<IDXGISurface> _dxgiSurface;
-    private ComPtr<ID2D1RenderTarget> _renderTarget;
+    private IDXGIAdapter* _pAdapter;
+    private ID3D11Device* _pD3dDevice;
+    private IDXGISwapChain* _pDxgiSwapChain;
+    private ID3D11DeviceContext* _pD3dContext;
+    private IDXGISurface* _pDxgiSurface;
+    private ID2D1RenderTarget* _pRenderTarget;
 
-    private ComPtr<ID2D1SolidColorBrush> _foreColorBrush;
+    private ID2D1Brush* _pForeColorBrush;
     private Color _foreColor;
 
-    private ComPtr<ID2D1SolidColorBrush> _backColorBrush;
+    private ID2D1Brush* _pBackColorBrush;
     private Color _backColor;
 
-    private ComPtr<IDWriteTextFormat> _fontTextFormat;
+    private IDWriteTextFormat* _pFontTextFormat;
     private Font _font = null!;
 
-    protected unsafe BaseD2DRenderer(T control) {
+    protected BaseD2DRenderer(T control) {
         Control = control;
 
         try {
             TryInitializeApis();
 
-            while (true) {
-                if (DxgiFactory.EnumAdapters(0u, ref _adapter) >= 0)
-                    break;
+            IDXGIAdapter* pAdapter = null;
+            try {
+                if (DxgiFactory->EnumAdapters(0u, &pAdapter) < 0) {
+                    IDXGIFactory1* pFactory1 = null;
+                    fixed (Guid* g = &IDXGIFactory1.Guid)
+                        Marshal.ThrowExceptionForHR(Dxgi.CreateDXGIFactory(g, (void**) &pFactory1));
+                    try {
+                        IDXGIAdapter1* pAdapter1 = null;
+                        Marshal.ThrowExceptionForHR(pFactory1->EnumAdapters1(0u, &pAdapter1));
+                        try {
+                            fixed (Guid* g = &IDXGIAdapter1.Guid) {
+                                if (pAdapter1->QueryInterface(g, (void**) &pAdapter) < 0) {
+                                    IDXGIFactory4* pDxgiFac4 = null;
+                                    fixed (Guid* g2 = &IDXGIFactory4.Guid)
+                                        Marshal.ThrowExceptionForHR(
+                                            DxgiFactory->QueryInterface(g2, (void**) &pDxgiFac4));
 
-                Marshal.ThrowExceptionForHR(Dxgi.CreateDXGIFactory(out ComPtr<IDXGIFactory1> dxgiFac1));
-                using (dxgiFac1) {
-                    ComPtr<IDXGIAdapter1> adapter1 = new();
-                    Marshal.ThrowExceptionForHR(dxgiFac1.EnumAdapters1(0u, ref adapter1));
-                    using (adapter1) {
-                        if (adapter1.QueryInterface(out _adapter) >= 0)
-                            break;
-                        Marshal.ThrowExceptionForHR(DxgiFactory.QueryInterface(out ComPtr<IDXGIFactory4> dxgiFac4));
-                        using (dxgiFac4)
-                            Marshal.ThrowExceptionForHR(dxgiFac4.EnumWarpAdapter(out _adapter));
+                                    try {
+                                        fixed (Guid* g2 = &IDXGIAdapter.Guid)
+                                            Marshal.ThrowExceptionForHR(pDxgiFac4->EnumWarpAdapter(g2, (void**) &pAdapter));
+                                    } finally {
+                                        SafeRelease(ref pDxgiFac4);
+                                    }
+                                }
+                            }
+                        } finally {
+                            SafeRelease(ref pAdapter1);
+                        }
+                    } finally {
+                        SafeRelease(ref pFactory1);
                     }
                 }
 
-                break;
+                _pAdapter = pAdapter;
+                pAdapter = null;
+            } finally {
+                SafeRelease(ref pAdapter);
             }
 
             Control.Resize += ControlOnResize;
@@ -185,22 +210,14 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
         if (disposing)
             Control.Resize -= ControlOnResize;
 
-        _foreColorBrush.Dispose();
-        _foreColorBrush = null;
-        _backColorBrush.Dispose();
-        _backColorBrush = null;
-        _d3dDevice.Dispose();
-        _d3dDevice = null;
-        _dxgiSwapChain.Dispose();
-        _dxgiSwapChain = null;
-        _d3dContext.Dispose();
-        _d3dContext = null;
-        _renderTarget.Dispose();
-        _renderTarget = null;
-        _dxgiSurface.Dispose();
-        _dxgiSurface = null;
-        _adapter.Dispose();
-        _adapter = null;
+        SafeRelease(ref _pForeColorBrush);
+        SafeRelease(ref _pBackColorBrush);
+        SafeRelease(ref _pD3dDevice);
+        SafeRelease(ref _pDxgiSwapChain);
+        SafeRelease(ref _pD3dContext);
+        SafeRelease(ref _pRenderTarget);
+        SafeRelease(ref _pDxgiSurface);
+        SafeRelease(ref _pAdapter);
     }
 
     public Exception? LastException { get; protected set; }
@@ -211,19 +228,22 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
             if (_foreColor == value)
                 return;
             _foreColor = value;
-            _foreColorBrush.Dispose();
-            _foreColorBrush = null;
+            SafeRelease(ref _pForeColorBrush);
         }
     }
 
-    protected unsafe ComPtr<ID2D1SolidColorBrush> ForeColorBrush {
+    protected ID2D1Brush* ForeColorBrush {
         get {
-            if (_foreColorBrush.Handle is null)
-                Marshal.ThrowExceptionForHR(RenderTarget.CreateSolidColorBrush(
+            if (_pForeColorBrush is null) {
+                ID2D1SolidColorBrush* pBrush = null;
+                Marshal.ThrowExceptionForHR(RenderTarget->CreateSolidColorBrush(
                     new D3Dcolorvalue(ForeColor.R / 255f, ForeColor.G / 255f, ForeColor.B / 255f, ForeColor.A / 255f),
                     null,
-                    ref _foreColorBrush));
-            return _foreColorBrush;
+                    &pBrush));
+                _pForeColorBrush = (ID2D1Brush*) pBrush;
+            }
+
+            return _pForeColorBrush;
         }
     }
 
@@ -233,19 +253,22 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
             if (_backColor == value)
                 return;
             _backColor = value;
-            _backColorBrush.Dispose();
-            _backColorBrush = null;
+            SafeRelease(ref _pBackColorBrush);
         }
     }
 
-    protected unsafe ComPtr<ID2D1SolidColorBrush> BackColorBrush {
+    protected ID2D1Brush* BackColorBrush {
         get {
-            if (_backColorBrush.Handle is null)
-                Marshal.ThrowExceptionForHR(RenderTarget.CreateSolidColorBrush(
+            if (_pBackColorBrush is null) {
+                ID2D1SolidColorBrush* pBrush = null;
+                Marshal.ThrowExceptionForHR(RenderTarget->CreateSolidColorBrush(
                     new D3Dcolorvalue(BackColor.R / 255f, BackColor.G / 255f, BackColor.B / 255f, BackColor.A / 255f),
                     null,
-                    ref _backColorBrush));
-            return _backColorBrush;
+                    &pBrush));
+                _pBackColorBrush = (ID2D1Brush*) pBrush;
+            }
+
+            return _pBackColorBrush;
         }
     }
 
@@ -255,14 +278,13 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
             if (Equals(_font, value))
                 return;
             _font = value;
-            _fontTextFormat.Dispose();
-            _fontTextFormat = null;
+            SafeRelease(ref _pFontTextFormat);
         }
     }
 
-    protected unsafe ComPtr<IDWriteTextFormat> FontTextFormat {
+    protected IDWriteTextFormat* FontTextFormat {
         get {
-            if (_fontTextFormat.Handle is null) {
+            if (_pFontTextFormat is null) {
                 // seems that silk doesn't properly set variables being passed around as fixed
                 var name = Font.Name.ToCharArray();
                 var empty = new char[1];
@@ -270,16 +292,16 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
                 fixed (char* pEmpty = empty) {
                     try {
                         IDWriteTextFormat* p = null;
-                        Marshal.ThrowExceptionForHR(DWriteFactory.CreateTextFormat(
+                        Marshal.ThrowExceptionForHR(DWriteFactory->CreateTextFormat(
                             pName,
-                            (IDWriteFontCollection*) null,
+                            null,
                             Font.Bold ? FontWeight.Bold : FontWeight.Normal,
                             Font.Italic ? FontStyle.Italic : FontStyle.Normal,
                             FontStretch.Normal,
                             Font.SizeInPoints * 4 / 3,
                             pEmpty,
                             &p));
-                        _fontTextFormat = new(p);
+                        _pFontTextFormat = p;
                     } catch (Exception e) {
                         LastException = e;
                         throw;
@@ -287,17 +309,17 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
                 }
             }
 
-            return _fontTextFormat;
+            return _pFontTextFormat;
         }
     }
 
-    protected unsafe ComPtr<ID2D1RenderTarget> RenderTarget {
+    protected ID2D1RenderTarget* RenderTarget {
         get {
-            if (_renderTarget.Handle is not null)
-                return _renderTarget;
+            if (_pRenderTarget is not null)
+                return _pRenderTarget;
 
             try {
-                if (_dxgiSwapChain.Handle is null) {
+                if (_pDxgiSwapChain is null) {
                     var levels = new[] {
                         D3DFeatureLevel.Level111,
                         D3DFeatureLevel.Level110,
@@ -310,8 +332,8 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
 
                     var desc = new SwapChainDesc {
                         BufferDesc = new() {
-                            Width = (uint) Control.Width,
-                            Height = (uint) Control.Height,
+                            Width = 0,
+                            Height = 0,
                             Format = Format.FormatB8G8R8A8Unorm,
                             RefreshRate = new(1, 60),
                             Scaling = ModeScaling.Centered,
@@ -330,15 +352,12 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
                         IDXGISwapChain* pSwapChain = null;
                         ID3D11Device* pDevice = null;
                         ID3D11DeviceContext* pContext = null;
-                        _dxgiSwapChain.Dispose();
-                        _dxgiSwapChain = null;
-                        _d3dDevice.Dispose();
-                        _d3dDevice = null;
-                        _d3dContext.Dispose();
-                        _d3dContext = null;
+                        SafeRelease(ref _pDxgiSwapChain);
+                        SafeRelease(ref _pD3dDevice);
+                        SafeRelease(ref _pD3dContext);
                         fixed (D3DFeatureLevel* pLevels = levels) {
                             Marshal.ThrowExceptionForHR(D3D11.CreateDeviceAndSwapChain(
-                                _adapter,
+                                _pAdapter,
                                 // This method returns E_INVALIDARG if you set the pAdapter parameter to a
                                 // non-NULL value and the DriverType parameter to the D3D_DRIVER_TYPE_HARDWARE
                                 // value.
@@ -355,32 +374,35 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
                                 &pContext));
                         }
 
-                        if (pSwapChain is null || pDevice is null || pSwapChain is null) {
-                            if (pSwapChain is not null)
-                                pSwapChain->Release();
-                            if (pDevice is not null)
-                                pDevice->Release();
-                            if (pSwapChain is not null)
-                                pSwapChain->Release();
+                        if (pSwapChain is null || pDevice is null || pContext is null) {
+                            SafeRelease(ref pSwapChain);
+                            SafeRelease(ref pDevice);
+                            SafeRelease(ref pContext);
                             if (i == 0)
                                 throw new FailFastException("???[CreateDeviceAndSwapChain]");
                             continue;
                         }
 
-                        _dxgiSwapChain = new(pSwapChain);
-                        _d3dDevice = new(pDevice);
-                        _d3dContext = new(pContext);
+                        _pDxgiSwapChain = pSwapChain;
+                        _pD3dDevice = pDevice;
+                        _pD3dContext = pContext;
                     }
-                } else {
-                    Marshal.ThrowExceptionForHR(_dxgiSwapChain.ResizeBuffers(
-                        1,
-                        (uint) Math.Max(16, Control.Width),
-                        (uint) Math.Max(16, Control.Height),
-                        Format.FormatB8G8R8A8Unorm,
-                        0));
                 }
 
-                Marshal.ThrowExceptionForHR(_dxgiSwapChain.GetBuffer(0, out _dxgiSurface));
+                SafeRelease(ref _pRenderTarget);
+                SafeRelease(ref _pDxgiSurface);
+
+                try {
+                    Marshal.ThrowExceptionForHR(_pDxgiSwapChain->ResizeBuffers(0, 0, 0, Format.FormatUnknown, 0));
+                } catch (Exception e) {
+                    Debug.Print(e.ToString());
+                }
+
+                IDXGISurface* pNewSurface = null;
+                fixed (Guid* g = &IDXGISurface.Guid)
+                    Marshal.ThrowExceptionForHR(_pDxgiSwapChain->GetBuffer(0, g, (void**) &pNewSurface));
+                _pDxgiSurface = pNewSurface;
+
                 var rtp = new RenderTargetProperties {
                     Type = RenderTargetType.Default,
                     PixelFormat = new() {
@@ -389,22 +411,26 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
                     },
                     DpiX = Control.DeviceDpi,
                     DpiY = Control.DeviceDpi,
-                    Usage = RenderTargetUsage.GdiCompatible
                 };
                 // for some reason it returns success but renderTarget is null occasionally
                 for (var i = ReattemptCount - 1; i >= 0; i--) {
                     ID2D1RenderTarget* pRenderTarget = null;
-                    Marshal.ThrowExceptionForHR(D2DFactory.CreateDxgiSurfaceRenderTarget(
-                        _dxgiSurface.Handle, &rtp, &pRenderTarget));
-                    if (pRenderTarget is null && i == 0)
-                        throw new FailFastException("???[CreateDxgiSurfaceRenderTarget]");
-                    _renderTarget = new(pRenderTarget);
+                    Marshal.ThrowExceptionForHR(D2DFactory->CreateDxgiSurfaceRenderTarget(
+                        _pDxgiSurface, &rtp, &pRenderTarget));
+                    if (pRenderTarget is null) {
+                        if (i == 0)
+                            throw new FailFastException("???[CreateDxgiSurfaceRenderTarget]");
+                        continue;
+                    }
+
+                    _pRenderTarget = pRenderTarget;
+                    break;
                 }
 
-                if (_renderTarget.Handle is null)
+                if (_pRenderTarget is null)
                     throw new("Fail");
 
-                return _renderTarget;
+                return _pRenderTarget;
             } catch (Exception e) {
                 LastException = e;
                 throw;
@@ -413,15 +439,13 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
     }
 
     protected void ControlOnResize(object? sender, EventArgs e) {
-        _renderTarget.Dispose();
-        _renderTarget = null;
-        _dxgiSurface.Dispose();
-        _dxgiSurface = null;
+        SafeRelease(ref _pRenderTarget);
+        SafeRelease(ref _pDxgiSurface);
+
         try {
-            // Try to preload
             _ = RenderTarget;
         } catch (Exception) {
-            LastException = null;
+            // pass
         }
 
         Control.Invalidate();
@@ -432,7 +456,8 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
     public bool Draw(PaintEventArgs _) {
         try {
             if (Control.Width != 0 && Control.Height != 0) {
-                RenderTarget.BeginDraw();
+                var pRenderTarget = RenderTarget;
+                pRenderTarget->BeginDraw();
                 var errorPending = false;
                 try {
                     DrawInternal();
@@ -440,12 +465,12 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
                     errorPending = true;
                     throw;
                 } finally {
-                    var hr = RenderTarget.EndDraw(new Span<ulong>(), new Span<ulong>());
+                    var hr = pRenderTarget->EndDraw(null, null);
                     if (!errorPending)
                         Marshal.ThrowExceptionForHR(hr);
                 }
 
-                _dxgiSwapChain.Present(0, 0);
+                _pDxgiSwapChain->Present(0, 0);
             }
 
             return true;
