@@ -20,18 +20,23 @@ public static class WicNetExtensions {
             return new(pFrame);
         }
 
-        var bpp = 1 << (
-            (int) (texFile.Header.Format & TexFile.TextureFormat.BppMask) >>
-            (int) TexFile.TextureFormat.BppShift);
-
         var texBuf = texFile.TextureBuffer.Filter(mip: mipIndex, z: slice);
+        var format = texFile.Header.Format;
+        if (format == TexFile.TextureFormat.B4G4R4A4) {
+            format = TexFile.TextureFormat.B8G8R8A8;
+            texBuf = texBuf.Filter(format: format);
+        }
+
+        var bpp = 1 << (
+            (int) (format & TexFile.TextureFormat.BppMask) >>
+            (int) TexFile.TextureFormat.BppShift);
+        
         return new(WICImagingFactory.CreateBitmapFromMemory(
             texBuf.Width,
             texBuf.Height,
-            texFile.Header.Format switch {
+            format switch {
                 TexFile.TextureFormat.L8 => WicPixelFormat.GUID_WICPixelFormat8bppGray,
                 TexFile.TextureFormat.A8 => WicPixelFormat.GUID_WICPixelFormat8bppAlpha,
-                TexFile.TextureFormat.B4G4R4A4 => WicPixelFormat.GUID_WICPixelFormat16bppBGRA5551,
                 TexFile.TextureFormat.B5G5R5A1 => WicPixelFormat.GUID_WICPixelFormat16bppBGRA5551,
                 TexFile.TextureFormat.B8G8R8A8 => WicPixelFormat.GUID_WICPixelFormat32bppBGRA,
                 TexFile.TextureFormat.B8G8R8X8 => WicPixelFormat.GUID_WICPixelFormat32bppBGR,

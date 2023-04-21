@@ -94,8 +94,15 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
             r.BackColor = BackColor;
     }
 
-    public override Size GetPreferredSize(Size proposedSize) =>
-        Viewport.Size.IsEmpty ? base.GetPreferredSize(proposedSize) : Viewport.Size;
+    public override Size GetPreferredSize(Size proposedSize) {
+        if (Viewport.Size.IsEmpty)
+            return base.GetPreferredSize(proposedSize);
+
+        var s = Viewport.Size;
+        s.Width = Math.Max(s.Width + 64, 320);
+        s.Height = Math.Max(s.Height + 64, 240);
+        return s;
+    }
 
     public void UpdateBitmap(int slice, int mipmap, bool force = false) {
         if (FileResourceTyped is not { } frt || (_currentSlice == slice && _currentMipmap == mipmap))

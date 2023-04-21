@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.Util;
 using Silk.NET.Core.Native;
@@ -40,7 +39,7 @@ public partial class TexFileViewerControl {
             get {
                 if (_pBorderColorBrush is null) {
                     ID2D1SolidColorBrush* pBrush = null;
-                    Marshal.ThrowExceptionForHR(RenderTarget->CreateSolidColorBrush(
+                    ThrowH(RenderTarget->CreateSolidColorBrush(
                         new D3Dcolorvalue(
                             BorderColor.R / 255f,
                             BorderColor.G / 255f,
@@ -63,7 +62,7 @@ public partial class TexFileViewerControl {
                     return null;
 
                 ID2D1Bitmap* newBitmap = null;
-                Marshal.ThrowExceptionForHR(RenderTarget->CreateBitmapFromWicBitmap(
+                ThrowH(RenderTarget->CreateBitmapFromWicBitmap(
                     (IWICBitmapSource*) _wicBitmap.ComObject.GetInterfacePointer<DirectN.IWICBitmapSource>(),
                     null,
                     &newBitmap));
