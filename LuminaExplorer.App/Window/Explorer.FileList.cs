@@ -4,6 +4,7 @@ using BrightIdeasSoftware;
 using Lumina.Data;
 using Lumina.Data.Files;
 using LuminaExplorer.App.Utils;
+using LuminaExplorer.App.Window.FileViewers;
 using LuminaExplorer.Controls.FileResourceViewerControls;
 using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.Util;
@@ -340,24 +341,11 @@ public partial class Explorer {
                         return;
                     }
 
-                    AbstractFileResourceViewerControl? viewerControl = null;
                     if (fr.Result is TexFile texFile) {
-                        var control = new TexFileViewerControl();
-                        control.Anchor = AnchorStyles.Left | AnchorStyles.Top;
-                        control.Dock = DockStyle.Fill;
-                        control.SetFile(tree, file, texFile);
-                        viewerControl = control;
+                        var viewer = new TextureViewer();
+                        viewer.SetFile(tree, file, texFile);
+                        viewer.ShowRelativeTo(_explorer);
                     }
-
-                    if (viewerControl is null)
-                        return;
-
-                    var viewerWindow = new Form();
-                    viewerWindow.Text = tree.GetFullPath(file);
-                    viewerWindow.Controls.Add(viewerControl);
-                    var rc = viewerControl.GetViewportRectangleSuggestion(_explorer);
-                    viewerWindow.SetBounds(rc.X, rc.Y, rc.Width, rc.Height);
-                    viewerWindow.Show(_explorer);
                 }, TaskScheduler.FromCurrentSynchronizationContext());
                 return;
             }

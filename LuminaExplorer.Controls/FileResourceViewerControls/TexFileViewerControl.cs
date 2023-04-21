@@ -2,11 +2,17 @@
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.LazySqPackTree;
+using Timer = System.Windows.Forms.Timer;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
 public partial class TexFileViewerControl : AbstractFileResourceViewerControl<TexFile> {
+    private const int FadeOutDuration = 200;
+    private const int FadeOutDelay = 500;
+
     public readonly PanZoomTracker Viewport;
+
+    private readonly Timer _timer;
 
     private ITexRenderer[]? _renderers;
 
@@ -15,14 +21,41 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     private Color _borderColor = Color.LightGray;
     private int _transparencyCellSize = 8;
 
+    private long _showDescriptionAtLeastUntilMilliseconds;
+    private bool _mouseInDescriptionArea;
+
     public TexFileViewerControl() {
-        MouseActivity.UseLeftDrag = MouseActivity.UseMiddleDrag = MouseActivity.UseRightDrag = true;
+        MouseActivity.UseLeftDrag = true;
+        MouseActivity.UseMiddleDrag = true;
+        MouseActivity.UseRightDrag = true;
         MouseActivity.UseDoubleDetection = true;
         MouseActivity.UseWheelZoom = true;
         MouseActivity.UseDragZoom = true;
+        MouseActivity.UseInfiniteLeftDrag = true;
+        MouseActivity.UseInfiniteRightDrag = true;
+        MouseActivity.UseInfiniteMiddleDrag = true;
 
         Viewport = new(MouseActivity);
-        Viewport.ViewportChanged += Invalidate;
+        Viewport.ViewportChanged += () => {
+            ShowDescriptionForFromNow(FadeOutDelay);
+            Invalidate();
+        };
+
+        _timer = new();
+        _timer.Enabled = false;
+        _timer.Interval = 1;
+        _timer.Tick += (_, _) => {
+            var remaining = _showDescriptionAtLeastUntilMilliseconds - Environment.TickCount64;
+            if (remaining > FadeOutDuration) {
+                _timer.Interval = (int) (remaining - FadeOutDuration);
+                return;
+            }
+            
+            _timer.Interval = 1;
+            Invalidate();
+            if (remaining < 0)
+                _timer.Enabled = false;
+        };
     }
 
     public Color BorderColor {
@@ -52,6 +85,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
             foreach (var r in _renderers ?? Array.Empty<ITexRenderer>())
                 r.Dispose();
             Viewport.Dispose();
+            _timer.Dispose();
         }
 
         base.Dispose(disposing);
@@ -59,20 +93,52 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     protected override void OnPaint(PaintEventArgs e) {
         base.OnPaint(e);
-        if (FileResourceTyped is not { } fr)
-            return;
+        if (FileResourceTyped is { } fr) {
+            var d = _showDescriptionAtLeastUntilMilliseconds - Environment.TickCount64;
+            if (MouseActivity.IsDragging)
+                ShowDescriptionForFromNow(FadeOutDelay);
+            var opacity = _mouseInDescriptionArea ? 1f :
+                d <= 0 ? 0f :
+                d >= FadeOutDuration ? 1f : (float) d / FadeOutDuration;
 
-        foreach (var r in _renderers ?? Array.Empty<ITexRenderer>()) {
-            if (r.LastException is not null)
-                continue;
-
-            if (!r.HasImage) {
-                if (!r.LoadTexFile(fr, _currentMipmap, _currentSlice))
+            foreach (var r in _renderers ?? Array.Empty<ITexRenderer>()) {
+                if (r.LastException is not null)
                     continue;
-            }
 
-            if (r.Draw(e))
-                return;
+                if (!r.HasImage) {
+                    if (!r.LoadTexFile(fr, _currentMipmap, _currentSlice))
+                        continue;
+                }
+
+                r.DescriptionOpacity = opacity;
+
+                if (r.Draw(e))
+                    return;
+            }
+        }
+
+        using var brush = new SolidBrush(Color.Black);
+        e.Graphics.FillRectangle(brush, e.ClipRectangle);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e) {
+        base.OnMouseMove(e);
+        if (e.Y < 80 && (e.X < Width / 2 || e.X < 160)) {
+            if (!_mouseInDescriptionArea) {
+                _mouseInDescriptionArea = true;
+                Invalidate();
+            }
+        } else if (_mouseInDescriptionArea) {
+            _mouseInDescriptionArea = false;
+            ShowDescriptionForFromNow(FadeOutDelay);
+        }
+    }
+
+    protected override void OnMouseLeave(EventArgs e) {
+        base.OnMouseLeave(e);
+        if (_mouseInDescriptionArea) {
+            _mouseInDescriptionArea = false;
+            ShowDescriptionForFromNow(FadeOutDelay);
         }
     }
 
@@ -102,13 +168,17 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         Invalidate();
     }
 
-    public override Size GetPreferredSize(Size proposedSize) => 
-        Viewport.Size.IsEmpty ? base.GetPreferredSize(proposedSize) : Viewport.Size;
+    public override Size GetPreferredSize(Size proposedSize) =>
+        Viewport.Size.IsEmpty
+            ? base.GetPreferredSize(proposedSize)
+            : new(
+                Viewport.Size.Width + Margin.Horizontal,
+                Viewport.Size.Height + Margin.Vertical);
 
     public void UpdateBitmap(int slice, int mipmap, bool force = false) {
         if (FileResourceTyped is not { } frt || (!force && _currentSlice == slice && _currentMipmap == mipmap))
             return;
-        
+
         _currentSlice = slice;
         _currentMipmap = mipmap;
 
@@ -133,6 +203,21 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         base.ClearFile();
     }
 
+    public void ShowDescriptionForFromNow(long durationMilliseconds) {
+        if (durationMilliseconds <= 0) {
+            _showDescriptionAtLeastUntilMilliseconds = 0;
+            _timer.Enabled = false;
+            return;
+        }
+
+        _showDescriptionAtLeastUntilMilliseconds = Math.Max(
+            _showDescriptionAtLeastUntilMilliseconds,
+            Environment.TickCount64 + durationMilliseconds);
+        _timer.Enabled = true;
+        _timer.Interval = 1;
+        Invalidate();
+    }
+
     private void ClearFileImpl() {
         _currentSlice = _currentMipmap = -1;
         foreach (var r in _renderers ?? Array.Empty<ITexRenderer>())
@@ -147,6 +232,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         Color ForeColor { get; set; }
         Color BackColor { get; set; }
         Color BorderColor { get; set; }
+        float DescriptionOpacity { get; set; }
 
         void Reset();
         bool LoadTexFile(TexFile texFile, int mipIndex, int slice);

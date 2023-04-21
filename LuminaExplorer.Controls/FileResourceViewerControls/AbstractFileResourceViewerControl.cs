@@ -5,7 +5,7 @@ using LuminaExplorer.Core.LazySqPackTree;
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
 public abstract class AbstractFileResourceViewerControl : Control {
-    protected readonly MouseActivityTracker MouseActivity;
+    public readonly MouseActivityTracker MouseActivity;
 
     public VirtualSqPackTree? Tree { get; private set; }
 
@@ -45,7 +45,7 @@ public abstract class AbstractFileResourceViewerControl : Control {
 
         var pos = opener?.PointToScreen(new(opener.Width / 2, opener.Height / 2)) ?? new(
             screen.WorkingArea.Left + screen.WorkingArea.Width / 2,
-            screen.WorkingArea.Left + screen.WorkingArea.Height / 2);
+            screen.WorkingArea.Top + screen.WorkingArea.Height / 2);
         var size = GetPreferredSize(opener?.Size ?? new(320, 240));
 
         if (Parent is { } parent) {

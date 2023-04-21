@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using Timer = System.Timers.Timer;
 
 namespace LuminaExplorer.Controls.Util;
 
@@ -11,6 +12,11 @@ public sealed class MouseActivityTracker : IDisposable {
     private bool _useRightDrag;
     private bool _useMiddleDrag;
 
+    private readonly Timer _clickTimer = new();
+    private long _clickTimerFireLeftClickAfter;
+    private long _clickTimerFireRightClickAfter;
+    private long _clickTimerFireMiddleClickAfter;
+
     public MouseActivityTracker(Control control) {
         _control = control;
         _control.MouseDown += OnMouseDown;
@@ -18,6 +24,8 @@ public sealed class MouseActivityTracker : IDisposable {
         _control.MouseUp += OnMouseUp;
         _control.MouseLeave += OnMouseLeave;
         _control.MouseWheel += OnMouseWheel;
+
+        _clickTimer.Elapsed += (_, _) => _control.BeginInvoke(ProcessClickTimers);
     }
 
     public void Dispose() {
@@ -34,10 +42,14 @@ public sealed class MouseActivityTracker : IDisposable {
     public event ZoomDelegate? ZoomDrag;
     public event ZoomDelegate? ZoomWheel;
 
-    public event BarrieredClickDelegate? LeftClick;
-    public event BarrieredClickDelegate? RightClick;
-    public event BarrieredClickDelegate? MiddleClick;
-    
+    public event BarrieredClickDelegate? LeftImmediateClick;
+    public event BarrieredClickDelegate? RightImmediateClick;
+    public event BarrieredClickDelegate? MiddleImmediateClick;
+
+    public event ClickDelegate? LeftClick;
+    public event ClickDelegate? RightClick;
+    public event ClickDelegate? MiddleClick;
+
     public event ClickDelegate? LeftDoubleClick;
     public event ClickDelegate? RightDoubleClick;
     public event ClickDelegate? MiddleDoubleClick;
@@ -46,6 +58,7 @@ public sealed class MouseActivityTracker : IDisposable {
     public Point? DragBase { get; private set; }
 
     public bool IsDragging => DragBase is not null;
+    public bool IsInfiniteDragging { get; private set; }
     public bool IsDraggingZoom { get; private set; }
     public bool IsDraggingPan => IsDragging && !IsDraggingZoom;
 
@@ -64,6 +77,10 @@ public sealed class MouseActivityTracker : IDisposable {
     public bool IsMiddleDoubleUp { get; private set; }
 
     public bool UseDoubleDetection { get; set; }
+
+    public bool UseInfiniteLeftDrag { get; set; }
+    public bool UseInfiniteRightDrag { get; set; }
+    public bool UseInfiniteMiddleDrag { get; set; }
 
     public bool UseLeftDrag {
         get => _useLeftDrag;
@@ -109,6 +126,7 @@ public sealed class MouseActivityTracker : IDisposable {
                 IsLeftDoubleDown = IsDoubleDownOrUp();
                 IsDraggingZoom = UseDragZoom && IsLeftDoubleDown;
                 startDrag = _useLeftDrag;
+                _clickTimerFireLeftClickAfter = long.MaxValue;
                 break;
             }
             case MouseButtons.Right: {
@@ -116,6 +134,7 @@ public sealed class MouseActivityTracker : IDisposable {
                 IsRightDoubleDown = IsDoubleDownOrUp();
                 IsDraggingZoom = UseDragZoom && IsRightDoubleDown;
                 startDrag = _useRightDrag;
+                _clickTimerFireRightClickAfter = long.MaxValue;
                 break;
             }
             case MouseButtons.Middle: {
@@ -123,9 +142,12 @@ public sealed class MouseActivityTracker : IDisposable {
                 IsMiddleDoubleDown = IsDoubleDownOrUp();
                 IsDraggingZoom = UseDragZoom && IsMiddleDoubleDown;
                 startDrag = _useMiddleDrag;
+                _clickTimerFireMiddleClickAfter = long.MaxValue;
                 break;
             }
         }
+
+        ProcessClickTimers();
 
         if (startDrag && DragOrigin is null) {
             DragOrigin = e.Location;
@@ -145,7 +167,10 @@ public sealed class MouseActivityTracker : IDisposable {
         if (DragBase is { } dragBase) {
             var pos = e.Location;
             delta = new(pos.X - dragBase.X, pos.Y - dragBase.Y);
-            Cursor.Position = _control.PointToScreen(dragBase);
+            if (IsInfiniteDragging)
+                Cursor.Position = _control.PointToScreen(dragBase);
+            else
+                DragBase = pos;
         } else if ((_useLeftDrag && IsLeftHeld) ||
                    (_useRightDrag && IsRightHeld) ||
                    (_useMiddleDrag && IsMiddleHeld)) {
@@ -159,6 +184,8 @@ public sealed class MouseActivityTracker : IDisposable {
             return;
 
         if (IsDragging && !delta.IsEmpty) {
+            var controlAbs = _control.PointToScreen(new());
+
             if (UseDragZoom && (
                     IsMiddleHeld ||
                     FirstHeldButton switch {
@@ -172,6 +199,14 @@ public sealed class MouseActivityTracker : IDisposable {
             } else {
                 Pan?.Invoke(delta);
             }
+
+            if (!IsInfiniteDragging) {
+                var controlAbsNew = _control.PointToScreen(new());
+
+                DragBase = new(
+                    DragBase!.Value.X + controlAbs.X - controlAbsNew.X,
+                    DragBase!.Value.Y + controlAbs.Y - controlAbsNew.Y);
+            }
         }
     }
 
@@ -184,18 +219,21 @@ public sealed class MouseActivityTracker : IDisposable {
                 IsLeftHeld = false;
                 if (!_activities[^1].IsInDoubleClickRange(e.Location))
                     break;
-                
+
                 IsLeftDoubleUp = IsDoubleDownOrUp();
 
                 var blockDouble = false;
-                LeftClick?.Invoke(e.Location, ref blockDouble);
+                LeftImmediateClick?.Invoke(e.Location, ref blockDouble);
+                if (!UseDoubleDetection)
+                    LeftClick?.Invoke(e.Location);
                 if (blockDouble)
                     IsLeftDoubleUp = false;
-                
+
                 if (IsLeftDoubleUp) {
                     _activities.Clear();
                     LeftDoubleClick?.Invoke(e.Location);
-                }
+                } else if (!blockDouble && UseDoubleDetection && !IsDragging)
+                    _clickTimerFireLeftClickAfter = Environment.TickCount64 + SystemInformation.DoubleClickTime;
 
                 break;
             }
@@ -203,18 +241,21 @@ public sealed class MouseActivityTracker : IDisposable {
                 IsRightHeld = false;
                 if (!_activities[^1].IsInDoubleClickRange(e.Location))
                     break;
-                
+
                 IsRightDoubleUp = IsDoubleDownOrUp();
 
                 var blockDouble = false;
-                RightClick?.Invoke(e.Location, ref blockDouble);
+                RightImmediateClick?.Invoke(e.Location, ref blockDouble);
+                if (!UseDoubleDetection)
+                    RightClick?.Invoke(e.Location);
                 if (blockDouble)
                     IsRightDoubleUp = false;
 
                 if (IsRightDoubleUp) {
                     _activities.Clear();
                     RightDoubleClick?.Invoke(e.Location);
-                }
+                } else if (!blockDouble && UseDoubleDetection && !IsDragging)
+                    _clickTimerFireRightClickAfter = Environment.TickCount64 + SystemInformation.DoubleClickTime;
 
                 break;
             }
@@ -222,22 +263,27 @@ public sealed class MouseActivityTracker : IDisposable {
                 IsMiddleHeld = false;
                 if (!_activities[^1].IsInDoubleClickRange(e.Location))
                     break;
-                
+
                 IsMiddleDoubleUp = IsDoubleDownOrUp();
 
                 var blockDouble = false;
-                MiddleClick?.Invoke(e.Location, ref blockDouble);
+                MiddleImmediateClick?.Invoke(e.Location, ref blockDouble);
+                if (!UseDoubleDetection)
+                    MiddleClick?.Invoke(e.Location);
                 if (blockDouble)
                     IsMiddleDoubleUp = false;
-                
+
                 if (IsMiddleDoubleUp) {
                     _activities.Clear();
                     MiddleDoubleClick?.Invoke(e.Location);
-                }
+                } else if (!blockDouble && UseDoubleDetection && !IsDragging)
+                    _clickTimerFireMiddleClickAfter = Environment.TickCount64 + SystemInformation.DoubleClickTime;
 
                 break;
             }
         }
+
+        ProcessClickTimers();
 
         if (FirstHeldButton switch {
                 MouseButtons.Left => !IsLeftHeld,
@@ -268,18 +314,26 @@ public sealed class MouseActivityTracker : IDisposable {
         DragBase = dragBase;
         RecordActivity(new(ActivityType.DragStart, MouseButtons.None, DragBase.Value));
 
-        Cursor.Position = _control.PointToScreen(dragBase);
-        Cursor.Hide();
+        if ((UseInfiniteLeftDrag && FirstHeldButton == MouseButtons.Left) ||
+            (UseInfiniteRightDrag && FirstHeldButton == MouseButtons.Right) ||
+            (UseInfiniteMiddleDrag && FirstHeldButton == MouseButtons.Middle)) {
+            IsInfiniteDragging = true;
+            Cursor.Position = _control.PointToScreen(dragBase);
+            Cursor.Hide();
+        }
     }
 
     private void ExitDragState() {
-        if (DragOrigin is not { } dragOrigin)
+        if (DragOrigin is null)
             return;
 
-        if (IsDragging) {
-            RecordActivity(new(ActivityType.DragEnd, MouseButtons.None, dragOrigin));
-            Cursor.Position = _control.PointToScreen(dragOrigin);
-            Cursor.Show();
+        if (DragBase is { } dragBase) {
+            RecordActivity(new(ActivityType.DragEnd, MouseButtons.None, dragBase));
+            if (IsInfiniteDragging) {
+                Cursor.Position = _control.PointToScreen(dragBase);
+                Cursor.Show();
+                IsInfiniteDragging = false;
+            }
         }
 
         IsDraggingZoom = false;
@@ -304,6 +358,49 @@ public sealed class MouseActivityTracker : IDisposable {
         _activities[^2].Type is not ActivityType.DragEnd and not ActivityType.DragStart &&
         _activities[^1].Tick - _activities[^3].Tick <= SystemInformation.DoubleClickTime &&
         _activities[^1].IsInDoubleClickRange(_activities[^3].Point);
+
+    private void ProcessClickTimers() {
+        var now = Environment.TickCount64;
+        if (_clickTimerFireLeftClickAfter <= now) {
+            LeftClick?.Invoke(
+                _activities
+                    .Select(x => (Activity?) x)
+                    .LastOrDefault(x => x!.Value.Button == MouseButtons.Left && x.Value.Type == ActivityType.Up)
+                    ?.Point
+                ?? _control.PointToClient(Cursor.Position));
+            _clickTimerFireLeftClickAfter = long.MaxValue;
+        }
+        
+        if (_clickTimerFireRightClickAfter <= now) {
+            RightClick?.Invoke(
+                _activities
+                    .Select(x => (Activity?) x)
+                    .LastOrDefault(x => x!.Value.Button == MouseButtons.Right && x.Value.Type == ActivityType.Up)
+                    ?.Point
+                ?? _control.PointToClient(Cursor.Position));
+            _clickTimerFireRightClickAfter = long.MaxValue;
+        }
+        
+        if (_clickTimerFireMiddleClickAfter <= now) {
+            MiddleClick?.Invoke(
+                _activities
+                    .Select(x => (Activity?) x)
+                    .LastOrDefault(x => x!.Value.Button == MouseButtons.Middle && x.Value.Type == ActivityType.Up)
+                    ?.Point
+                ?? _control.PointToClient(Cursor.Position));
+            _clickTimerFireMiddleClickAfter = long.MaxValue;
+        }
+
+        var next = _clickTimerFireLeftClickAfter;
+        next = Math.Min(next, _clickTimerFireRightClickAfter);
+        next = Math.Min(next, _clickTimerFireMiddleClickAfter);
+        if (next == long.MaxValue) {
+            _clickTimer.Enabled = false;
+        } else {
+            _clickTimer.Enabled = true;
+            _clickTimer.Interval = (int) (next - now);
+        }
+    }
 
     public readonly struct Activity {
         public readonly long Tick = Environment.TickCount64;
@@ -337,6 +434,6 @@ public sealed class MouseActivityTracker : IDisposable {
     public delegate void ZoomDelegate(Point origin, int delta);
 
     public delegate void ClickDelegate(Point cursor);
-    
+
     public delegate bool BarrieredClickDelegate(Point cursor, ref bool blockBecomingDoubleClick);
 }

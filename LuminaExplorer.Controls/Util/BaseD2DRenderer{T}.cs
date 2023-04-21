@@ -192,13 +192,112 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
         }
     }
 
+    protected void DrawContrastingText(
+        string @string,
+        Rectangle rectangle,
+        WordWrapping? wordWrapping = null,
+        TextAlignment? textAlignment = null,
+        ParagraphAlignment? paragraphAlignment = null,
+        float opacity = 1,
+        int borderWidth = 2,
+        IDWriteTextFormat* pTextFormat = null,
+        ID2D1Brush* pForeBrush = null,
+        ID2D1Brush* pBackBrush = null) {
+
+        // ReSharper disable once ConvertIfStatementToNullCoalescingAssignment
+        if (pTextFormat is null)
+            pTextFormat = FontTextFormat;
+
+        // ReSharper disable once ConvertIfStatementToNullCoalescingAssignment
+        if (pForeBrush is null)
+            pForeBrush = ForeColorBrush;
+
+        // ReSharper disable once ConvertIfStatementToNullCoalescingAssignment
+        if (pBackBrush is null)
+            pBackBrush = BackColorBrush;
+
+        if (wordWrapping is not null)
+            pTextFormat->SetWordWrapping(wordWrapping.Value);
+
+        if (textAlignment is not null)
+            pTextFormat->SetTextAlignment(textAlignment.Value);
+        
+        if (paragraphAlignment is not null)
+            pTextFormat->SetParagraphAlignment(paragraphAlignment.Value);
+
+        var disposeBrushAfter = false;
+        switch (opacity) {
+            case 0:
+                return;
+            case >= 1:
+                break;
+            default:
+                pBackBrush = CreateSolidColorBrush(Color.FromArgb(
+                    (byte) (BackColor.A * opacity),
+                    BackColor.R,
+                    BackColor.G,
+                    BackColor.B));
+                pForeBrush = CreateSolidColorBrush(Color.FromArgb(
+                    (byte) (ForeColor.A * opacity),
+                    ForeColor.R,
+                    ForeColor.G,
+                    ForeColor.B));
+                disposeBrushAfter = true;
+                break;
+        }
+
+        try {
+            var pRenderTarget = RenderTarget;
+
+            var box = rectangle.ToSilkFloat();
+            fixed (char* pString = @string.AsSpan()) {
+                for (var i = -borderWidth; i <= borderWidth; i++) {
+                    for (var j = -borderWidth; j <= borderWidth; j++) {
+                        if (i == 0 && j == 0)
+                            continue;
+                        box = (rectangle with {X = rectangle.X + i, Y = rectangle.Y + j}).ToSilkFloat();
+                        pRenderTarget->DrawTextA(
+                            pString,
+                            (uint) @string.Length,
+                            (Silk.NET.Direct2D.IDWriteTextFormat*) pTextFormat,
+                            &box,
+                            pBackBrush,
+                            DrawTextOptions.None,
+                            DwriteMeasuringMode.GdiNatural);
+                    }
+                }
+
+                box = rectangle.ToSilkFloat();
+                pRenderTarget->DrawTextA(
+                    pString,
+                    (uint) @string.Length,
+                    (Silk.NET.Direct2D.IDWriteTextFormat*) pTextFormat,
+                    &box,
+                    pForeBrush,
+                    DrawTextOptions.None,
+                    DwriteMeasuringMode.GdiNatural);
+            }
+        } finally {
+            if (disposeBrushAfter) {
+                SafeRelease(ref pBackBrush);
+                SafeRelease(ref pForeBrush);
+            }
+                
+        }
+    }
+
+    protected ID2D1Brush* CreateSolidColorBrush(Color color) {
+        ID2D1Brush* pBrush = null;
+        ThrowH(RenderTarget->CreateSolidColorBrush(
+            new D3Dcolorvalue(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f),
+            null,
+            (ID2D1SolidColorBrush**) &pBrush));
+        return pBrush;
+    }
+
     protected ID2D1Brush* GetOrCreateSolidColorBrush(ref ID2D1Brush* pBrush, Color color) {
         if (pBrush is null)
-            fixed (void* ppBrush = &pBrush)
-                ThrowH(RenderTarget->CreateSolidColorBrush(
-                    new D3Dcolorvalue(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f),
-                    null,
-                    (ID2D1SolidColorBrush**) ppBrush));
+            pBrush = CreateSolidColorBrush(color);
         return pBrush;
     }
 

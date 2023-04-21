@@ -25,7 +25,7 @@ public sealed class PanZoomTracker : IDisposable {
         Control.MarginChanged += ControlOnMarginChanged;
 
         ZoomExponentUnit = Math.Max(1, (1 << 8) * SystemInformation.MouseWheelScrollDelta);
-        ZoomExponentRange = Math.Max(1, ZoomExponentUnit << 8);
+        ZoomExponentRange = Math.Max(1, ZoomExponentUnit << 3);
         ZoomExponentWheelUnit = Math.Max(1, ZoomExponentUnit >> 3);
         ZoomExponentDragUnit = Math.Max(1, ZoomExponentUnit >> 8);
     }
@@ -42,6 +42,10 @@ public sealed class PanZoomTracker : IDisposable {
     public event Action? ViewportChanged;
 
     public Control Control => MouseActivity.Control;
+
+    public int ControlBodyWidth => Control.ClientSize.Width - Control.Margin.Horizontal;
+    
+    public int ControlBodyHeight => Control.ClientSize.Height - Control.Margin.Vertical;
 
     public int ZoomExponentUnit { get; set; }
 
@@ -73,15 +77,16 @@ public sealed class PanZoomTracker : IDisposable {
 
     public float DefaultZoom => Size.IsEmpty
         ? 1f
-        : Size.Width <= Control.Width && Size.Height < Control.Height
+        : Size.Width <= ControlBodyWidth &&
+          Size.Height < ControlBodyHeight - Control.Margin.Vertical
             ? 1f
             : FillingZoom;
 
     public float FillingZoom => Size.IsEmpty
         ? 1f
-        : Control.Width * Size.Height > Size.Width * Control.Height
-            ? 1f * Control.Height / Size.Height
-            : 1f * Control.Width / Size.Width;
+        : ControlBodyWidth * Size.Height > Size.Width * ControlBodyHeight
+            ? 1f * ControlBodyHeight / Size.Height
+            : 1f * ControlBodyWidth / Size.Width;
 
     public Point Pan {
         get => _pan;
@@ -104,8 +109,8 @@ public sealed class PanZoomTracker : IDisposable {
         get {
             var s = EffectiveSize;
             var p = new Point(
-                (Control.Width - s.Width) / 2 + _pan.X,
-                (Control.Height - s.Height) / 2 + _pan.Y);
+                (ControlBodyWidth - s.Width + Control.Margin.Left) / 2 + _pan.X,
+                (ControlBodyHeight - s.Height + Control.Margin.Top) / 2 + _pan.Y);
             return new(p, s);
         }
     }
@@ -137,9 +142,9 @@ public sealed class PanZoomTracker : IDisposable {
         if (value == _zoomExponent)
             return false;
 
-        var old = new Point(
-            (int) ((cursor.X - Control.Width / 2f - Pan.X) / EffectiveZoom),
-            (int) ((cursor.Y - Control.Height / 2f - Pan.Y) / EffectiveZoom));
+        var old = new PointF(
+            (cursor.X - Control.Width / 2f - Pan.X) / EffectiveZoom,
+            (cursor.Y - Control.Height / 2f - Pan.Y) / EffectiveZoom);
 
         _zoomExponent = value;
         if (!UpdatePan(new(
@@ -151,21 +156,11 @@ public sealed class PanZoomTracker : IDisposable {
 
     public bool UpdatePan(Point value) {
         var scaled = EffectiveSize;
-        var xrange = (scaled.Width - Control.Width) / 2;
-        var yrange = (scaled.Height - Control.Height) / 2;
+        var xrange = (scaled.Width - ControlBodyWidth) / 2;
+        var yrange = (scaled.Height - ControlBodyHeight) / 2;
 
-        value.X = scaled.Width <= Control.Width - Control.Margin.Horizontal
-            ? 0
-            : Math.Clamp(
-                value.X,
-                -xrange - Control.Margin.Right,
-                xrange + Control.Margin.Left);
-        value.Y = scaled.Height <= Control.Height - Control.Margin.Vertical
-            ? 0
-            : Math.Clamp(
-                value.Y,
-                -yrange - Control.Margin.Bottom,
-                yrange + Control.Margin.Top);
+        value.X = scaled.Width <= ControlBodyWidth ? 0 : Math.Clamp(value.X, -xrange, xrange);
+        value.Y = scaled.Height <= ControlBodyHeight ? 0 : Math.Clamp(value.Y, -yrange, yrange);
 
         if (value == _pan)
             return false;
@@ -176,7 +171,9 @@ public sealed class PanZoomTracker : IDisposable {
     }
 
     public bool EnforceLimits() =>
-        UpdateZoomExponent(_zoomExponent, new(Control.Width / 2, Control.Height / 2)) ||
+        UpdateZoomExponent(_zoomExponent, new(
+            (ControlBodyWidth + Control.Margin.Left) / 2,
+            (ControlBodyHeight + Control.Margin.Top) / 2)) ||
         UpdatePan(Pan);
 
     private void MouseActivityTrackerOnZoomWheel(Point origin, int delta) {
@@ -235,7 +232,7 @@ public sealed class PanZoomTracker : IDisposable {
             > 1 => EffectiveZoom * 2 < 1 + FillingZoom ? FillingZoom : null,
             _ => null,
         };
-        UpdateZoomExponent(zoom is null ? null : (int)Math.Round(MathF.Log2(zoom.Value) * ZoomExponentUnit), cursor);
+        UpdateZoomExponent(zoom is null ? null : (int) Math.Round(MathF.Log2(zoom.Value) * ZoomExponentUnit), cursor);
     }
 
     private void ControlOnResize(object? sender, EventArgs e) => EnforceLimits();

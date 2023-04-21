@@ -27,6 +27,7 @@ public partial class TexFileViewerControl {
         public Color ForeColor { get; set; }
         public Color BackColor { get; set; }
         public Color BorderColor { get; set; }
+        public float DescriptionOpacity { get; set; }
 
         public bool LoadTexFile(TexFile texFile, int mipIndex, int slice) {
             try {
@@ -101,33 +102,44 @@ public partial class TexFileViewerControl {
                 using (var borderPen = new Pen(Color.LightGray))
                     g.DrawRectangle(borderPen, Rectangle.Inflate(imageRect, 1, 1));
 
-                var stringFormat = new StringFormat {
-                    Alignment = StringAlignment.Far,
-                    LineAlignment = StringAlignment.Far,
-                    Trimming = StringTrimming.None,
-                };
+                if (DescriptionOpacity > 0) {
+                    var stringFormat = new StringFormat {
+                        Alignment = StringAlignment.Far,
+                        LineAlignment = StringAlignment.Far,
+                        Trimming = StringTrimming.None,
+                    };
 
-                var zoomText = $"Zoom {_control.Viewport.EffectiveZoom * 100:0.00}%";
-                for (var i = -2; i <= 2; i++) {
-                    for (var j = -2; j <= 2; j++) {
-                        if (i == 0 && j == 0)
-                            continue;
-                        g.DrawString(
-                            zoomText,
-                            _control.Font,
-                            backBrush,
-                            overlayRect with {X = overlayRect.X + i, Y = overlayRect.Y + j},
-                            stringFormat);
+                    var zoomText = $"Zoom {_control.Viewport.EffectiveZoom * 100:0.00}%";
+                    using var backAlphaBrush = new SolidBrush(Color.FromArgb(
+                        (byte)(BackColor.A * DescriptionOpacity),
+                        BackColor.R,
+                        BackColor.G,
+                        BackColor.B));
+                    for (var i = -2; i <= 2; i++) {
+                        for (var j = -2; j <= 2; j++) {
+                            if (i == 0 && j == 0)
+                                continue;
+                            g.DrawString(
+                                zoomText,
+                                _control.Font,
+                                backAlphaBrush,
+                                overlayRect with {X = overlayRect.X + i, Y = overlayRect.Y + j},
+                                stringFormat);
+                        }
                     }
-                }
 
-                using var foreBrush = new SolidBrush(ForeColor);
-                g.DrawString(
-                    zoomText,
-                    _control.Font,
-                    foreBrush,
-                    overlayRect,
-                    stringFormat);
+                    using var foreAlphaBrush = new SolidBrush(Color.FromArgb(
+                        (byte)(ForeColor.A * DescriptionOpacity),
+                        ForeColor.R,
+                        ForeColor.G,
+                        ForeColor.B));
+                    g.DrawString(
+                        zoomText,
+                        _control.Font,
+                        foreAlphaBrush,
+                        overlayRect,
+                        stringFormat);
+                }
 
                 buffer.Render();
                 return true;

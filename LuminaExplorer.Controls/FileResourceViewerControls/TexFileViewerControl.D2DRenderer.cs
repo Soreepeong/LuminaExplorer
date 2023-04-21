@@ -1,10 +1,10 @@
+using System.Text;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.Util;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.DirectWrite;
 using Silk.NET.Maths;
-using IDWriteTextFormat = Silk.NET.Direct2D.IDWriteTextFormat;
 using Rectangle = System.Drawing.Rectangle;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
@@ -15,6 +15,9 @@ public partial class TexFileViewerControl {
         private ID2D1Bitmap* _pBitmap;
         private ID2D1Brush* _pBorderColorBrush;
         private Color _borderColor;
+
+        private string? _descriptionText;
+        private float _descriptionTextSourceZoom;
 
         public D2DRenderer(TexFileViewerControl control) : base(control) {
             BorderColor = Color.LightGray;
@@ -34,15 +37,76 @@ public partial class TexFileViewerControl {
             }
         }
 
+        public float DescriptionOpacity { get; set; }
+
         private ID2D1Brush* BorderColorBrush => GetOrCreateSolidColorBrush(ref _pBorderColorBrush, BorderColor);
 
         private ID2D1Bitmap* Bitmap => GetOrCreateFromWicBitmap(ref _pBitmap, _wicBitmap);
 
         protected override void Dispose(bool disposing) {
+            Reset();
             SafeRelease(ref _pBorderColorBrush);
-            SafeRelease(ref _pBitmap);
             _wicBitmap?.Dispose();
             _wicBitmap = null;
+        }
+
+        private string DescriptionText {
+            get {
+                var effectiveZoom = Control.Viewport.EffectiveZoom;
+                if (_descriptionText is not null && Equals(effectiveZoom, _descriptionTextSourceZoom))
+                    return _descriptionText;
+                if (Control.File is not { } file ||
+                    Control.Tree is not { } tree ||
+                    Control.FileResourceTyped is not { } texFile)
+                    return "";
+
+                _descriptionTextSourceZoom = effectiveZoom;
+
+                var sb = new StringBuilder();
+                sb.AppendLine(tree.GetFullPath(file));
+                sb.Append(texFile.Header.Format).Append("; ")
+                    .Append($"{texFile.Data.Length:##,###} Bytes");
+                if (texFile.Header.MipLevels > 1)
+                    sb.Append("; ").Append(texFile.Header.MipLevels).Append(" mipmaps");
+                sb.AppendLine();
+                if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType1D))
+                    sb.Append("1D: ").Append(texFile.Header.Width);
+                if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType2D))
+                    sb.Append("2D: ").Append(texFile.Header.Width)
+                        .Append(" x ").Append(texFile.Header.Height);
+                if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType3D))
+                    sb.Append("3D: ").Append(texFile.Header.Width)
+                        .Append(" x ").Append(texFile.Header.Height)
+                        .Append(" x ").Append(texFile.Header.Depth);
+                if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureTypeCube))
+                    sb.Append("Cube: ").Append(texFile.Header.Width)
+                        .Append(" x ").Append(texFile.Header.Height);
+                if (!Equals(effectiveZoom, 1f))
+                    sb.Append($" ({effectiveZoom * 100:0.00}%)");
+                sb.AppendLine();
+                foreach (var f in new[] {
+                             TexFile.Attribute.DiscardPerFrame,
+                             TexFile.Attribute.DiscardPerMap,
+                             TexFile.Attribute.Managed,
+                             TexFile.Attribute.UserManaged,
+                             TexFile.Attribute.CpuRead,
+                             TexFile.Attribute.LocationMain,
+                             TexFile.Attribute.NoGpuRead,
+                             TexFile.Attribute.AlignedSize,
+                             TexFile.Attribute.EdgeCulling,
+                             TexFile.Attribute.LocationOnion,
+                             TexFile.Attribute.ReadWrite,
+                             TexFile.Attribute.Immutable,
+                             TexFile.Attribute.TextureRenderTarget,
+                             TexFile.Attribute.TextureDepthStencil,
+                             TexFile.Attribute.TextureSwizzle,
+                             TexFile.Attribute.TextureNoTiled,
+                             TexFile.Attribute.TextureNoSwizzle
+                         })
+                    if (texFile.Header.Type.HasFlag(f))
+                        sb.Append("+ ").AppendLine(f.ToString());
+                return _descriptionText = sb.ToString();
+            }
         }
 
         public bool LoadTexFile(TexFile texFile, int mipIndex, int slice) {
@@ -59,6 +123,8 @@ public partial class TexFileViewerControl {
                 (_wicBitmap, wicBitmap) = (wicBitmap, _wicBitmap);
                 SafeRelease(ref _pBitmap);
 
+                _descriptionText = null;
+
                 return true;
             } catch (Exception e) {
                 LastException = e;
@@ -72,6 +138,7 @@ public partial class TexFileViewerControl {
         public void Reset() {
             SafeRelease(ref _pBitmap);
             Size = new();
+            _descriptionText = null;
         }
 
         protected override void DrawInternal() {
@@ -119,39 +186,14 @@ public partial class TexFileViewerControl {
                 1f, // stroke width
                 null);
 
-            var pTextFormat = FontTextFormat;
-            pTextFormat->SetTextAlignment(TextAlignment.Trailing);
-            pTextFormat->SetParagraphAlignment(ParagraphAlignment.Far);
-
-            var zoomText = $"Zoom {Control.Viewport.EffectiveZoom * 100:0.00}%";
-            box = overlayRect.ToSilkFloat();
-            for (var i = -2; i <= 2; i++) {
-                for (var j = -2; j <= 2; j++) {
-                    if (i == 0 && j == 0)
-                        continue;
-                    box = (overlayRect with {X = overlayRect.X + i, Y = overlayRect.Y + j}).ToSilkFloat();
-                    fixed (char* v = zoomText.AsSpan())
-                        pRenderTarget->DrawTextA(
-                            v,
-                            (uint) zoomText.Length,
-                            (IDWriteTextFormat*) pTextFormat,
-                            &box,
-                            BackColorBrush,
-                            DrawTextOptions.None,
-                            DwriteMeasuringMode.GdiNatural);
-                }
-            }
-
-            box = overlayRect.ToSilkFloat();
-            fixed (char* v = zoomText.AsSpan())
-                pRenderTarget->DrawTextA(
-                    v,
-                    (uint) zoomText.Length,
-                    (IDWriteTextFormat*) pTextFormat,
-                    &box,
-                    ForeColorBrush,
-                    DrawTextOptions.None,
-                    DwriteMeasuringMode.GdiNatural);
+            DrawContrastingText(
+                DescriptionText,
+                overlayRect,
+                opacity: DescriptionOpacity,
+                wordWrapping: WordWrapping.EmergencyBreak,
+                textAlignment: TextAlignment.Leading,
+                paragraphAlignment: ParagraphAlignment.Near
+            );
         }
     }
 }
