@@ -3,6 +3,7 @@ using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using Silk.NET.Direct2D;
 using Silk.NET.DirectWrite;
+using Silk.NET.Maths;
 using Rectangle = System.Drawing.Rectangle;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
@@ -17,6 +18,7 @@ public partial class TexFileViewerControl {
         private ID2D1Brush* _pBorderColorBrush;
         private ID2D1Brush* _pTransparencyCellColor1Brush;
         private ID2D1Brush* _pTransparencyCellColor2Brush;
+        private ID2D1Brush* _pPixelGridLineColorBrush;
 
         private CancellationTokenSource? _loadCancellationTokenSource;
 
@@ -26,6 +28,7 @@ public partial class TexFileViewerControl {
             Control.BorderColorChanged += ControlOnBorderColorChanged;
             Control.TransparencyCellColor1Changed += ControlOnTransparencyCellColor1Changed;
             Control.TransparencyCellColor2Changed += ControlOnTransparencyCellColor2Changed;
+            Control.PixelGridLineColorChanged += ControlOnPixelGridLineColorChanged;
         }
 
         protected override void Dispose(bool disposing) {
@@ -35,6 +38,7 @@ public partial class TexFileViewerControl {
                 Control.BorderColorChanged -= ControlOnBorderColorChanged;
                 Control.TransparencyCellColor1Changed -= ControlOnTransparencyCellColor1Changed;
                 Control.TransparencyCellColor2Changed -= ControlOnTransparencyCellColor2Changed;
+                Control.PixelGridLineColorChanged -= ControlOnPixelGridLineColorChanged;
             }
 
             Reset();
@@ -43,6 +47,9 @@ public partial class TexFileViewerControl {
             SafeRelease(ref _pBorderColorBrush);
             SafeRelease(ref _pTransparencyCellColor1Brush);
             SafeRelease(ref _pTransparencyCellColor2Brush);
+            SafeRelease(ref _pPixelGridLineColorBrush);
+            
+            base.Dispose(disposing);
         }
 
         public bool HasNondisposedBitmap => _wicBitmaps.Any() && _wicBitmaps.Any(x => x is not null);
@@ -65,6 +72,9 @@ public partial class TexFileViewerControl {
 
         private ID2D1Brush* TransparencyCellColor2Brush =>
             GetOrCreateSolidColorBrush(ref _pTransparencyCellColor2Brush, Control.TransparencyCellColor2);
+
+        private ID2D1Brush* PixelGridLineColorBrush =>
+            GetOrCreateSolidColorBrush(ref _pPixelGridLineColorBrush, Control.PixelGridLineColor);
 
         private ID2D1Bitmap* GetBitmapAt(int slice) {
             if (slice >= _wicBitmaps.Length)
@@ -153,7 +163,7 @@ public partial class TexFileViewerControl {
         protected override void DrawInternal() {
             var pRenderTarget = RenderTarget;
 
-            var imageRect = Control.Viewport.EffectiveRect;
+            var imageRect = Rectangle.Truncate(Control.Viewport.EffectiveRect);
             var clientSize = Control.ClientSize;
             var overlayRect = new Rectangle(
                 Control.Padding.Left + Control.Margin.Left,
@@ -176,17 +186,17 @@ public partial class TexFileViewerControl {
 
             // 1. Draw transparency grids
             for (var i = 0; i < _wicBitmaps.Length; i++) {
-                var cellRectF = layout.RectOf(i, imageRect);
+                var cellRect = layout.RectOf(i, imageRect);
                 if (Control.ShouldDrawTransparencyGrid(
-                        cellRectF,
+                        cellRect,
                         Control.ClientRectangle,
                         out var multiplier,
                         out var minX,
                         out var minY,
                         out var dx,
                         out var dy)) {
-                    var yLim = Math.Min(cellRectF.Bottom, clientSize.Height);
-                    var xLim = Math.Min(cellRectF.Right, clientSize.Width);
+                    var yLim = Math.Min(cellRect.Bottom, clientSize.Height);
+                    var xLim = Math.Min(cellRect.Right, clientSize.Width);
                     TransparencyCellColor1Brush->SetOpacity(1f);
                     TransparencyCellColor2Brush->SetOpacity(1f);
                     for (var y = minY;; y++) {
@@ -214,10 +224,8 @@ public partial class TexFileViewerControl {
             // 2. Draw cell borders
             if (Control.ContentBorderWidth > 0) {
                 for (var i = 0; i < _wicBitmaps.Length; i++) {
-                    var cellRectF = layout.RectOf(i, imageRect);
-
                     box = RectangleF.Inflate(
-                        cellRectF,
+                        layout.RectOf(i, imageRect),
                         Control.ContentBorderWidth / 2f,
                         Control.ContentBorderWidth / 2f).ToSilkFloat();
                     pRenderTarget->DrawRectangle(&box, ContentBorderColorBrush, Control.ContentBorderWidth, null);
@@ -226,12 +234,10 @@ public partial class TexFileViewerControl {
 
             // 3. Draw bitmaps
             for (var i = 0; i < _wicBitmaps.Length; i++) {
-                var cellRectF = layout.RectOf(i, imageRect);
-
-                box = cellRectF.ToSilkFloat();
+                box = layout.RectOf(i, imageRect).ToSilkFloat();
                 pRenderTarget->DrawBitmap(
                     GetBitmapAt(i),
-                    box,
+                    &box,
                     1f, // opacity
                     Control.NearestNeighborMinimumZoom <= Control.Viewport.EffectiveZoom
                         ? BitmapInterpolationMode.NearestNeighbor
@@ -241,7 +247,29 @@ public partial class TexFileViewerControl {
             
             // 4. Draw pixel grids
             if (Control.PixelGridMinimumZoom <= Control.Viewport.EffectiveZoom) {
-                // TODO
+                var p1 = new Vector2D<float>();
+                var p2 = new Vector2D<float>();
+                
+                for (var i = 0; i < _wicBitmaps.Length; i++) {
+                    var cellRectUnscaled = layout.RectOf(i);
+                    var cellRect = layout.RectOf(i, imageRect);
+
+                    p1.X = cellRect.Left + 0.5f;
+                    p2.X = cellRect.Right - 0.5f;
+                    for (var j = cellRectUnscaled.Height - 1; j >= 0; j--) {
+                        var y = cellRect.Top + j * cellRect.Height / cellRectUnscaled.Height;
+                        p1.Y = p2.Y = y + 0.5f;
+                        pRenderTarget->DrawLine(p1, p2, PixelGridLineColorBrush, 1f, null);
+                    }
+                    
+                    p1.Y = cellRect.Top + 0.5f;
+                    p2.Y = cellRect.Bottom - 0.5f;
+                    for (var j = cellRectUnscaled.Width - 1; j >= 0; j--) {
+                        var x = cellRect.Left + j * cellRect.Width / cellRectUnscaled.Width;
+                        p1.X = p2.X = x + 0.5f;
+                        pRenderTarget->DrawLine(p1, p2, PixelGridLineColorBrush, 1f, null);
+                    }
+                }
             }
 
             DrawText(
@@ -293,5 +321,8 @@ public partial class TexFileViewerControl {
 
         private void ControlOnTransparencyCellColor2Changed(object? sender, EventArgs e) =>
             SafeRelease(ref _pTransparencyCellColor2Brush);
+
+        private void ControlOnPixelGridLineColorChanged(object? sender, EventArgs e) =>
+            SafeRelease(ref _pPixelGridLineColorBrush);
     }
 }

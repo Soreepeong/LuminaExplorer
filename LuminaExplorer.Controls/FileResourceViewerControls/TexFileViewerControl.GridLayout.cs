@@ -22,7 +22,7 @@ public partial class TexFileViewerControl {
 
         public Rectangle RectOf(int cellIndex);
 
-        public RectangleF ScaledRectOf(int cellIndex) {
+        public RectangleF ScaleOf(int cellIndex) {
             var k = RectOf(cellIndex);
             return new(
                 1f * k.X / GridSize.Width,
@@ -31,13 +31,13 @@ public partial class TexFileViewerControl {
                 1f * k.Height / GridSize.Height);
         }
 
-        public RectangleF RectOf(int cellIndex, RectangleF actualGridRect) {
-            var scaledRect = ScaledRectOf(cellIndex);
+        public Rectangle RectOf(int cellIndex, Rectangle actualGridRect) {
+            var scaledRect = ScaleOf(cellIndex);
             return new(
-                actualGridRect.X + scaledRect.Left * actualGridRect.Width,
-                actualGridRect.Y + scaledRect.Top * actualGridRect.Height,
-                scaledRect.Width * actualGridRect.Width,
-                scaledRect.Height * actualGridRect.Height);
+                (int)(actualGridRect.X + scaledRect.Left * actualGridRect.Width),
+                (int)(actualGridRect.Y + scaledRect.Top * actualGridRect.Height),
+                (int)(scaledRect.Width * actualGridRect.Width),
+                (int)(scaledRect.Height * actualGridRect.Height));
         }
     }
 

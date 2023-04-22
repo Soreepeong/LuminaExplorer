@@ -49,6 +49,8 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
         SafeRelease(ref _pD3dContext);
         SafeRelease(ref _pRenderTarget);
         SafeRelease(ref _pDxgiSurface);
+        
+        base.Dispose(disposing);
     }
 
     public T Control { get; }

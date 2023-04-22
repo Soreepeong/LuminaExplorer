@@ -29,6 +29,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     private Color _transparencyCellColor2 = Color.LightGray;
     private int _transparencyCellSize = 8;
     private float _nearestNeighborMinimumZoom = 2f;
+    private Color _pixelGridLineColor = Color.LightGray.MultiplyOpacity(0.5f);
     private float _pixelGridMinimumZoom = 5f;
     private float _loadingBackgroundOverlayOpacity = 0.3f;
     private Size _sliceSpacing = new(16, 16);
@@ -103,9 +104,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     public event EventHandler? TransparencyCellColor2Changed;
 
-    public event EventHandler? SliceSpacingChanged;
-
-    public event EventHandler? ImageLoadedForDisplay;
+    public event EventHandler? PixelGridLineColorChanged;
 
     public string? LoadingFileNameWhenEmpty {
         get => _loadingFileNameWhenEmpty;
@@ -217,7 +216,17 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         }
     }
 
-    // TODO
+    public Color PixelGridLineColor {
+        get => _pixelGridLineColor;
+        set {
+            if (_pixelGridLineColor == value)
+                return;
+            _pixelGridLineColor = value;
+            PixelGridLineColorChanged?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+        }
+    }
+
     public float PixelGridMinimumZoom {
         get => _pixelGridMinimumZoom;
         set {
@@ -235,7 +244,6 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                 return;
             
             _sliceSpacing = value;
-            SliceSpacingChanged?.Invoke(this, EventArgs.Empty);
             Viewport.Size = CreateGridLayout(_currentMipmap).GridSize;
             Invalidate();
             
@@ -467,12 +475,9 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                     if (FileResourceTyped is { } fr) {
                         MouseActivity.Enabled = false;
                         r.LoadTexFileAsync(fr, _currentMipmap)
-                            .ContinueWith(res => {
+                            .ContinueWith(_ => {
                                 MouseActivity.Enabled = true;
                                 Viewport.Reset(r.ImageSize);
-
-                                if (res.IsCompletedSuccessfully)
-                                    ImageLoadedForDisplay?.Invoke(this, EventArgs.Empty);
 
                                 ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
                                 Invalidate();
