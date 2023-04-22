@@ -58,8 +58,8 @@ public partial class TextureViewer : Form {
 
             _isFullScreen = value;
             if (!value) {
-                FormBorderStyle = _nonFullScreenBorderStyle;
                 ControlBox = _nonFullScreenControlBox;
+                FormBorderStyle = _nonFullScreenBorderStyle;
                 WindowState = _nonFullScreenWindowState;
                 Size = _nonFullScreenSize;
             } else {
@@ -77,17 +77,52 @@ public partial class TextureViewer : Form {
         }
     }
 
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData) {
+        switch (keyData) {
+            case Keys.S | Keys.Control: // TODO: Save
+                return true;
+            default:
+                return base.ProcessCmdKey(ref msg, keyData);
+        }
+    }
+
     private void TexViewerOnMouseDown(object? sender, MouseEventArgs e) {
         TexViewer.Focus();
     }
 
     private void TexViewerOnKeyDown(object? sender, KeyEventArgs e) {
         switch (e.KeyCode) {
+            case Keys.C when e.Control: // TODO: Copy
+                break;
+            case Keys.Multiply:
+            case Keys.D8 when e.Shift: // TODO: zoom 100%
+                break;
+            case Keys.Oemplus when e.Control: // TODO: zoom +1%
+                break;
+            case Keys.Oemplus: // TODO: zoom +10%
+                break;
+            case Keys.OemMinus when e.Control: // TODO: zoom -1% 
+                break;
+            case Keys.OemMinus: // TODO: zoom -10%
+                break;
+            case Keys.Up when e.Alt: // TODO: 0deg rotate
+                break;
+            case Keys.Right when e.Alt: // TODO: 90deg cw rotate
+                break;
+            case Keys.Down when e.Alt: // TODO: 180deg rotate
+                break;
+            case Keys.Left when e.Alt: // TODO: 90deg ccw rotate
+                break;
+            case Keys.D9:
             case Keys.D1: // TODO: set default zoom to fit in window
                 break;
-            case Keys.Z: // TODO: above + stretch to fit
+            case Keys.D8: // TODO: set default zoom to fit width
                 break;
-            case Keys.D0: // TODO: zoom to 100%
+            case Keys.D7: // TODO: set default zoom to fit height
+                break;
+            case Keys.Z: // TODO: above + stretch to fit; if already was then disable stretch to fit
+                break;
+            case Keys.D0: // TODO: set default zoom to 100%
                 break;
             case Keys.T: // TODO: Toggle alpha channel; independent from below
                 break;
@@ -98,18 +133,6 @@ public partial class TextureViewer : Form {
             case Keys.B: // TODO: toggle B-only mode
                 break;
             case Keys.A: // TODO: toggle A-only mode
-                break;
-            case Keys.Oemplus: // TODO: zoom in
-                break;
-            case Keys.OemMinus: // TODO: zoom out 
-                break;
-            case Keys.Up when e.Alt: // TODO: 0deg rotate
-                break;
-            case Keys.Right when e.Alt: // TODO: 90deg cw rotate
-                break;
-            case Keys.Down when e.Alt: // TODO: 180deg rotate
-                break;
-            case Keys.Left when e.Alt: // TODO: 90deg ccw rotate
                 break;
             case Keys.Enter:
                 IsFullScreen = !IsFullScreen;
