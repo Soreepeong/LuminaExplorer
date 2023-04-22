@@ -60,6 +60,9 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
 
     public Task<FileResource> AsFileResource(CancellationToken cancellationToken = default) =>
         Core.AsFileResource(cancellationToken);
+    
+    public Task<T> AsFileResource<T>(CancellationToken cancellationToken = default) where T : FileResource =>
+        Core.AsFileResource<T>(cancellationToken);
 
     private class VirtualFileLookupCore {
         private int _refcount = 1;
@@ -170,6 +173,24 @@ public sealed class VirtualFileLookup : ICloneable, IDisposable {
                 !.Invoke(file, null);
             return file;
         }
+
+        public Task<T> AsFileResource<T>(CancellationToken cancellationToken = default) where T : FileResource =>
+            Task.Factory.StartNew(
+                () => ReadAll(cancellationToken)
+                    .ContinueWith(buffer => {
+                        var reader = new LuminaBinaryReader(buffer.Result, _tree.PlatformId);
+                        try {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            return (T) AsFileResourceImpl(reader.WithSeek(0), buffer.Result, typeof(T));
+                        } catch(Exception) {
+                            reader.Dispose();
+                            throw;
+                        }
+                    }, cancellationToken),
+                cancellationToken,
+                TaskCreationOptions.None,
+                TaskScheduler.Default
+            ).Unwrap();
 
         public Task<FileResource> AsFileResource(CancellationToken cancellationToken = default) =>
             Task.Factory.StartNew(

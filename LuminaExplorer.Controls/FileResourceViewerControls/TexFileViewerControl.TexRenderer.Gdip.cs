@@ -119,7 +119,7 @@ public partial class TexFileViewerControl {
                 using (var backBrush = new SolidBrush(Control.BackColorWhenLoaded))
                     g.FillRectangle(backBrush, new(new(), Control.ClientSize));
 
-                var imageRect = Rectangle.Truncate(Control.Viewport.EffectiveRect);
+                var imageRect = Control.Viewport.EffectiveRect;
                 var clientSize = Control.ClientSize;
                 var overlayRect = new Rectangle(
                     Control.Padding.Left + Control.Margin.Left,
@@ -133,7 +133,7 @@ public partial class TexFileViewerControl {
 
                 // 1. Draw transparency grids
                 for (var i = 0; i < _bitmaps.Length; i++) {
-                    var cellRect = Rectangle.Truncate(layout.RectOf(i, imageRect));
+                    var cellRect = layout.RectOf(i, imageRect);
 
                     if (Control.ShouldDrawTransparencyGrid(
                             cellRect,
@@ -147,7 +147,7 @@ public partial class TexFileViewerControl {
                         using var cellBrush2 = new SolidBrush(Control.TransparencyCellColor2);
                         var yLim = Math.Min(cellRect.Bottom, e.ClipRectangle.Bottom);
                         var xLim = Math.Min(cellRect.Right, e.ClipRectangle.Right);
-                        var rc = new Rectangle();
+                        var rc = new RectangleF();
                         for (var y = minY;; y++) {
                             rc.Y = y * multiplier + dy;
                             rc.Height = Math.Min(multiplier, yLim - rc.Y);
@@ -167,11 +167,14 @@ public partial class TexFileViewerControl {
                 }
 
                 // 2. Draw cell borders
-                using (var borderPen = new Pen(Control.ContentBorderColor, Control.ContentBorderWidth)) {
+                var contentBorderWidth = Control._contentBorderWidth;
+                if (contentBorderWidth > 0) {
+                    using var borderPen = new Pen(Control.ContentBorderColor, Control.ContentBorderWidth);
                     for (var i = 0; i < _bitmaps.Length; i++) {
-                        var cellRect = Rectangle.Truncate(layout.RectOf(i, imageRect));
-                        if (Control.ContentBorderWidth > 0)
-                            g.DrawRectangle(borderPen, Rectangle.Inflate(cellRect, 1, 1));
+                        g.DrawRectangle(borderPen, RectangleF.Inflate(
+                            layout.RectOf(i, imageRect),
+                            contentBorderWidth / 2f,
+                            contentBorderWidth / 2f));
                     }
                 }
 
@@ -183,36 +186,10 @@ public partial class TexFileViewerControl {
                         continue;
                     }
 
-                    g.DrawImage(bitmap, Rectangle.Truncate(layout.RectOf(i, imageRect)));
+                    g.DrawImage(bitmap, layout.RectOf(i, imageRect));
                 }
 
-                // 4. Draw pixel grids
-                if (Control.PixelGridMinimumZoom <= Control.Viewport.EffectiveZoom) {
-                    var p1 = new Point();
-                    var p2 = new Point();
-
-                    using var pen = new Pen(Control.PixelGridLineColor);
-                    for (var i = 0; i < _bitmaps.Length; i++) {
-                        var rectF = layout.RectOf(i);
-                        var cellRect = layout.RectOf(i, imageRect);
-
-                        p1.X = cellRect.Left;
-                        p2.X = cellRect.Right;
-                        for (var j = rectF.Height - 1; j >= 0; j--) {
-                            var y = cellRect.Top + j * cellRect.Height / rectF.Height;
-                            p1.Y = p2.Y = y;
-                            g.DrawLine(pen, p1, p2);
-                        }
-                    
-                        p1.Y = cellRect.Top;
-                        p2.Y = cellRect.Bottom;
-                        for (var j = rectF.Width - 1; j >= 0; j--) {
-                            var x = cellRect.Left + j * cellRect.Width / rectF.Width;
-                            p1.X = p2.X = x;
-                            g.DrawLine(pen, p1, p2);
-                        }
-                    }
-                }
+                // skip pixel grid for gdip mode
 
                 DrawText(
                     g,
@@ -226,21 +203,44 @@ public partial class TexFileViewerControl {
                     Control.AutoDescriptionOpacity,
                     2);
 
-                if (State == ITexRenderer.LoadState.Loading) {
-                    using var backBrush = new SolidBrush(
-                        Control.BackColor.MultiplyOpacity(Control.LoadingBackgroundOverlayOpacity));
-                    g.FillRectangle(backBrush, new(new(), Control.ClientSize));
+                var overlayString = Control.OverlayString;
+                var overlayOpacity = Control.OverlayOpacity;
+                if (string.IsNullOrWhiteSpace(overlayString) || overlayOpacity == 0) {
+                    if (State is ITexRenderer.LoadState.Loading or ITexRenderer.LoadState.Empty) {
+                        if (!Control.IsLoadingBoxDelayed) {
+                            overlayString = Control.LoadingText;
+                            overlayOpacity = Control.OverlayBackgroundOpacity;
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(overlayString) && overlayOpacity > 0) {
+                    using var stringFormat = new StringFormat {
+                        Alignment = StringAlignment.Center,
+                        LineAlignment = StringAlignment.Center,
+                        Trimming = StringTrimming.None,
+                    };
+
+                    var size = g.MeasureString(overlayString, Control.Font, Control.ClientSize, stringFormat);
+                    var box = new Rectangle(
+                        Control.ClientSize.Width / 2 - (int) size.Width / 2 - 32,
+                        Control.ClientSize.Height / 2 - (int) size.Height / 2 - 32,
+                        (int) size.Width + 64,
+                        (int) size.Height + 64);
+
+                    using var backBrush = new SolidBrush(Control.BackColor.MultiplyOpacity(overlayOpacity));
+                    g.FillRectangle(backBrush, box);
 
                     DrawText(
                         g,
-                        Control.LoadingText,
-                        overlayRect,
+                        overlayString,
+                        box,
                         StringAlignment.Center,
                         StringAlignment.Center,
                         Control.Font,
                         Control.ForeColor,
                         Control.BackColor,
-                        1f,
+                        overlayOpacity,
                         2);
                 }
 

@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.Direct3D11;
@@ -164,6 +166,50 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
         } catch (Exception e) {
             LastException = e;
             return false;
+        }
+    }
+
+    protected IDWriteTextLayout* LayoutText(
+        out TextMetrics metrics,
+        string? @string,
+        Rectangle rectangle,
+        WordWrapping? wordWrapping = null,
+        TextAlignment? textAlignment = null,
+        ParagraphAlignment? paragraphAlignment = null,
+        IDWriteTextFormat* textFormat = null) {
+        // ReSharper disable once ConvertIfStatementToNullCoalescingAssignment
+        if (textFormat is null)
+            textFormat = FontTextFormat;
+
+        if (wordWrapping is not null)
+            textFormat->SetWordWrapping(wordWrapping.Value);
+
+        if (textAlignment is not null)
+            textFormat->SetTextAlignment(textAlignment.Value);
+
+        if (paragraphAlignment is not null)
+            textFormat->SetParagraphAlignment(paragraphAlignment.Value);
+
+        IDWriteTextLayout* layout = null;
+        fixed (char* c = (string.IsNullOrEmpty(@string) ? "\0" : @string).AsSpan())
+            ThrowH(DWriteFactory->CreateTextLayout(
+                c,
+                (uint) (string.IsNullOrEmpty(@string) ? 0 : @string.Length),
+                textFormat,
+                1f * rectangle.Width,
+                1f * rectangle.Height,
+                &layout));
+        try {
+            fixed (TextMetrics* ptm = &metrics) {
+                // ThrowH(layout->GetMetrics(ptm));
+                ThrowH(((delegate* unmanaged[Stdcall]<IDWriteTextLayout*, TextMetrics*, int>) layout->LpVtbl[60])(layout, ptm));
+            }
+
+            var layoutCopy = layout;
+            layout = null;
+            return layoutCopy;
+        } finally {
+            SafeRelease(ref layout);
         }
     }
 

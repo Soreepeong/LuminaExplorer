@@ -69,6 +69,8 @@ public partial class Explorer {
             set => _previewCache.CropThresholdAspectRatioRatio = value;
         }
 
+        public IReadOnlyList<VirtualObject> ObjectList => _objects;
+
         public InterpolationMode PreviewInterpolationMode {
             get => _previewCache.InterpolationMode;
             set => _previewCache.InterpolationMode = value;

@@ -48,7 +48,7 @@ public partial class TexFileViewerControl {
             SafeRelease(ref _pTransparencyCellColor1Brush);
             SafeRelease(ref _pTransparencyCellColor2Brush);
             SafeRelease(ref _pPixelGridLineColorBrush);
-            
+
             base.Dispose(disposing);
         }
 
@@ -199,13 +199,13 @@ public partial class TexFileViewerControl {
                     var xLim = Math.Min(cellRect.Right, clientSize.Width);
                     TransparencyCellColor1Brush->SetOpacity(1f);
                     TransparencyCellColor2Brush->SetOpacity(1f);
-                    for (var y = minY;; y++) {
+                    for (var y = minY; ; y++) {
                         box.Min.Y = y * multiplier + dy;
                         box.Max.Y = box.Min.Y + Math.Min(multiplier, yLim - box.Min.Y);
                         if (box.Min.Y >= box.Max.Y)
                             break;
 
-                        for (var x = minX;; x++) {
+                        for (var x = minX; ; x++) {
                             box.Min.X = x * multiplier + dx;
                             box.Max.X = box.Min.X + Math.Min(multiplier, xLim - box.Min.X);
                             if (box.Min.X >= box.Max.X)
@@ -244,12 +244,12 @@ public partial class TexFileViewerControl {
                         : BitmapInterpolationMode.Linear,
                     null);
             }
-            
+
             // 4. Draw pixel grids
             if (Control.PixelGridMinimumZoom <= Control.Viewport.EffectiveZoom) {
                 var p1 = new Vector2D<float>();
                 var p2 = new Vector2D<float>();
-                
+
                 for (var i = 0; i < _wicBitmaps.Length; i++) {
                     var cellRectUnscaled = layout.RectOf(i);
                     var cellRect = layout.RectOf(i, imageRect);
@@ -261,7 +261,7 @@ public partial class TexFileViewerControl {
                         p1.Y = p2.Y = y + 0.5f;
                         pRenderTarget->DrawLine(p1, p2, PixelGridLineColorBrush, 1f, null);
                     }
-                    
+
                     p1.Y = cellRect.Top + 0.5f;
                     p2.Y = cellRect.Bottom - 0.5f;
                     for (var j = cellRectUnscaled.Width - 1; j >= 0; j--) {
@@ -283,20 +283,60 @@ public partial class TexFileViewerControl {
                 opacity: Control.AutoDescriptionOpacity,
                 borderWidth: 2);
 
-            if (State is ITexRenderer.LoadState.Loading or ITexRenderer.LoadState.Empty) {
+            var overlayString = Control.OverlayString;
+            var overlayOpacity = Control.OverlayOpacity;
+            if (string.IsNullOrWhiteSpace(overlayString) || overlayOpacity == 0) {
+                if (State is ITexRenderer.LoadState.Loading or ITexRenderer.LoadState.Empty) {
+                    if (!Control.IsLoadingBoxDelayed) {
+                        overlayString = Control.LoadingText;
+                        overlayOpacity = Control.OverlayBackgroundOpacity;
+                    }
+                }
+            }
+            
+            if (!string.IsNullOrWhiteSpace(overlayString) && overlayOpacity > 0) {
                 box = Control.ClientRectangle.ToSilkFloat();
-                BackColorBrush->SetOpacity(Control.LoadingBackgroundOverlayOpacity);
-                pRenderTarget->FillRectangle(&box, BackColorBrush);
+                var textLayout = LayoutText(
+                    out var metrics,
+                    overlayString,
+                    Control.ClientRectangle,
+                    WordWrapping.EmergencyBreak,
+                    TextAlignment.Center,
+                    ParagraphAlignment.Center,
+                    FontTextFormat);
+                box = new(
+                    metrics.Left - 32,
+                    metrics.Top - 32,
+                    metrics.Left + metrics.Width + 32,
+                    metrics.Top + metrics.Height + 32);
 
-                DrawText(
-                    Control.LoadingText,
-                    overlayRect,
-                    wordWrapping: WordWrapping.EmergencyBreak,
-                    textAlignment: TextAlignment.Center,
-                    paragraphAlignment: ParagraphAlignment.Center,
-                    textBrush: ForeColorBrush,
-                    shadowBrush: BackColorBrush,
-                    borderWidth: 2);
+                try {
+                    BackColorBrush->SetOpacity(overlayOpacity);
+                    ForeColorBrush->SetOpacity(overlayOpacity);
+                    
+                    pRenderTarget->FillRectangle(&box, BackColorBrush);
+
+                    for (var i = -2; i <= 2; i++) {
+                        for (var j = -2; j <= 2; j++) {
+                            if (i == 0 && j == 0)
+                                continue;
+
+                            pRenderTarget->DrawTextLayout(
+                                new(i, j),
+                                (Silk.NET.Direct2D.IDWriteTextLayout*) textLayout,
+                                BackColorBrush,
+                                DrawTextOptions.None);
+                        }
+                    }
+
+                    pRenderTarget->DrawTextLayout(
+                        new(),
+                        (Silk.NET.Direct2D.IDWriteTextLayout*) textLayout,
+                        ForeColorBrush,
+                        DrawTextOptions.None);
+                } finally {
+                    SafeRelease(ref textLayout);
+                }
             }
         }
 

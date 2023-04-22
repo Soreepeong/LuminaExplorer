@@ -324,11 +324,11 @@ public partial class Explorer {
                 return;
             }
 
-            if (!folders.Any() && files.Count == 1) {
-                var file = files.First();
+            if (_tree is not { } tree)
+                return;
+            
+            foreach (var file in files.Take(16)) {
                 Task<FileResource> fileResourceTask;
-                if (_tree is not { } tree)
-                    return;
                 if (_explorer._previewHandler is { } previewHandler &&
                     previewHandler.TryGetAvailableFileResource(file, out var fileResource))
                     fileResourceTask = Task.FromResult(fileResource);
@@ -346,11 +346,15 @@ public partial class Explorer {
 
                     if (fr.Result is TexFile texFile) {
                         var viewer = new TextureViewer();
-                        viewer.SetFile(tree, file, texFile);
+                        viewer.SetFile(
+                            tree,
+                            file,
+                            texFile,
+                            _explorer._navigationHandler?.CurrentFolder,
+                            source.ObjectList.Where(x => !x.IsFolder).Select(x => x.File));
                         viewer.ShowRelativeTo(_explorer);
                     }
                 }, TaskScheduler.FromCurrentSynchronizationContext());
-                return;
             }
 
             // TODO: do something

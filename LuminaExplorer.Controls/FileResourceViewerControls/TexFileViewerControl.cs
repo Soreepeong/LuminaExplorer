@@ -31,15 +31,20 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     private float _nearestNeighborMinimumZoom = 2f;
     private Color _pixelGridLineColor = Color.LightGray.MultiplyOpacity(0.5f);
     private float _pixelGridMinimumZoom = 5f;
-    private float _loadingBackgroundOverlayOpacity = 0.3f;
+    private float _overlayBackgroundOpacity = 0.7f;
     private Size _sliceSpacing = new(16, 16);
 
-    private readonly Timer _autoDescriptionFadeTimer;
+    private readonly Timer _fadeTimer;
     private long _autoDescriptionShowUntilTicks;
     private bool _autoDescriptionBeingHovered;
     private string? _autoDescriptionCached;
     private float _autoDescriptionSourceZoom = float.NaN;
     private Rectangle? _autoDescriptionRectangle;
+
+    private long _loadStartTicks = long.MaxValue;
+
+    private string? _overlayString;
+    private long _overlayShowUntilTicks;
 
     public TexFileViewerControl() {
         ResizeRedraw = true;
@@ -62,20 +67,56 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
             Invalidate();
         };
 
-        _autoDescriptionFadeTimer = new();
-        _autoDescriptionFadeTimer.Enabled = false;
-        _autoDescriptionFadeTimer.Interval = 1;
-        _autoDescriptionFadeTimer.Tick += (_, _) => {
-            var remaining = _autoDescriptionShowUntilTicks - Environment.TickCount64;
-            if (remaining > FadeOutDurationMs) {
-                _autoDescriptionFadeTimer.Interval = (int) (remaining - FadeOutDurationMs);
+        _fadeTimer = new();
+        _fadeTimer.Enabled = false;
+        _fadeTimer.Interval = 1;
+        _fadeTimer.Tick += (_, _) => {
+            var animating = false;
+            var now = Environment.TickCount64;
+
+            var autoDescriptionRemaining = _autoDescriptionShowUntilTicks - now;
+            switch (autoDescriptionRemaining) {
+                case < 0:
+                    Invalidate(AutoDescriptionRectangle);
+                    break;
+                case < FadeOutDurationMs:
+                    animating = true;
+                    Invalidate(AutoDescriptionRectangle);
+                    break;
+            }
+
+            var overlayRemaining = _overlayShowUntilTicks - now;
+            switch (overlayRemaining) {
+                case < 0:
+                    Invalidate();
+                    break;
+                case < FadeOutDurationMs:
+                    animating = true;
+                    Invalidate();
+                    break;
+            }
+
+            var loadingBoxRemainingUntilShow = _loadStartTicks == long.MaxValue
+                ? int.MaxValue
+                : (int) (_loadStartTicks + DelayShowingLoadingBoxFor.TotalMilliseconds - now);
+
+            if (animating) {
+                _fadeTimer.Interval = 1;
                 return;
             }
 
-            _autoDescriptionFadeTimer.Interval = 1;
-            Invalidate(AutoDescriptionRectangle);
-            if (remaining < 0)
-                _autoDescriptionFadeTimer.Enabled = false;
+            var next = int.MaxValue;
+            if (autoDescriptionRemaining > 0)
+                next = Math.Min(next, (int) (autoDescriptionRemaining - FadeOutDurationMs));
+            if (overlayRemaining > 0)
+                next = Math.Min(next, (int) (overlayRemaining - FadeOutDurationMs));
+            if (loadingBoxRemainingUntilShow > 0)
+                next = Math.Min(next, loadingBoxRemainingUntilShow);
+
+            if (next == int.MaxValue)
+                _fadeTimer.Enabled = false;
+            else
+                _fadeTimer.Interval = next;
         };
 
         TryGetRenderers(out _, true);
@@ -88,7 +129,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                 foreach (var r in renderers)
                     r.Dispose();
             Viewport.Dispose();
-            _autoDescriptionFadeTimer.Dispose();
+            _fadeTimer.Dispose();
         }
 
         base.Dispose(disposing);
@@ -196,12 +237,18 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         set => Viewport.PanExtraRange = value;
     }
 
-    public float LoadingBackgroundOverlayOpacity {
-        get => _loadingBackgroundOverlayOpacity;
+    public TimeSpan DelayShowingLoadingBoxFor { get; set; } = TimeSpan.FromMilliseconds(300);
+
+    public bool IsLoadingBoxDelayed =>
+        _loadStartTicks == long.MaxValue ||
+        _loadStartTicks + DelayShowingLoadingBoxFor.Milliseconds > Environment.TickCount64;
+
+    public float OverlayBackgroundOpacity {
+        get => _overlayBackgroundOpacity;
         set {
-            if (!Equals(_loadingBackgroundOverlayOpacity, value))
+            if (!Equals(_overlayBackgroundOpacity, value))
                 return;
-            _loadingBackgroundOverlayOpacity = value;
+            _overlayBackgroundOpacity = value;
             Invalidate();
         }
     }
@@ -242,11 +289,11 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         set {
             if (_sliceSpacing == value)
                 return;
-            
+
             _sliceSpacing = value;
             Viewport.Size = CreateGridLayout(_currentMipmap).GridSize;
             Invalidate();
-            
+
             if (TryGetRenderers(out var renderers)) {
                 foreach (var r in renderers) {
                     if (r.State is ITexRenderer.LoadState.Loading or ITexRenderer.LoadState.Loaded) {
@@ -354,9 +401,20 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         }
     }
 
-    private string LoadingText => string.IsNullOrWhiteSpace(File?.Name ?? _loadingFileNameWhenEmpty)
-        ? "Loading..."
-        : $"Loading {File?.Name ?? _loadingFileNameWhenEmpty}...";
+    private string? LoadingText => File is null && _loadingFileNameWhenEmpty is null
+        ? null
+        : string.IsNullOrWhiteSpace(File?.Name ?? _loadingFileNameWhenEmpty)
+            ? "Loading..."
+            : $"Loading {File?.Name ?? _loadingFileNameWhenEmpty}...";
+
+    private string? OverlayString => _overlayString;
+
+    public float OverlayOpacity {
+        get {
+            var d = _overlayShowUntilTicks - Environment.TickCount64;
+            return d <= 0 ? 0f : d >= FadeOutDurationMs ? 1f : (float) d / FadeOutDurationMs;
+        }
+    }
 
     private bool ShouldDrawTransparencyGrid(
         RectangleF cellRect,
@@ -381,16 +439,16 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
             return false;
 
         minX = cellRect.Left < 0
-            ? (int)-MiscUtils.DivRem(cellRect.Left, -multiplier, out var fdx)
-            : (int)MiscUtils.DivRem(cellRect.Left, multiplier, out fdx);
+            ? (int) -MiscUtils.DivRem(cellRect.Left, -multiplier, out var fdx)
+            : (int) MiscUtils.DivRem(cellRect.Left, multiplier, out fdx);
         minY = cellRect.Top < 0
-            ? (int)-MiscUtils.DivRem(cellRect.Top, -multiplier, out var fdy)
-            : (int)MiscUtils.DivRem(cellRect.Top, multiplier, out fdy);
+            ? (int) -MiscUtils.DivRem(cellRect.Top, -multiplier, out var fdy)
+            : (int) MiscUtils.DivRem(cellRect.Top, multiplier, out fdy);
 
         if (minX * multiplier < clipRect.Left)
-            minX = (int)(clipRect.Left / multiplier);
+            minX = (int) (clipRect.Left / multiplier);
         if (minY * multiplier < clipRect.Top)
-            minY = (int)(clipRect.Top / multiplier);
+            minY = (int) (clipRect.Top / multiplier);
 
         dx = (int) fdx;
         dy = (int) fdy;
@@ -496,7 +554,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                     continue;
             }
         }
-        
+
         if (FileResourceTyped is not null && renderers.All(x => x.State != ITexRenderer.LoadState.Loading))
             OnPaintWithBackgroundImplDrawExceptions(e, renderers.Select(x => x.LastException));
         else if (_loadingFileNameWhenEmpty is not null)
@@ -548,6 +606,9 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
             return;
 
         _currentMipmap = mipmap;
+        _loadStartTicks = Environment.TickCount64;
+        _fadeTimer.Enabled = true;
+        _fadeTimer.Interval = 1;
 
         ClearDisplayInformationCache();
         if (TryGetRenderers(out var renderers, true))
@@ -565,11 +626,11 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     public override void ClearFile(bool keepContentsDisplayed = false) {
         ClearFileImpl();
-        
+
         if (TryGetRenderers(out var renderers))
             foreach (var r in renderers)
                 r.Reset(!keepContentsDisplayed);
-        
+
         if (!keepContentsDisplayed)
             Viewport.Reset(Size.Empty);
 
@@ -582,14 +643,25 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
             _autoDescriptionShowUntilTicks,
             now + (long) duration.TotalMilliseconds);
 
-        if (_autoDescriptionShowUntilTicks <= now) {
-            _autoDescriptionFadeTimer.Enabled = false;
+        if (_autoDescriptionShowUntilTicks <= now)
             return;
-        }
 
-        _autoDescriptionFadeTimer.Enabled = true;
-        _autoDescriptionFadeTimer.Interval = 1;
+        _fadeTimer.Enabled = true;
+        _fadeTimer.Interval = 1;
         Invalidate(AutoDescriptionRectangle);
+    }
+
+    public void ShowOverlayString(string? overlayString, TimeSpan overlayTextMessageDuration) {
+        var now = Environment.TickCount64;
+        _overlayString = overlayString;
+        _overlayShowUntilTicks = now + (int) overlayTextMessageDuration.TotalMilliseconds;
+
+        if (_overlayShowUntilTicks <= now)
+            return;
+
+        _fadeTimer.Enabled = true;
+        _fadeTimer.Interval = 1;
+        Invalidate();
     }
 
     private void ClearDisplayInformationCache() {
@@ -600,6 +672,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     private void ClearFileImpl() {
         MouseActivity.Enabled = false;
+        _loadStartTicks = long.MaxValue;
         ClearDisplayInformationCache();
         _currentMipmap = -1;
     }

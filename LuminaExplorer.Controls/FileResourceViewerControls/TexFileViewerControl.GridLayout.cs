@@ -31,13 +31,13 @@ public partial class TexFileViewerControl {
                 1f * k.Height / GridSize.Height);
         }
 
-        public Rectangle RectOf(int cellIndex, Rectangle actualGridRect) {
+        public RectangleF RectOf(int cellIndex, RectangleF actualGridRect) {
             var scaledRect = ScaleOf(cellIndex);
             return new(
-                (int)(actualGridRect.X + scaledRect.Left * actualGridRect.Width),
-                (int)(actualGridRect.Y + scaledRect.Top * actualGridRect.Height),
-                (int)(scaledRect.Width * actualGridRect.Width),
-                (int)(scaledRect.Height * actualGridRect.Height));
+                actualGridRect.X + scaledRect.Left * actualGridRect.Width,
+                actualGridRect.Y + scaledRect.Top * actualGridRect.Height,
+                scaledRect.Width * actualGridRect.Width,
+                scaledRect.Height * actualGridRect.Height);
         }
     }
 
