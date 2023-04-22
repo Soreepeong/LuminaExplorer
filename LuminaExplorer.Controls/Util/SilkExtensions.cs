@@ -9,4 +9,11 @@ public static class SilkExtensions {
             rectangle.Top,
             rectangle.Right,
             rectangle.Bottom);
+
+    public static Box2D<float> ToSilkFloat(this RectangleF rectangle) =>
+        new(
+            rectangle.Left,
+            rectangle.Top,
+            rectangle.Right,
+            rectangle.Bottom);
 }

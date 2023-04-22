@@ -30,14 +30,16 @@ public partial class Explorer {
             _previewingFileResource = null;
             _explorer.ppgPreview.SelectedObject = null;
             _explorer.hbxPreview.ByteProvider = null;
+            _explorer.texPreview.LoadingFileNameWhenEmpty = null;
             _explorer.texPreview.ClearFile();
         }
 
-        public bool TryGetAvailableFileResource(VirtualFile file, [MaybeNullWhen(false)] out FileResource fileResource) {
+        public bool TryGetAvailableFileResource(VirtualFile file,
+            [MaybeNullWhen(false)] out FileResource fileResource) {
             fileResource = null!;
             if (file != _previewingFile || _previewingFileResource is null)
                 return false;
-            
+
             fileResource = _previewingFileResource;
             return true;
         }
@@ -46,34 +48,35 @@ public partial class Explorer {
             if (_previewingFile == file)
                 return;
 
-            ClearPreview();
+            _previewingFile = file;
 
             var mainThreadScheduler = TaskScheduler.FromCurrentSynchronizationContext();
             var token = (_previewCancellationTokenSource = new()).Token;
 
-            _previewingFile = file;
+            _explorer.texPreview.LoadingFileNameWhenEmpty = file.Name;
+            _explorer.texPreview.ClearFile(true);
+
             _explorer.Tree
                 ?.GetLookup(file)
                 .AsFileResource(token)
                 .ContinueWith(fr => {
-                        if (!fr.IsCompletedSuccessfully || _previewingFile != file)
-                            return null;
+                        if (_previewingFile != file)
+                            return;
+                        if (!fr.IsCompletedSuccessfully) {
+                            ClearPreview();
+                            return;
+                        }
+
                         _explorer.ppgPreview.SelectedObject = new WrapperTypeConverter().ConvertFrom(fr.Result);
                         _explorer.hbxPreview.ByteProvider = new FileResourceByteProvider(fr.Result);
-                        return _previewingFileResource = fr.Result;
+                        if (fr.Result is TexFile tf) {
+                            if (_explorer.Tree is { } tree)
+                                _explorer.texPreview.SetFile(tree, file, tf);
+                        }
                     },
                     token,
                     TaskContinuationOptions.DenyChildAttach,
-                    mainThreadScheduler)
-                .ContinueWith(fr => {
-                    if (!fr.IsCompletedSuccessfully || fr.Result is null || _previewingFile != file)
-                        return;
-
-                    if (fr.Result is TexFile tf) {
-                        if (_explorer.Tree is { } tree)
-                            _explorer.texPreview.SetFileAsync(tree, file, tf);
-                    }
-                }, token);
+                    mainThreadScheduler);
         }
     }
 }

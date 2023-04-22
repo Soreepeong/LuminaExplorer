@@ -183,8 +183,7 @@ public sealed class TextureVirtualFileStream : BaseVirtualFileStream {
     public TexFile.TexHeader TexHeader => _offsetManager.Header;
 
     public override void CloseButOpenAgainWhenNecessary() {
-        _reader?.Dispose();
-        _reader = null;
+        SafeDispose.D(ref _reader);
     }
 
     private class OffsetManager : BaseOffsetManager {

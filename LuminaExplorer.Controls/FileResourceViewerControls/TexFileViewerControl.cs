@@ -1,4 +1,6 @@
-﻿using Lumina.Data;
+using System.Diagnostics.CodeAnalysis;
+using System.Text;
+using Lumina.Data;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.LazySqPackTree;
@@ -7,24 +9,39 @@ using Timer = System.Windows.Forms.Timer;
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
 public partial class TexFileViewerControl : AbstractFileResourceViewerControl<TexFile> {
-    private const int FadeOutDuration = 200;
-    private const int FadeOutDelay = 500;
+    private const int FadeOutDurationMs = 200;
+    private readonly TimeSpan _fadeOutDelay = TimeSpan.FromSeconds(1);
+    private readonly BufferedGraphicsContext _bufferedGraphicsContext = new();
 
     public readonly PanZoomTracker Viewport;
 
-    private readonly Timer _timer;
-
-    private ITexRenderer[]? _renderers;
+    private Task<ITexRenderer[]>? _renderers;
 
     private int _currentSlice;
     private int _currentMipmap;
-    private Color _borderColor = Color.LightGray;
-    private int _transparencyCellSize = 8;
 
-    private long _showDescriptionAtLeastUntilMilliseconds;
-    private bool _mouseInDescriptionArea;
+    private string? _loadingFileNameWhenEmpty;
+    private Color _foreColorWhenLoaded = Color.White;
+    private Color _backColorWhenLoaded = Color.Black;
+    private Color _contentBorderColor = Color.DarkGray;
+    private int _contentBorderWidth = 1;
+    private Color _transparencyCellColor1 = Color.White;
+    private Color _transparencyCellColor2 = Color.LightGray;
+    private int _transparencyCellSize = 8;
+    private float _nearestNeighborMinimumZoom = 2f;
+    private float _pixelGridMinimumZoom = 5f;
+    private float _loadingBackgroundOverlayOpacity = 0.3f;
+
+    private readonly Timer _autoDescriptionFadeTimer;
+    private long _autoDescriptionShowUntilTicks;
+    private bool _autoDescriptionBeingHovered;
+    private string? _autoDescriptionCached;
+    private float _autoDescriptionSourceZoom = float.NaN;
+    private Rectangle? _autoDescriptionRectangle;
 
     public TexFileViewerControl() {
+        ResizeRedraw = true;
+
         MouseActivity.UseLeftDrag = true;
         MouseActivity.UseMiddleDrag = true;
         MouseActivity.UseRightDrag = true;
@@ -35,37 +52,129 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         MouseActivity.UseInfiniteRightDrag = true;
         MouseActivity.UseInfiniteMiddleDrag = true;
 
+        MouseActivity.Enabled = false;
         Viewport = new(MouseActivity);
+        Viewport.PanExtraRange = new(_transparencyCellSize * 2);
         Viewport.ViewportChanged += () => {
-            ShowDescriptionForFromNow(FadeOutDelay);
+            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
             Invalidate();
         };
 
-        _timer = new();
-        _timer.Enabled = false;
-        _timer.Interval = 1;
-        _timer.Tick += (_, _) => {
-            var remaining = _showDescriptionAtLeastUntilMilliseconds - Environment.TickCount64;
-            if (remaining > FadeOutDuration) {
-                _timer.Interval = (int) (remaining - FadeOutDuration);
+        _autoDescriptionFadeTimer = new();
+        _autoDescriptionFadeTimer.Enabled = false;
+        _autoDescriptionFadeTimer.Interval = 1;
+        _autoDescriptionFadeTimer.Tick += (_, _) => {
+            var remaining = _autoDescriptionShowUntilTicks - Environment.TickCount64;
+            if (remaining > FadeOutDurationMs) {
+                _autoDescriptionFadeTimer.Interval = (int) (remaining - FadeOutDurationMs);
                 return;
             }
-            
-            _timer.Interval = 1;
-            Invalidate();
+
+            _autoDescriptionFadeTimer.Interval = 1;
+            Invalidate(AutoDescriptionRectangle);
             if (remaining < 0)
-                _timer.Enabled = false;
+                _autoDescriptionFadeTimer.Enabled = false;
         };
+
+        TryGetRenderers(out _, true);
     }
 
-    public Color BorderColor {
-        get => _borderColor;
+    protected override void Dispose(bool disposing) {
+        if (disposing) {
+            _bufferedGraphicsContext.Dispose();
+            if (TryGetRenderers(out var renderers))
+                foreach (var r in renderers)
+                    r.Dispose();
+            Viewport.Dispose();
+            _autoDescriptionFadeTimer.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
+
+    public event EventHandler? ForeColorWhenLoadedChanged;
+
+    public event EventHandler? BackColorWhenLoadedChanged;
+
+    public event EventHandler? BorderColorChanged;
+
+    public event EventHandler? TransparencyCellColor1Changed;
+
+    public event EventHandler? TransparencyCellColor2Changed;
+
+    public event EventHandler? ImageLoadedForDisplay;
+
+    public string? LoadingFileNameWhenEmpty {
+        get => _loadingFileNameWhenEmpty;
         set {
-            if (_borderColor == value)
+            if (_loadingFileNameWhenEmpty == value)
                 return;
-            _borderColor = value;
-            foreach (var r in _renderers ?? Array.Empty<ITexRenderer>())
-                r.BorderColor = value;
+            _loadingFileNameWhenEmpty = value;
+            Invalidate();
+        }
+    }
+
+    public Color ForeColorWhenLoaded {
+        get => _foreColorWhenLoaded;
+        set {
+            if (_foreColorWhenLoaded == value)
+                return;
+            _foreColorWhenLoaded = value;
+            ForeColorWhenLoadedChanged?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+        }
+    }
+
+    public Color BackColorWhenLoaded {
+        get => _backColorWhenLoaded;
+        set {
+            if (_backColorWhenLoaded == value)
+                return;
+            _backColorWhenLoaded = value;
+            BackColorWhenLoadedChanged?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+        }
+    }
+
+    public Color ContentBorderColor {
+        get => _contentBorderColor;
+        set {
+            if (_contentBorderColor == value)
+                return;
+            _contentBorderColor = value;
+            BorderColorChanged?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+        }
+    }
+
+    public int ContentBorderWidth {
+        get => _contentBorderWidth;
+        set {
+            if (_contentBorderWidth == value)
+                return;
+            _contentBorderWidth = value;
+            Invalidate();
+        }
+    }
+
+    public Color TransparencyCellColor1 {
+        get => _transparencyCellColor1;
+        set {
+            if (_transparencyCellColor1 == value)
+                return;
+            _transparencyCellColor1 = value;
+            TransparencyCellColor1Changed?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+        }
+    }
+
+    public Color TransparencyCellColor2 {
+        get => _transparencyCellColor2;
+        set {
+            if (_transparencyCellColor2 == value)
+                return;
+            _transparencyCellColor2 = value;
+            TransparencyCellColor2Changed?.Invoke(this, EventArgs.Empty);
             Invalidate();
         }
     }
@@ -80,81 +189,313 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         }
     }
 
-    protected override void Dispose(bool disposing) {
-        if (disposing) {
-            foreach (var r in _renderers ?? Array.Empty<ITexRenderer>())
-                r.Dispose();
-            Viewport.Dispose();
-            _timer.Dispose();
-        }
-
-        base.Dispose(disposing);
+    public Padding PanExtraRange {
+        get => Viewport.PanExtraRange;
+        set => Viewport.PanExtraRange = value;
     }
 
-    protected override void OnPaint(PaintEventArgs e) {
-        base.OnPaint(e);
-        if (FileResourceTyped is { } fr) {
-            var d = _showDescriptionAtLeastUntilMilliseconds - Environment.TickCount64;
-            if (MouseActivity.IsDragging)
-                ShowDescriptionForFromNow(FadeOutDelay);
-            var opacity = _mouseInDescriptionArea ? 1f :
-                d <= 0 ? 0f :
-                d >= FadeOutDuration ? 1f : (float) d / FadeOutDuration;
+    public float LoadingBackgroundOverlayOpacity {
+        get => _loadingBackgroundOverlayOpacity;
+        set {
+            if (!Equals(_loadingBackgroundOverlayOpacity, value))
+                return;
+            _loadingBackgroundOverlayOpacity = value;
+            Invalidate();
+        }
+    }
 
-            foreach (var r in _renderers ?? Array.Empty<ITexRenderer>()) {
-                if (r.LastException is not null)
+    public float NearestNeighborMinimumZoom {
+        get => _nearestNeighborMinimumZoom;
+        set {
+            if (Equals(_nearestNeighborMinimumZoom, value))
+                return;
+            _nearestNeighborMinimumZoom = value;
+            Invalidate();
+        }
+    }
+
+    public float PixelGridMinimumZoom {
+        get => _pixelGridMinimumZoom;
+        set {
+            if (Equals(_pixelGridMinimumZoom, value))
+                return;
+            _pixelGridMinimumZoom = value;
+            Invalidate();
+        }
+    }
+
+    public string AutoDescription {
+        get {
+            var effectiveZoom = Viewport.EffectiveZoom;
+            if (_autoDescriptionCached is not null && Equals(effectiveZoom, _autoDescriptionSourceZoom))
+                return _autoDescriptionCached;
+
+            if (Tree is not { } tree ||
+                FileResourceTyped is not { } texFile ||
+                File is not { } file)
+                return "";
+
+            _autoDescriptionSourceZoom = effectiveZoom;
+            var sb = new StringBuilder();
+            sb.AppendLine(tree.GetFullPath(file));
+            sb.Append(texFile.Header.Format).Append("; ")
+                .Append($"{texFile.Data.Length:##,###} Bytes");
+            if (texFile.Header.MipLevels > 1)
+                sb.Append("; ").Append(texFile.Header.MipLevels).Append(" mipmaps");
+            sb.AppendLine();
+            if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType1D))
+                sb.Append("1D: ").Append(texFile.Header.Width);
+            if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType2D))
+                sb.Append("2D: ").Append(texFile.Header.Width)
+                    .Append(" x ").Append(texFile.Header.Height);
+            if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType3D))
+                sb.Append("3D: ").Append(texFile.Header.Width)
+                    .Append(" x ").Append(texFile.Header.Height)
+                    .Append(" x ").Append(texFile.Header.Depth);
+            if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureTypeCube))
+                sb.Append("Cube: ").Append(texFile.Header.Width)
+                    .Append(" x ").Append(texFile.Header.Height);
+            if (!Equals(effectiveZoom, 1f))
+                sb.Append($" ({effectiveZoom * 100:0.00}%)");
+            sb.AppendLine();
+            foreach (var f in new[] {
+                         TexFile.Attribute.DiscardPerFrame,
+                         TexFile.Attribute.DiscardPerMap,
+                         TexFile.Attribute.Managed,
+                         TexFile.Attribute.UserManaged,
+                         TexFile.Attribute.CpuRead,
+                         TexFile.Attribute.LocationMain,
+                         TexFile.Attribute.NoGpuRead,
+                         TexFile.Attribute.AlignedSize,
+                         TexFile.Attribute.EdgeCulling,
+                         TexFile.Attribute.LocationOnion,
+                         TexFile.Attribute.ReadWrite,
+                         TexFile.Attribute.Immutable,
+                         TexFile.Attribute.TextureRenderTarget,
+                         TexFile.Attribute.TextureDepthStencil,
+                         TexFile.Attribute.TextureSwizzle,
+                         TexFile.Attribute.TextureNoTiled,
+                         TexFile.Attribute.TextureNoSwizzle
+                     })
+                if (texFile.Header.Type.HasFlag(f))
+                    sb.Append("+ ").AppendLine(f.ToString());
+            return _autoDescriptionCached = sb.ToString();
+        }
+    }
+
+    private float AutoDescriptionOpacity {
+        get {
+            var d = _autoDescriptionShowUntilTicks - Environment.TickCount64;
+            return _autoDescriptionBeingHovered ? 1f :
+                d <= 0 ? 0f :
+                d >= FadeOutDurationMs ? 1f : (float) d / FadeOutDurationMs;
+        }
+    }
+
+    private Rectangle AutoDescriptionRectangle {
+        get {
+            if (_autoDescriptionRectangle is not null)
+                return _autoDescriptionRectangle.Value;
+            var rc = new Rectangle(
+                Padding.Left + Margin.Left,
+                Padding.Top + Margin.Top,
+                ClientSize.Width - Padding.Horizontal - Margin.Horizontal,
+                ClientSize.Height - Padding.Vertical - Margin.Vertical);
+
+            using var stringFormat = new StringFormat {
+                Alignment = StringAlignment.Near,
+                LineAlignment = StringAlignment.Near,
+                Trimming = StringTrimming.None,
+            };
+
+            using var g = CreateGraphics();
+            var measured = g.MeasureString(
+                AutoDescription,
+                Font,
+                new SizeF(rc.Width, rc.Height),
+                stringFormat);
+            rc.Width = (int) Math.Ceiling(measured.Width);
+            rc.Height = (int) Math.Ceiling(measured.Height);
+            _autoDescriptionRectangle = rc;
+            return rc;
+        }
+    }
+
+    private string LoadingText => string.IsNullOrWhiteSpace(File?.Name ?? _loadingFileNameWhenEmpty)
+        ? "Loading..."
+        : $"Loading {File?.Name ?? _loadingFileNameWhenEmpty}...";
+
+    private bool ShouldDrawTransparencyGrid(
+        Rectangle clipRectangle,
+        out int multiplier,
+        out int minX,
+        out int minY,
+        out int dx,
+        out int dy) {
+        multiplier = TransparencyCellSize;
+        minX = minY = dx = dy = 0;
+
+        // Is transparency grid disabled?
+        if (multiplier <= 0)
+            return false;
+
+        var imageRect = Viewport.EffectiveRect;
+
+        // Is image completely out of drawing region?
+        if (imageRect.Right <= clipRectangle.Left ||
+            imageRect.Bottom <= clipRectangle.Top ||
+            imageRect.Left >= clipRectangle.Right ||
+            imageRect.Top >= clipRectangle.Bottom)
+            return false;
+
+        minX = imageRect.Left < 0
+            ? -Math.DivRem(imageRect.Left, -multiplier, out dx)
+            : Math.DivRem(imageRect.Left, multiplier, out dx);
+        minY = imageRect.Top < 0
+            ? -Math.DivRem(imageRect.Top, -multiplier, out dy)
+            : Math.DivRem(imageRect.Top, multiplier, out dy);
+
+        if (minX * multiplier < clipRectangle.Left)
+            minX = clipRectangle.Left / multiplier;
+        if (minY * multiplier < clipRectangle.Top)
+            minY = clipRectangle.Top / multiplier;
+
+        return true;
+    }
+
+    private void OnPaintWithBackgroundImplEmpty(PaintEventArgs e) {
+        BufferedGraphics? bufferedGraphics = null;
+        try {
+            bufferedGraphics = _bufferedGraphicsContext.Allocate(e.Graphics, e.ClipRectangle);
+            base.OnPaintBackground(new(bufferedGraphics.Graphics, e.ClipRectangle));
+        } finally {
+            bufferedGraphics?.Render();
+            bufferedGraphics?.Dispose();
+        }
+    }
+
+    private void OnPaintWithBackgroundImplDrawLoading(PaintEventArgs e) {
+        BufferedGraphics? bufferedGraphics = null;
+        try {
+            bufferedGraphics = _bufferedGraphicsContext.Allocate(e.Graphics, e.ClipRectangle);
+            base.OnPaintBackground(new(bufferedGraphics.Graphics, e.ClipRectangle));
+            using var brush = new SolidBrush(ForeColor);
+            using var stringFormat = new StringFormat {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center,
+            };
+
+            bufferedGraphics.Graphics.DrawString(LoadingText, Font, brush, ClientRectangle, stringFormat);
+        } finally {
+            bufferedGraphics?.Render();
+            bufferedGraphics?.Dispose();
+        }
+    }
+
+    private void OnPaintWithBackgroundImplDrawExceptions(PaintEventArgs e, IEnumerable<Exception?> exceptions) {
+        BufferedGraphics? bufferedGraphics = null;
+        try {
+            bufferedGraphics = _bufferedGraphicsContext.Allocate(e.Graphics, e.ClipRectangle);
+            base.OnPaintBackground(new(bufferedGraphics.Graphics, e.ClipRectangle));
+            base.OnPaintBackground(e);
+
+            using var brush = new SolidBrush(ForeColor);
+            using var stringFormat = new StringFormat {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center,
+            };
+            bufferedGraphics.Graphics.DrawString(
+                $"Error displaying {File?.Name}." +
+                string.Join(null, exceptions.Select(x => x is null ? "" : $"\n{x}")),
+                Font,
+                brush,
+                ClientRectangle,
+                stringFormat);
+        } finally {
+            bufferedGraphics?.Render();
+            bufferedGraphics?.Dispose();
+        }
+    }
+
+    private void OnPaintWithBackground(PaintEventArgs e) {
+        if (!TryGetRenderers(out var renderers, true)) {
+            if (_renderers?.IsFaulted is true)
+                OnPaintWithBackgroundImplDrawExceptions(
+                    e,
+                    _renderers.Exception?.InnerExceptions.AsEnumerable() ?? Array.Empty<Exception>());
+            else
+                OnPaintWithBackgroundImplDrawLoading(e);
+            return;
+        }
+
+        if (MouseActivity.IsDragging)
+            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
+
+        foreach (var r in renderers) {
+            switch (r.State) {
+                case ITexRenderer.LoadState.Error:
                     continue;
 
-                if (!r.HasImage) {
-                    if (!r.LoadTexFile(fr, _currentMipmap, _currentSlice))
-                        continue;
-                }
+                case ITexRenderer.LoadState.Empty:
+                    if (FileResourceTyped is { } fr) {
+                        MouseActivity.Enabled = false;
+                        r.LoadTexFileAsync(fr, _currentMipmap, _currentSlice)
+                            .ContinueWith(res => {
+                                MouseActivity.Enabled = true;
+                                Viewport.Reset(r.ImageSize);
 
-                r.DescriptionOpacity = opacity;
+                                if (res.IsCompletedSuccessfully)
+                                    ImageLoadedForDisplay?.Invoke(this, EventArgs.Empty);
 
-                if (r.Draw(e))
-                    return;
+                                ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
+                                Invalidate();
+                            }, TaskScheduler.FromCurrentSynchronizationContext());
+                    }
+
+                    if (!r.HasNondisposedBitmap)
+                        break;
+
+                    goto case ITexRenderer.LoadState.Loading;
+
+                case ITexRenderer.LoadState.Loading:
+                case ITexRenderer.LoadState.Loaded:
+                    if (r.Draw(e))
+                        return;
+                    continue;
             }
         }
         
-        base.OnPaintBackground(e);
+        if (FileResourceTyped is not null && renderers.All(x => x.State != ITexRenderer.LoadState.Loading))
+            OnPaintWithBackgroundImplDrawExceptions(e, renderers.Select(x => x.LastException));
+        else if (_loadingFileNameWhenEmpty is not null)
+            OnPaintWithBackgroundImplDrawLoading(e);
+        else
+            OnPaintWithBackgroundImplEmpty(e);
     }
+
+    protected sealed override void OnPaintBackground(PaintEventArgs e) { }
+
+    protected sealed override void OnPaint(PaintEventArgs e) => OnPaintWithBackground(e);
 
     protected override void OnMouseMove(MouseEventArgs e) {
         base.OnMouseMove(e);
-        if (e.Y < 80 && (e.X < Width / 2 || e.X < 160)) {
-            if (!_mouseInDescriptionArea) {
-                _mouseInDescriptionArea = true;
-                Invalidate();
+        if (!_autoDescriptionBeingHovered) {
+            if (AutoDescriptionRectangle.Contains(e.Location)) {
+                _autoDescriptionBeingHovered = true;
+                Invalidate(AutoDescriptionRectangle);
             }
-        } else if (_mouseInDescriptionArea) {
-            _mouseInDescriptionArea = false;
-            ShowDescriptionForFromNow(FadeOutDelay);
+        } else {
+            _autoDescriptionBeingHovered = false;
+            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
         }
     }
 
     protected override void OnMouseLeave(EventArgs e) {
         base.OnMouseLeave(e);
-        if (_mouseInDescriptionArea) {
-            _mouseInDescriptionArea = false;
-            ShowDescriptionForFromNow(FadeOutDelay);
+        if (_autoDescriptionBeingHovered) {
+            _autoDescriptionBeingHovered = false;
+            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
         }
-    }
-
-    protected override void OnPaintBackground(PaintEventArgs e) {
-        // intentionally left empty
-    }
-
-    protected override void OnForeColorChanged(EventArgs e) {
-        base.OnForeColorChanged(e);
-        foreach (var r in _renderers ?? Array.Empty<ITexRenderer>())
-            r.ForeColor = ForeColor;
-    }
-
-    protected override void OnBackColorChanged(EventArgs e) {
-        base.OnBackColorChanged(e);
-        foreach (var r in _renderers ?? Array.Empty<ITexRenderer>())
-            r.BackColor = BackColor;
     }
 
     protected override void OnMarginChanged(EventArgs e) {
@@ -174,85 +515,82 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                 Viewport.Size.Width + Margin.Horizontal,
                 Viewport.Size.Height + Margin.Vertical);
 
-    public void UpdateBitmap(int slice, int mipmap, bool force = false) {
-        if (FileResourceTyped is not { } frt || (!force && _currentSlice == slice && _currentMipmap == mipmap))
+    public void ChangeDisplayedBitmap(int slice, int mipmap, bool force = false) {
+        if (!force && _currentSlice == slice && _currentMipmap == mipmap)
             return;
 
         _currentSlice = slice;
         _currentMipmap = mipmap;
 
-        foreach (var r in _renderers ?? Array.Empty<ITexRenderer>())
-            r.Reset();
+        ClearDisplayInformationCache();
+        if (TryGetRenderers(out var renderers))
+            foreach (var r in renderers)
+                r.Reset(false);
 
-        Viewport.Reset(new(
-            frt.TextureBuffer.WidthOfMipmap(mipmap),
-            frt.TextureBuffer.HeightOfMipmap(mipmap)));
+        Invalidate();
     }
 
     public override void SetFile(VirtualSqPackTree tree, VirtualFile file, FileResource fileResource) {
         base.SetFile(tree, file, fileResource);
         ClearFileImpl();
-        UpdateBitmap(0, 0);
-
-        _renderers ??= new ITexRenderer[] {new D2DRenderer(this), new GraphicsRenderer(this)};
+        ChangeDisplayedBitmap(0, 0);
     }
 
-    public override Task SetFileAsync(VirtualSqPackTree tree, VirtualFile file, FileResource fileResource) {
-        return Task.Run(async () => {
-            await base.SetFileAsync(tree, file, fileResource);
-            // TODO: actually load async
-            await Task.Factory.StartNew(() => {
-                ClearFileImpl();
-                UpdateBitmap(0, 0);
-                _renderers ??= new ITexRenderer[] {new D2DRenderer(this), new GraphicsRenderer(this)};
-            }, default, TaskCreationOptions.None, MainTaskScheduler);
-        });
-    }
-
-    public override void ClearFile() {
+    public override void ClearFile(bool keepContentsDisplayed = false) {
         ClearFileImpl();
-        base.ClearFile();
+        
+        if (TryGetRenderers(out var renderers))
+            foreach (var r in renderers)
+                r.Reset(!keepContentsDisplayed);
+        
+        if (!keepContentsDisplayed)
+            Viewport.Reset(Size.Empty);
+
+        base.ClearFile(keepContentsDisplayed);
     }
 
-    public override Task ClearFileAsync() {
-        // TODO: asyncize
-        ClearFileImpl();
-        return base.ClearFileAsync();
-    }
+    public void ExtendDescriptionMandatoryDisplay(TimeSpan duration) {
+        var now = Environment.TickCount64;
+        _autoDescriptionShowUntilTicks = Math.Max(
+            _autoDescriptionShowUntilTicks,
+            now + (long) duration.TotalMilliseconds);
 
-    public void ShowDescriptionForFromNow(long durationMilliseconds) {
-        if (durationMilliseconds <= 0) {
-            _showDescriptionAtLeastUntilMilliseconds = 0;
-            _timer.Enabled = false;
+        if (_autoDescriptionShowUntilTicks <= now) {
+            _autoDescriptionFadeTimer.Enabled = false;
             return;
         }
 
-        _showDescriptionAtLeastUntilMilliseconds = Math.Max(
-            _showDescriptionAtLeastUntilMilliseconds,
-            Environment.TickCount64 + durationMilliseconds);
-        _timer.Enabled = true;
-        _timer.Interval = 1;
-        Invalidate();
+        _autoDescriptionFadeTimer.Enabled = true;
+        _autoDescriptionFadeTimer.Interval = 1;
+        Invalidate(AutoDescriptionRectangle);
+    }
+
+    private void ClearDisplayInformationCache() {
+        _autoDescriptionCached = null;
+        _autoDescriptionSourceZoom = float.NaN;
+        _autoDescriptionRectangle = null;
     }
 
     private void ClearFileImpl() {
+        MouseActivity.Enabled = false;
+        ClearDisplayInformationCache();
         _currentSlice = _currentMipmap = -1;
-        foreach (var r in _renderers ?? Array.Empty<ITexRenderer>())
-            r.Reset();
-        Viewport.Reset(new());
     }
 
-    private interface ITexRenderer : IDisposable {
-        bool HasImage { get; }
-        Exception? LastException { get; }
-        Size Size { get; }
-        Color ForeColor { get; set; }
-        Color BackColor { get; set; }
-        Color BorderColor { get; set; }
-        float DescriptionOpacity { get; set; }
+    private bool TryGetRenderers([MaybeNullWhen(false)] out ITexRenderer[] renderers, bool startLoading = false) {
+        if (_renderers?.IsCompletedSuccessfully is true) {
+            renderers = _renderers.Result;
+            return true;
+        }
 
-        void Reset();
-        bool LoadTexFile(TexFile texFile, int mipIndex, int slice);
-        bool Draw(PaintEventArgs e);
+        renderers = null;
+        if (startLoading) {
+            _renderers ??= Task.Run(() => new ITexRenderer[] {
+                new D2DTexRenderer(this),
+                new GdipRenderer(this),
+            });
+        }
+
+        return false;
     }
 }

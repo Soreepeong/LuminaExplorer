@@ -31,7 +31,7 @@
             // 
             // TexViewer
             // 
-            TexViewer.BorderColor = Color.LightGray;
+            TexViewer.ContentBorderColor = Color.LightGray;
             TexViewer.Dock = DockStyle.Fill;
             TexViewer.Location = new Point(0, 0);
             TexViewer.Margin = new Padding(0);

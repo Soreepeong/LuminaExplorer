@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Controls.Util;
@@ -14,6 +14,7 @@ public sealed class PanZoomTracker : IDisposable {
 
     private Point _pan;
     private Size _size;
+    private Padding _panExtraRange;
 
     public PanZoomTracker(MouseActivityTracker mouseActivityTracker) {
         MouseActivity = mouseActivityTracker;
@@ -44,7 +45,7 @@ public sealed class PanZoomTracker : IDisposable {
     public Control Control => MouseActivity.Control;
 
     public int ControlBodyWidth => Control.ClientSize.Width - Control.Margin.Horizontal;
-    
+
     public int ControlBodyHeight => Control.ClientSize.Height - Control.Margin.Vertical;
 
     public int ZoomExponentUnit { get; set; }
@@ -87,6 +88,16 @@ public sealed class PanZoomTracker : IDisposable {
         : ControlBodyWidth * Size.Height > Size.Width * ControlBodyHeight
             ? 1f * ControlBodyHeight / Size.Height
             : 1f * ControlBodyWidth / Size.Width;
+
+    public Padding PanExtraRange {
+        get => _panExtraRange;
+        set {
+            if (_panExtraRange == value)
+                return;
+            _panExtraRange = value;
+            EnforceLimits();
+        }
+    }
 
     public Point Pan {
         get => _pan;
@@ -156,11 +167,24 @@ public sealed class PanZoomTracker : IDisposable {
 
     public bool UpdatePan(Point value) {
         var scaled = EffectiveSize;
-        var xrange = (scaled.Width - ControlBodyWidth) / 2;
-        var yrange = (scaled.Height - ControlBodyHeight) / 2;
+        var xrange = Math.DivRem(scaled.Width - ControlBodyWidth, 2, out var xrem);
+        var yrange = Math.DivRem(scaled.Height - ControlBodyHeight, 2, out var yrem);
 
-        value.X = scaled.Width <= ControlBodyWidth ? 0 : Math.Clamp(value.X, -xrange, xrange);
-        value.Y = scaled.Height <= ControlBodyHeight ? 0 : Math.Clamp(value.Y, -yrange, yrange);
+        if (scaled.Width <= ControlBodyWidth)
+            value.X = 0;
+        else {
+            var minX = -xrange - xrem - PanExtraRange.Right;
+            var maxX = xrange + PanExtraRange.Left;
+            value.X = Math.Clamp(value.X, minX, maxX);
+        }
+
+        if (scaled.Height <= ControlBodyHeight)
+            value.Y = 0;
+        else {
+            var minY = -yrange - yrem - PanExtraRange.Bottom;
+            var maxY = yrange + PanExtraRange.Top;
+            value.Y = Math.Clamp(value.Y, minY, maxY);
+        }
 
         if (value == _pan)
             return false;

@@ -15,6 +15,6 @@ public class ValueFloat : IValue {
 
     internal static ValueArray ReadVector(Parser parser, int count) {
         throw new NotSupportedException();
-        // return new(Enumerable.Range(0, count).Select(_ => (IValue?) Read(reader)).ToImmutableList(), FieldType.SingleFloat);
+        // return new(Enumerable.Range(0, count).Select(e => (IValue?) Read(reader)).ToImmutableList(), FieldType.SingleFloat);
     }
 }

@@ -405,11 +405,12 @@ partial class Explorer {
         // 
         // texPreview
         // 
-        texPreview.BorderColor = Color.LightGray;
+        texPreview.ContentBorderColor = Color.LightGray;
         texPreview.Dock = DockStyle.Fill;
         texPreview.Location = new Point(0, 0);
         texPreview.Margin = new Padding(0);
         texPreview.Name = "texPreview";
+        texPreview.Padding = new Padding(8, 8, 8, 8);
         texPreview.Size = new Size(320, 197);
         texPreview.TabIndex = 0;
         texPreview.Text = "texFileViewerControl1";

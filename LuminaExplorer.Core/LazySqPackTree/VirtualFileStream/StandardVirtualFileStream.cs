@@ -142,8 +142,7 @@ public sealed class StandardVirtualFileStream : BaseVirtualFileStream {
     }
 
     public override void CloseButOpenAgainWhenNecessary() {
-        _reader?.Dispose();
-        _reader = null;
+        SafeDispose.D(ref _reader);
     }
 
     private class OffsetManager : BaseOffsetManager {

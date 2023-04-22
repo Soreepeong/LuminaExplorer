@@ -139,6 +139,11 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
         u = null;
     }
 
+    protected static void SafeDispose<T>(ref T? u) where T : IDisposable {
+        u?.Dispose();
+        u = default;
+    }
+
     protected sealed class Direct3DDeviceBuilder : IDisposable {
         private readonly bool _disposeOnException;
 

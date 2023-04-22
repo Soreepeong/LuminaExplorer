@@ -7,6 +7,8 @@ namespace LuminaExplorer.Controls.Util;
 public sealed class MouseActivityTracker : IDisposable {
     private readonly Control _control;
     private readonly List<Activity> _activities = new();
+    
+    private bool _enabled = true;
 
     private bool _useLeftDrag;
     private bool _useRightDrag;
@@ -112,8 +114,32 @@ public sealed class MouseActivityTracker : IDisposable {
     public bool UseWheelZoom { get; set; }
 
     public bool UseDragZoom { get; set; }
+    
+    public bool Enabled {
+        get => _enabled;
+        set {
+            _enabled = value;
+            if (!value)
+                CancelAllOperations();
+        }
+    }
+    
+    public void CancelAllOperations() {
+        ExitDragState();
+        _activities.Clear();
+        FirstHeldButton = MouseButtons.None;
+        IsLeftHeld = IsRightHeld = IsMiddleHeld = false;
+        IsLeftDoubleDown = IsRightDoubleDown = IsMiddleDoubleDown = false;
+        IsLeftDoubleUp = IsRightDoubleUp = IsMiddleDoubleUp = false;
+        FirstHeldButton = MouseButtons.None;
+        _clickTimer.Enabled = false;
+        _clickTimerFireLeftClickAfter = _clickTimerFireRightClickAfter = _clickTimerFireMiddleClickAfter = 0;
+    }
 
     private void OnMouseDown(object? sender, MouseEventArgs e) {
+        if (!_enabled)
+            return;
+        
         RecordActivity(new(ActivityType.Down, e.Button, e.Location));
 
         if (FirstHeldButton == MouseButtons.None)
@@ -159,6 +185,9 @@ public sealed class MouseActivityTracker : IDisposable {
     }
 
     private void OnMouseMove(object? sender, MouseEventArgs e) {
+        if (!_enabled)
+            return;
+
         if (DragOrigin is not { } dragOrigin)
             return;
 
@@ -211,6 +240,9 @@ public sealed class MouseActivityTracker : IDisposable {
     }
 
     private void OnMouseUp(object? sender, MouseEventArgs e) {
+        if (!_enabled)
+            return;
+
         RecordActivity(new(ActivityType.Up, e.Button, e.Location));
 
         IsLeftDoubleUp = IsRightDoubleUp = IsMiddleDoubleUp = false;
@@ -299,11 +331,17 @@ public sealed class MouseActivityTracker : IDisposable {
     }
 
     private void OnMouseWheel(object? sender, MouseEventArgs e) {
+        if (!_enabled)
+            return;
+
         if (UseWheelZoom && e.Delta != 0)
             ZoomWheel?.Invoke(e.Location, e.Delta);
     }
 
     private void OnMouseLeave(object? sender, EventArgs e) {
+        if (!_enabled)
+            return;
+
         ExitDragState();
     }
 
@@ -370,7 +408,7 @@ public sealed class MouseActivityTracker : IDisposable {
                 ?? _control.PointToClient(Cursor.Position));
             _clickTimerFireLeftClickAfter = long.MaxValue;
         }
-        
+
         if (_clickTimerFireRightClickAfter <= now) {
             RightClick?.Invoke(
                 _activities
@@ -380,7 +418,7 @@ public sealed class MouseActivityTracker : IDisposable {
                 ?? _control.PointToClient(Cursor.Position));
             _clickTimerFireRightClickAfter = long.MaxValue;
         }
-        
+
         if (_clickTimerFireMiddleClickAfter <= now) {
             MiddleClick?.Invoke(
                 _activities

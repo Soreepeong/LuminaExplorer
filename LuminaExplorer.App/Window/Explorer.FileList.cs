@@ -87,8 +87,7 @@ public partial class Explorer {
                 if (_tree is not null) {
                     _tree.FolderChanged -= VirtualFolderChanged;
                     _tree.FileChanged -= VirtualFileChanged;
-                    _source?.Dispose();
-                    _source = null;
+                    SafeDispose.D(ref _source);
                     // cannot set to null, so replace it with an empty data source.
                     _listView.VirtualListDataSource = new AbstractVirtualListDataSource(_listView);
                 }
@@ -300,14 +299,18 @@ public partial class Explorer {
             if (_explorer._previewHandler is not { } previewHandler || _source is not { } source)
                 return;
 
-            previewHandler.ClearPreview();
-
-            if (_listView.SelectedIndices.Count is > 1 or 0)
+            if (_listView.SelectedIndices.Count is > 1 or 0) {
+                previewHandler.ClearPreview();
                 return;
+            }
 
             var vo = source[_listView.SelectedIndices[0]];
-            if (!vo.IsFolder)
-                previewHandler.PreviewFile(vo.File);
+            if (vo.IsFolder) {
+                previewHandler.ClearPreview();
+                return;
+            }
+            
+            previewHandler.PreviewFile(vo.File);
         }
 
         private void WindowResized(object? sender, EventArgs e) => RecalculateNumberOfPreviewsToCache();

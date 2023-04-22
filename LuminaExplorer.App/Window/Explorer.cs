@@ -1,4 +1,5 @@
 using LuminaExplorer.Core.LazySqPackTree;
+using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.App.Window;
 
@@ -63,16 +64,11 @@ public partial class Explorer : Form {
     protected override void Dispose(bool disposing) {
         if (disposing) {
             Hide();
-            _previewHandler?.Dispose();
-            _previewHandler = null;
-            _fileListHandler?.Dispose();
-            _fileListHandler = null;
-            _navigationHandler?.Dispose();
-            _navigationHandler = null;
-            _fileTreeHandler?.Dispose();
-            _fileTreeHandler = null;
-            _searchHandler?.Dispose();
-            _searchHandler = null;
+            SafeDispose.D(ref _previewHandler);
+            SafeDispose.D(ref _fileListHandler);
+            SafeDispose.D(ref _navigationHandler);
+            SafeDispose.D(ref _fileTreeHandler);
+            SafeDispose.D(ref _searchHandler);
 
             components?.Dispose();
         }

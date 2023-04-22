@@ -6,25 +6,19 @@ using Silk.NET.DXGI;
 using AlphaMode = Silk.NET.Direct2D.AlphaMode;
 using FontStyle = Silk.NET.DirectWrite.FontStyle;
 using IDWriteTextFormat = Silk.NET.DirectWrite.IDWriteTextFormat;
+using IDWriteTextLayout = Silk.NET.DirectWrite.IDWriteTextLayout;
 
 namespace LuminaExplorer.Controls.Util;
 
 public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
-    protected readonly T Control;
-
     private IDXGISwapChain* _pDxgiSwapChain;
     private ID3D11DeviceContext* _pD3dContext;
     private IDXGISurface* _pDxgiSurface;
     private ID2D1RenderTarget* _pRenderTarget;
 
     private ID2D1Brush* _pForeColorBrush;
-    private Color _foreColor;
-
     private ID2D1Brush* _pBackColorBrush;
-    private Color _backColor;
-
     private IDWriteTextFormat* _pFontTextFormat;
-    private Font _font = null!;
 
     protected BaseD2DRenderer(T control) {
         Control = control;
@@ -33,18 +27,21 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
             TryInitializeApis();
 
             Control.Resize += ControlOnResize;
-
-            ForeColor = Control.ForeColor;
-            BackColor = Control.BackColor;
-            Font = Control.Font;
+            Control.ForeColorChanged += ControlOnForeColorChanged;
+            Control.BackColorChanged += ControlOnBackColorChanged;
+            Control.FontChanged += ControlOnFontChanged;
         } catch (Exception e) {
             LastException = e;
         }
     }
 
     protected override void Dispose(bool disposing) {
-        if (disposing)
+        if (disposing) {
             Control.Resize -= ControlOnResize;
+            Control.ForeColorChanged -= ControlOnForeColorChanged;
+            Control.BackColorChanged -= ControlOnBackColorChanged;
+            Control.FontChanged -= ControlOnFontChanged;
+        }
 
         SafeRelease(ref _pForeColorBrush);
         SafeRelease(ref _pBackColorBrush);
@@ -54,43 +51,15 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
         SafeRelease(ref _pDxgiSurface);
     }
 
+    public T Control { get; }
+
     public Exception? LastException { get; protected set; }
 
-    public Color ForeColor {
-        get => _foreColor;
-        set {
-            if (_foreColor == value)
-                return;
-            _foreColor = value;
-            SafeRelease(ref _pForeColorBrush);
-        }
-    }
+    protected ID2D1Brush* ForeColorBrush => GetOrCreateSolidColorBrush(ref _pForeColorBrush, Control.ForeColor);
 
-    protected ID2D1Brush* ForeColorBrush => GetOrCreateSolidColorBrush(ref _pForeColorBrush, ForeColor);
+    protected ID2D1Brush* BackColorBrush => GetOrCreateSolidColorBrush(ref _pBackColorBrush, Control.BackColor);
 
-    public Color BackColor {
-        get => _backColor;
-        set {
-            if (_backColor == value)
-                return;
-            _backColor = value;
-            SafeRelease(ref _pBackColorBrush);
-        }
-    }
-
-    protected ID2D1Brush* BackColorBrush => GetOrCreateSolidColorBrush(ref _pBackColorBrush, BackColor);
-
-    public Font Font {
-        get => _font;
-        set {
-            if (Equals(_font, value))
-                return;
-            _font = value;
-            SafeRelease(ref _pFontTextFormat);
-        }
-    }
-
-    protected IDWriteTextFormat* FontTextFormat => GetOrCreateFromFont(ref _pFontTextFormat, Font);
+    protected IDWriteTextFormat* FontTextFormat => GetOrCreateFromFont(ref _pFontTextFormat, Control.Font);
 
     protected ID2D1RenderTarget* RenderTarget {
         get {
@@ -156,16 +125,20 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
         }
     }
 
-    protected void ControlOnResize(object? sender, EventArgs e) {
+    private void ControlOnForeColorChanged(object? sender, EventArgs e) => SafeRelease(ref _pForeColorBrush);
+
+    private void ControlOnBackColorChanged(object? sender, EventArgs e) => SafeRelease(ref _pBackColorBrush);
+
+    private void ControlOnFontChanged(object? sender, EventArgs e) => SafeRelease(ref _pFontTextFormat);
+
+    private void ControlOnResize(object? sender, EventArgs e) {
         SafeRelease(ref _pRenderTarget);
         SafeRelease(ref _pDxgiSurface);
-
-        Control.Invalidate();
     }
 
     protected abstract void DrawInternal();
 
-    public bool Draw(PaintEventArgs _) {
+    public virtual bool Draw(PaintEventArgs _) {
         try {
             if (Control.Width != 0 && Control.Height != 0) {
                 var pRenderTarget = RenderTarget;
@@ -192,97 +165,72 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
         }
     }
 
-    protected void DrawContrastingText(
-        string @string,
+    protected void DrawText(string? @string,
         Rectangle rectangle,
         WordWrapping? wordWrapping = null,
         TextAlignment? textAlignment = null,
         ParagraphAlignment? paragraphAlignment = null,
-        float opacity = 1,
-        int borderWidth = 2,
-        IDWriteTextFormat* pTextFormat = null,
-        ID2D1Brush* pForeBrush = null,
-        ID2D1Brush* pBackBrush = null) {
+        IDWriteTextFormat* textFormat = null,
+        ID2D1Brush* textBrush = null,
+        ID2D1Brush* shadowBrush = null,
+        float opacity = 1f,
+        int borderWidth = 0) {
+        if (opacity <= 0 || string.IsNullOrWhiteSpace(@string))
+            return;
 
         // ReSharper disable once ConvertIfStatementToNullCoalescingAssignment
-        if (pTextFormat is null)
-            pTextFormat = FontTextFormat;
+        if (textFormat is null)
+            textFormat = FontTextFormat;
 
         // ReSharper disable once ConvertIfStatementToNullCoalescingAssignment
-        if (pForeBrush is null)
-            pForeBrush = ForeColorBrush;
+        if (textBrush is null)
+            textBrush = ForeColorBrush;
 
         // ReSharper disable once ConvertIfStatementToNullCoalescingAssignment
-        if (pBackBrush is null)
-            pBackBrush = BackColorBrush;
+        if (shadowBrush is null)
+            shadowBrush = BackColorBrush;
 
         if (wordWrapping is not null)
-            pTextFormat->SetWordWrapping(wordWrapping.Value);
+            textFormat->SetWordWrapping(wordWrapping.Value);
 
         if (textAlignment is not null)
-            pTextFormat->SetTextAlignment(textAlignment.Value);
-        
+            textFormat->SetTextAlignment(textAlignment.Value);
+
         if (paragraphAlignment is not null)
-            pTextFormat->SetParagraphAlignment(paragraphAlignment.Value);
+            textFormat->SetParagraphAlignment(paragraphAlignment.Value);
 
-        var disposeBrushAfter = false;
-        switch (opacity) {
-            case 0:
-                return;
-            case >= 1:
-                break;
-            default:
-                pBackBrush = CreateSolidColorBrush(Color.FromArgb(
-                    (byte) (BackColor.A * opacity),
-                    BackColor.R,
-                    BackColor.G,
-                    BackColor.B));
-                pForeBrush = CreateSolidColorBrush(Color.FromArgb(
-                    (byte) (ForeColor.A * opacity),
-                    ForeColor.R,
-                    ForeColor.G,
-                    ForeColor.B));
-                disposeBrushAfter = true;
-                break;
-        }
+        shadowBrush->SetOpacity(opacity);
+        textBrush->SetOpacity(opacity);
 
-        try {
-            var pRenderTarget = RenderTarget;
+        var pRenderTarget = RenderTarget;
 
-            var box = rectangle.ToSilkFloat();
-            fixed (char* pString = @string.AsSpan()) {
-                for (var i = -borderWidth; i <= borderWidth; i++) {
-                    for (var j = -borderWidth; j <= borderWidth; j++) {
-                        if (i == 0 && j == 0)
-                            continue;
-                        box = (rectangle with {X = rectangle.X + i, Y = rectangle.Y + j}).ToSilkFloat();
-                        pRenderTarget->DrawTextA(
-                            pString,
-                            (uint) @string.Length,
-                            (Silk.NET.Direct2D.IDWriteTextFormat*) pTextFormat,
-                            &box,
-                            pBackBrush,
-                            DrawTextOptions.None,
-                            DwriteMeasuringMode.GdiNatural);
-                    }
+        var box = rectangle.ToSilkFloat();
+        fixed (char* pString = @string.AsSpan()) {
+            for (var i = -borderWidth; i <= borderWidth; i++) {
+                for (var j = -borderWidth; j <= borderWidth; j++) {
+                    if (i == 0 && j == 0)
+                        continue;
+                    box = (rectangle with {X = rectangle.X + i, Y = rectangle.Y + j}).ToSilkFloat();
+                    pRenderTarget->DrawTextA(
+                        pString,
+                        (uint) @string.Length,
+                        (Silk.NET.Direct2D.IDWriteTextFormat*) textFormat,
+                        &box,
+                        shadowBrush,
+                        DrawTextOptions.None,
+                        DwriteMeasuringMode.GdiNatural);
                 }
+            }
 
-                box = rectangle.ToSilkFloat();
-                pRenderTarget->DrawTextA(
-                    pString,
-                    (uint) @string.Length,
-                    (Silk.NET.Direct2D.IDWriteTextFormat*) pTextFormat,
-                    &box,
-                    pForeBrush,
-                    DrawTextOptions.None,
-                    DwriteMeasuringMode.GdiNatural);
-            }
-        } finally {
-            if (disposeBrushAfter) {
-                SafeRelease(ref pBackBrush);
-                SafeRelease(ref pForeBrush);
-            }
-                
+            box = rectangle.ToSilkFloat();
+            pRenderTarget->DrawTextA(
+                pString,
+                (uint) @string.Length,
+                (Silk.NET.Direct2D.IDWriteTextFormat*) textFormat,
+                &box,
+                textBrush,
+                DrawTextOptions.None,
+                DwriteMeasuringMode.GdiNatural);
         }
     }
 

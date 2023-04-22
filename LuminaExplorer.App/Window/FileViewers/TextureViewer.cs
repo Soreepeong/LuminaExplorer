@@ -77,7 +77,6 @@ public partial class TextureViewer : Form {
             rc.Height = MinimumHeight;
         }
         SetBounds(rc.X, rc.Y, rc.Width, rc.Height);
-        TexViewer.ShowDescriptionForFromNow(3000);
         Show();
     }
 
