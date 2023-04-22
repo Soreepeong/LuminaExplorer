@@ -139,9 +139,11 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
         u = null;
     }
 
-    protected static void SafeDispose<T>(ref T? u) where T : IDisposable {
-        u?.Dispose();
-        u = default;
+    protected static void SafeReleaseArray<T>(ref T*[] u) where T : unmanaged {
+        foreach (var v in u)
+            if (v is not null)
+                ((IUnknown*) v)->Release();
+        u = new T*[0];
     }
 
     protected sealed class Direct3DDeviceBuilder : IDisposable {

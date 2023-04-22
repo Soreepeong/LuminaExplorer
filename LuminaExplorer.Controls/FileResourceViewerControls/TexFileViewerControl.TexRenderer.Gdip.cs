@@ -1,4 +1,5 @@
-﻿using System.Drawing.Drawing2D;
+﻿using System.Diagnostics;
+using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.Util;
@@ -8,7 +9,9 @@ namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
 public partial class TexFileViewerControl {
     private sealed class GdipRenderer : ITexRenderer {
-        private Bitmap? _bitmap;
+        private readonly BufferedGraphicsContext _bufferedGraphicsContext = new();
+        private Bitmap?[] _bitmaps = Array.Empty<Bitmap?>();
+        private IGridLayout? _layout;
 
         private CancellationTokenSource? _loadCancellationTokenSource;
 
@@ -16,70 +19,84 @@ public partial class TexFileViewerControl {
             Control = control;
         }
 
-        public void Dispose() => SafeDispose.D(ref _bitmap);
+        public void Dispose() {
+            SafeDispose.Array(ref _bitmaps);
+            _bufferedGraphicsContext.Dispose();
+        }
 
         private TexFileViewerControl Control { get; }
 
-        public bool HasNondisposedBitmap => _bitmap is not null;
+        public bool HasNondisposedBitmap => _bitmaps.Any() && _bitmaps.All(x => x is not null);
 
-        public Size ImageSize => _bitmap?.Size ?? Size.Empty;
+        public Size ImageSize => _layout?.GridSize ?? Size.Empty;
 
         public ITexRenderer.LoadState State { get; private set; } = ITexRenderer.LoadState.Empty;
 
         public Exception? LastException { get; private set; }
 
-        public Task LoadTexFileAsync(TexFile texFile, int mipIndex, int slice) {
+        public Task LoadTexFileAsync(TexFile texFile, int mipIndex) {
             // Currently in UI thread
             Reset(false);
             State = ITexRenderer.LoadState.Loading;
 
             var cts = _loadCancellationTokenSource = new();
 
-            return Control.RunOnUiThreadAfter(Task.Run(() => {
-                // Currently NOT in UI thread
-                var texBuf = texFile.TextureBuffer.Filter(mipIndex, slice, TexFile.TextureFormat.B8G8R8A8);
-                var width = texBuf.Width;
-                var height = texBuf.Height;
+            return Control.RunOnUiThreadAfter(
+                Task.WhenAll(Enumerable
+                    .Range(0, texFile.TextureBuffer.DepthOfMipmap(mipIndex))
+                    .Select(i => Task.Run(() => {
+                        cts.Token.ThrowIfCancellationRequested();
+                        var texBuf = texFile.TextureBuffer.Filter(mipIndex, i, TexFile.TextureFormat.B8G8R8A8);
+                        var width = texBuf.Width;
+                        var height = texBuf.Height;
+                        unsafe {
+                            fixed (void* p = texBuf.RawData) {
+                                using var b = new Bitmap(
+                                    width,
+                                    height,
+                                    4 * width,
+                                    PixelFormat.Format32bppArgb,
+                                    (nint) p);
+                                return new Bitmap(b);
+                            }
+                        }
+                    }, cts.Token))),
+                r => {
+                    try {
+                        cts.Token.ThrowIfCancellationRequested();
 
-                unsafe {
-                    fixed (void* p = texBuf.RawData) {
-                        using var b = new Bitmap(width, height, 4 * width, PixelFormat.Format32bppArgb, (nint) p);
-                        return new Bitmap(b);
+                        SafeDispose.Array(ref _bitmaps);
+                        _layout = null;
+
+                        if (r.IsCompletedSuccessfully) {
+                            _bitmaps = r.Result;
+                            _layout = Control.CreateGridLayout(mipIndex);
+                            State = ITexRenderer.LoadState.Loaded;
+                        } else {
+                            LastException = r.Exception ?? new Exception("This exception should not happen");
+                            State = ITexRenderer.LoadState.Error;
+
+                            throw LastException;
+                        }
+                    } catch (Exception) {
+                        if (r.IsCompletedSuccessfully)
+                            SafeDispose.Enumerable(r.Result);
+                        throw;
+                    } finally {
+                        if (cts == _loadCancellationTokenSource)
+                            _loadCancellationTokenSource = null;
+                        cts.Dispose();
                     }
-                }
-            }, cts.Token), r => {
-                // Back in UI thread
-                try {
-                    cts.Token.ThrowIfCancellationRequested();
-
-                    SafeDispose.D(ref _bitmap);
-
-                    if (r.IsCompletedSuccessfully) {
-                        _bitmap = r.Result;
-                        State = ITexRenderer.LoadState.Loaded;
-                    } else {
-                        LastException = r.Exception ?? new Exception("This exception should not happen");
-                        State = ITexRenderer.LoadState.Error;
-
-                        throw LastException;
-                    }
-                } catch (Exception) {
-                    if (r.IsCompletedSuccessfully)
-                        r.Result.Dispose();
-                    throw;
-                } finally {
-                    if (cts == _loadCancellationTokenSource)
-                        _loadCancellationTokenSource = null;
-                    cts.Dispose();
-                }
-            });
+                });
         }
 
         public void Reset(bool disposeBitmap = true) {
             LastException = null;
 
-            if (disposeBitmap)
-                SafeDispose.D(ref _bitmap);
+            if (disposeBitmap) {
+                SafeDispose.Array(ref _bitmaps);
+                _layout = null;
+            }
 
             _loadCancellationTokenSource?.Cancel();
             _loadCancellationTokenSource = null;
@@ -88,10 +105,12 @@ public partial class TexFileViewerControl {
         }
 
         public bool Draw(PaintEventArgs e) {
+            BufferedGraphics? bufferedGraphics = null;
             try {
-                var g = e.Graphics;
+                bufferedGraphics = _bufferedGraphicsContext.Allocate(e.Graphics, e.ClipRectangle);
+                var g = bufferedGraphics.Graphics;
 
-                if (_bitmap is not { } bitmap) {
+                if (_layout is not { } layout) {
                     using var backBrush = new SolidBrush(Control.BackColor);
                     g.FillRectangle(backBrush, new(new(), Control.ClientSize));
                     return true;
@@ -108,58 +127,87 @@ public partial class TexFileViewerControl {
                     clientSize.Width - Control.Padding.Horizontal - Control.Margin.Horizontal,
                     clientSize.Height - Control.Padding.Vertical - Control.Margin.Vertical);
 
-                if (Control.ShouldDrawTransparencyGrid(e.ClipRectangle,
-                        out var multiplier,
-                        out var minX,
-                        out var minY,
-                        out var dx,
-                        out var dy)) {
-                    using var cellBrush1 = new SolidBrush(Control.TransparencyCellColor1);
-                    using var cellBrush2 = new SolidBrush(Control.TransparencyCellColor2);
-                    var rc = new Rectangle(0, minY * multiplier + dy, 0, multiplier);
-                    var yLim = Math.Min(imageRect.Bottom, e.ClipRectangle.Bottom);
-                    var xLim = Math.Min(imageRect.Right, e.ClipRectangle.Right);
-                    for (var y = minY;; y++) {
-                        rc.Height = Math.Min(multiplier, yLim - rc.Y);
-                        if (rc.Height <= 0)
-                            break;
-
-                        rc.X = minX * multiplier + dx;
-                        rc.Width = multiplier;
-                        for (var x = minX;; x++) {
-                            rc.Width = Math.Min(multiplier, xLim - rc.X);
-                            if (rc.Width <= 0)
-                                break;
-
-                            g.FillRectangle(
-                                (x + y) % 2 == 0 ? cellBrush1 : cellBrush2,
-                                x * multiplier + dx,
-                                y * multiplier + dy,
-                                multiplier,
-                                multiplier);
-
-                            rc.X += multiplier;
-                        }
-
-                        rc.Y += multiplier;
-                    }
-                }
-
                 g.InterpolationMode = Control.NearestNeighborMinimumZoom <= Control.Viewport.EffectiveZoom
                     ? InterpolationMode.NearestNeighbor
                     : InterpolationMode.Bilinear;
-                g.DrawImage(bitmap, imageRect);
 
-                if (Control.ContentBorderWidth > 0) {
-                    using var pen = new Pen(Control.ContentBorderColor, Control.ContentBorderWidth);
-                    g.DrawRectangle(pen, Rectangle.Inflate(imageRect, 1, 1));
+                // 1. Draw transparency grids
+                for (var i = 0; i < _bitmaps.Length; i++) {
+                    var cellRect = Rectangle.Truncate(layout.RectOf(i, imageRect));
+
+                    if (Control.ShouldDrawTransparencyGrid(
+                            cellRect,
+                            e.ClipRectangle,
+                            out var multiplier,
+                            out var minX,
+                            out var minY,
+                            out var dx,
+                            out var dy)) {
+                        using var cellBrush1 = new SolidBrush(Control.TransparencyCellColor1);
+                        using var cellBrush2 = new SolidBrush(Control.TransparencyCellColor2);
+                        var yLim = Math.Min(cellRect.Bottom, e.ClipRectangle.Bottom);
+                        var xLim = Math.Min(cellRect.Right, e.ClipRectangle.Right);
+                        var rc = new Rectangle();
+                        for (var y = minY;; y++) {
+                            rc.Y = y * multiplier + dy;
+                            rc.Height = Math.Min(multiplier, yLim - rc.Y);
+                            if (rc.Height <= 0)
+                                break;
+
+                            for (var x = minX;; x++) {
+                                rc.X = x * multiplier + dx;
+                                rc.Width = Math.Min(multiplier, xLim - rc.X);
+                                if (rc.Width <= 0)
+                                    break;
+
+                                g.FillRectangle((x + y) % 2 == 0 ? cellBrush1 : cellBrush2, rc);
+                            }
+                        }
+                    }
                 }
+
+                // 2. Draw cell borders
+                using (var borderPen = new Pen(Control.ContentBorderColor, Control.ContentBorderWidth)) {
+                    for (var i = 0; i < _bitmaps.Length; i++) {
+                        var cellRect = Rectangle.Truncate(layout.RectOf(i, imageRect));
+                        if (Control.ContentBorderWidth > 0)
+                            g.DrawRectangle(borderPen, Rectangle.Inflate(cellRect, 1, 1));
+                    }
+                }
+
+                // 3. Draw bitmaps
+                for (var i = 0; i < _bitmaps.Length; i++) {
+                    var bitmap = _bitmaps[i];
+                    if (bitmap is null) {
+                        Debug.Print("_bitmaps contains null when _layout is cell?");
+                        continue;
+                    }
+
+                    g.DrawImage(bitmap, Rectangle.Truncate(layout.RectOf(i, imageRect)));
+                }
+
+                // 4. Draw pixel grids
+                if (Control.PixelGridMinimumZoom <= Control.Viewport.EffectiveZoom) {
+                    // TODO
+                }
+
+                DrawText(
+                    g,
+                    Control.AutoDescription,
+                    overlayRect,
+                    StringAlignment.Near,
+                    StringAlignment.Near,
+                    Control.Font,
+                    Control.ForeColorWhenLoaded,
+                    Control.BackColorWhenLoaded,
+                    Control.AutoDescriptionOpacity,
+                    2);
 
                 if (State == ITexRenderer.LoadState.Loading) {
                     using var backBrush = new SolidBrush(
                         Control.BackColor.MultiplyOpacity(Control.LoadingBackgroundOverlayOpacity));
                     g.FillRectangle(backBrush, new(new(), Control.ClientSize));
-                    
+
                     DrawText(
                         g,
                         Control.LoadingText,
@@ -171,18 +219,6 @@ public partial class TexFileViewerControl {
                         Control.BackColor,
                         1f,
                         2);
-                } else {
-                    DrawText(
-                        g,
-                        Control.AutoDescription,
-                        overlayRect,
-                        StringAlignment.Near,
-                        StringAlignment.Near,
-                        Control.Font,
-                        Control.ForeColorWhenLoaded,
-                        Control.BackColorWhenLoaded,
-                        Control.AutoDescriptionOpacity,
-                        2);
                 }
 
                 return true;
@@ -190,6 +226,9 @@ public partial class TexFileViewerControl {
                 State = ITexRenderer.LoadState.Error;
                 LastException = ex;
                 return false;
+            } finally {
+                bufferedGraphics?.Render();
+                bufferedGraphics?.Dispose();
             }
         }
 

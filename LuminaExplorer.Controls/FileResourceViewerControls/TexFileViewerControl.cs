@@ -4,6 +4,7 @@ using Lumina.Data;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.LazySqPackTree;
+using LuminaExplorer.Core.Util;
 using Timer = System.Windows.Forms.Timer;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
@@ -17,7 +18,6 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     private Task<ITexRenderer[]>? _renderers;
 
-    private int _currentSlice;
     private int _currentMipmap;
 
     private string? _loadingFileNameWhenEmpty;
@@ -31,6 +31,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     private float _nearestNeighborMinimumZoom = 2f;
     private float _pixelGridMinimumZoom = 5f;
     private float _loadingBackgroundOverlayOpacity = 0.3f;
+    private Size _sliceSpacing = new(16, 16);
 
     private readonly Timer _autoDescriptionFadeTimer;
     private long _autoDescriptionShowUntilTicks;
@@ -101,6 +102,8 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     public event EventHandler? TransparencyCellColor1Changed;
 
     public event EventHandler? TransparencyCellColor2Changed;
+
+    public event EventHandler? SliceSpacingChanged;
 
     public event EventHandler? ImageLoadedForDisplay;
 
@@ -214,6 +217,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         }
     }
 
+    // TODO
     public float PixelGridMinimumZoom {
         get => _pixelGridMinimumZoom;
         set {
@@ -224,20 +228,41 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         }
     }
 
+    public Size SliceSpacing {
+        get => _sliceSpacing;
+        set {
+            if (_sliceSpacing == value)
+                return;
+            
+            _sliceSpacing = value;
+            SliceSpacingChanged?.Invoke(this, EventArgs.Empty);
+            Viewport.Size = CreateGridLayout(_currentMipmap).GridSize;
+            Invalidate();
+            
+            if (TryGetRenderers(out var renderers)) {
+                foreach (var r in renderers) {
+                    if (r.State is ITexRenderer.LoadState.Loading or ITexRenderer.LoadState.Loaded) {
+                        Viewport.Size = Size.Add(r.ImageSize, new(value.Width, value.Height));
+                        Invalidate();
+                    }
+                }
+            }
+        }
+    }
+
     public string AutoDescription {
         get {
             var effectiveZoom = Viewport.EffectiveZoom;
             if (_autoDescriptionCached is not null && Equals(effectiveZoom, _autoDescriptionSourceZoom))
                 return _autoDescriptionCached;
 
-            if (Tree is not { } tree ||
-                FileResourceTyped is not { } texFile ||
+            if (FileResourceTyped is not { } texFile ||
                 File is not { } file)
                 return "";
 
             _autoDescriptionSourceZoom = effectiveZoom;
             var sb = new StringBuilder();
-            sb.AppendLine(tree.GetFullPath(file));
+            sb.AppendLine(file.Name);
             sb.Append(texFile.Header.Format).Append("; ")
                 .Append($"{texFile.Data.Length:##,###} Bytes");
             if (texFile.Header.MipLevels > 1)
@@ -326,39 +351,41 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         : $"Loading {File?.Name ?? _loadingFileNameWhenEmpty}...";
 
     private bool ShouldDrawTransparencyGrid(
-        Rectangle clipRectangle,
+        RectangleF cellRect,
+        RectangleF clipRect,
         out int multiplier,
         out int minX,
         out int minY,
         out int dx,
         out int dy) {
         multiplier = TransparencyCellSize;
-        minX = minY = dx = dy = 0;
+        dx = dy = minX = minY = 0;
 
         // Is transparency grid disabled?
         if (multiplier <= 0)
             return false;
 
-        var imageRect = Viewport.EffectiveRect;
-
         // Is image completely out of drawing region?
-        if (imageRect.Right <= clipRectangle.Left ||
-            imageRect.Bottom <= clipRectangle.Top ||
-            imageRect.Left >= clipRectangle.Right ||
-            imageRect.Top >= clipRectangle.Bottom)
+        if (cellRect.Right <= clipRect.Left ||
+            cellRect.Bottom <= clipRect.Top ||
+            cellRect.Left >= clipRect.Right ||
+            cellRect.Top >= clipRect.Bottom)
             return false;
 
-        minX = imageRect.Left < 0
-            ? -Math.DivRem(imageRect.Left, -multiplier, out dx)
-            : Math.DivRem(imageRect.Left, multiplier, out dx);
-        minY = imageRect.Top < 0
-            ? -Math.DivRem(imageRect.Top, -multiplier, out dy)
-            : Math.DivRem(imageRect.Top, multiplier, out dy);
+        minX = cellRect.Left < 0
+            ? (int)-MiscUtils.DivRem(cellRect.Left, -multiplier, out var fdx)
+            : (int)MiscUtils.DivRem(cellRect.Left, multiplier, out fdx);
+        minY = cellRect.Top < 0
+            ? (int)-MiscUtils.DivRem(cellRect.Top, -multiplier, out var fdy)
+            : (int)MiscUtils.DivRem(cellRect.Top, multiplier, out fdy);
 
-        if (minX * multiplier < clipRectangle.Left)
-            minX = clipRectangle.Left / multiplier;
-        if (minY * multiplier < clipRectangle.Top)
-            minY = clipRectangle.Top / multiplier;
+        if (minX * multiplier < clipRect.Left)
+            minX = (int)(clipRect.Left / multiplier);
+        if (minY * multiplier < clipRect.Top)
+            minY = (int)(clipRect.Top / multiplier);
+
+        dx = (int) fdx;
+        dy = (int) fdy;
 
         return true;
     }
@@ -439,7 +466,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                 case ITexRenderer.LoadState.Empty:
                     if (FileResourceTyped is { } fr) {
                         MouseActivity.Enabled = false;
-                        r.LoadTexFileAsync(fr, _currentMipmap, _currentSlice)
+                        r.LoadTexFileAsync(fr, _currentMipmap)
                             .ContinueWith(res => {
                                 MouseActivity.Enabled = true;
                                 Viewport.Reset(r.ImageSize);
@@ -509,21 +536,16 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     }
 
     public override Size GetPreferredSize(Size proposedSize) =>
-        Viewport.Size.IsEmpty
-            ? base.GetPreferredSize(proposedSize)
-            : new(
-                Viewport.Size.Width + Margin.Horizontal,
-                Viewport.Size.Height + Margin.Vertical);
+        Size.Add(CreateGridLayout(_currentMipmap).GridSize, new(Margin.Horizontal, Margin.Vertical));
 
-    public void ChangeDisplayedBitmap(int slice, int mipmap, bool force = false) {
-        if (!force && _currentSlice == slice && _currentMipmap == mipmap)
+    public void ChangeDisplayedMipmap(int mipmap, bool force = false) {
+        if (!force && _currentMipmap == mipmap)
             return;
 
-        _currentSlice = slice;
         _currentMipmap = mipmap;
 
         ClearDisplayInformationCache();
-        if (TryGetRenderers(out var renderers))
+        if (TryGetRenderers(out var renderers, true))
             foreach (var r in renderers)
                 r.Reset(false);
 
@@ -533,7 +555,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     public override void SetFile(VirtualSqPackTree tree, VirtualFile file, FileResource fileResource) {
         base.SetFile(tree, file, fileResource);
         ClearFileImpl();
-        ChangeDisplayedBitmap(0, 0);
+        ChangeDisplayedMipmap(0);
     }
 
     public override void ClearFile(bool keepContentsDisplayed = false) {
@@ -574,7 +596,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     private void ClearFileImpl() {
         MouseActivity.Enabled = false;
         ClearDisplayInformationCache();
-        _currentSlice = _currentMipmap = -1;
+        _currentMipmap = -1;
     }
 
     private bool TryGetRenderers([MaybeNullWhen(false)] out ITexRenderer[] renderers, bool startLoading = false) {
@@ -585,9 +607,12 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
         renderers = null;
         if (startLoading) {
-            _renderers ??= Task.Run(() => new ITexRenderer[] {
+            _renderers ??= RunOnUiThreadAfter(Task.Run(() => new ITexRenderer[] {
                 new D2DTexRenderer(this),
                 new GdipRenderer(this),
+            }), r => {
+                Invalidate();
+                return r.Result;
             });
         }
 

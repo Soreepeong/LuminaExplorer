@@ -161,7 +161,7 @@ public sealed class ModelVirtualFileStream : BaseVirtualFileStream {
     }
 
     public override void CloseButOpenAgainWhenNecessary() {
-        SafeDispose.D(ref _reader);
+        SafeDispose.One(ref _reader);
     }
 
     private class OffsetManager : BaseOffsetManager {

@@ -1,5 +1,6 @@
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.Util;
+using LuminaExplorer.Core.Util;
 using Silk.NET.Direct2D;
 using Silk.NET.DirectWrite;
 using Rectangle = System.Drawing.Rectangle;
@@ -8,8 +9,9 @@ namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
 public partial class TexFileViewerControl {
     private sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerControl>, ITexRenderer {
-        private WicNet.WicBitmapSource? _wicBitmap;
-        private ID2D1Bitmap* _pBitmap;
+        private WicNet.WicBitmapSource?[] _wicBitmaps = Array.Empty<WicNet.WicBitmapSource>();
+        private ID2D1Bitmap*[] _pBitmaps = new ID2D1Bitmap*[0];
+        private IGridLayout? _layout;
         private ID2D1Brush* _pForeColorWhenLoadedBrush;
         private ID2D1Brush* _pBackColorWhenLoadedBrush;
         private ID2D1Brush* _pBorderColorBrush;
@@ -43,11 +45,9 @@ public partial class TexFileViewerControl {
             SafeRelease(ref _pTransparencyCellColor2Brush);
         }
 
-        public bool HasNondisposedBitmap => _wicBitmap is not null;
+        public bool HasNondisposedBitmap => _wicBitmaps.Any() && _wicBitmaps.Any(x => x is not null);
 
-        public Size ImageSize => _wicBitmap is null
-            ? Size.Empty
-            : new((int) _wicBitmap.Size.Width, (int) _wicBitmap.Size.Height);
+        public Size ImageSize => _layout?.GridSize ?? Size.Empty;
 
         public ITexRenderer.LoadState State { get; private set; } = ITexRenderer.LoadState.Empty;
 
@@ -66,63 +66,82 @@ public partial class TexFileViewerControl {
         private ID2D1Brush* TransparencyCellColor2Brush =>
             GetOrCreateSolidColorBrush(ref _pTransparencyCellColor2Brush, Control.TransparencyCellColor2);
 
-        private ID2D1Bitmap* Bitmap => GetOrCreateFromWicBitmap(ref _pBitmap, _wicBitmap);
+        private ID2D1Bitmap* GetBitmapAt(int slice) {
+            if (slice >= _wicBitmaps.Length)
+                throw new ArgumentOutOfRangeException(nameof(slice), slice, null);
 
-        public Task LoadTexFileAsync(TexFile texFile, int mipIndex, int slice) {
+            if (_pBitmaps.Length != _wicBitmaps.Length) {
+                for (var i = 0; i < _pBitmaps.Length; i++)
+                    SafeRelease(ref _pBitmaps[i]);
+
+                _pBitmaps = new ID2D1Bitmap*[_wicBitmaps.Length];
+            }
+
+            return _pBitmaps[slice] = GetOrCreateFromWicBitmap(ref _pBitmaps[slice], _wicBitmaps[slice]);
+        }
+
+        public Task LoadTexFileAsync(TexFile texFile, int mipIndex) {
             // Currently in UI thread
             Reset(false);
             State = ITexRenderer.LoadState.Loading;
 
             var cts = _loadCancellationTokenSource = new();
 
-            return Control.RunOnUiThreadAfter(Task.Run(() => {
-                // Currently NOT in UI thread
-                WicNet.WicBitmapSource? wicBitmap = null;
-                try {
-                    wicBitmap = texFile.ToWicBitmap(mipIndex, slice);
-                    wicBitmap.ConvertTo(
-                        WicNet.WicPixelFormat.GUID_WICPixelFormat32bppPBGRA,
-                        paletteTranslate: DirectN.WICBitmapPaletteType.WICBitmapPaletteTypeMedianCut);
-                    return wicBitmap;
-                } catch (Exception) {
-                    wicBitmap?.Dispose();
-                    throw;
-                }
-            }, cts.Token), r => {
-                // Back in UI thread
-                try {
-                    cts.Token.ThrowIfCancellationRequested();
+            return Control.RunOnUiThreadAfter(
+                Task.WhenAll(Enumerable
+                    .Range(0, texFile.TextureBuffer.DepthOfMipmap(mipIndex))
+                    .Select(i => Task.Run(() => {
+                        cts.Token.ThrowIfCancellationRequested();
+                        var wb = texFile.ToWicBitmap(mipIndex, i);
+                        try {
+                            cts.Token.ThrowIfCancellationRequested();
+                            wb.ConvertTo(
+                                WicNet.WicPixelFormat.GUID_WICPixelFormat32bppPBGRA,
+                                paletteTranslate: DirectN.WICBitmapPaletteType.WICBitmapPaletteTypeMedianCut);
+                            return wb;
+                        } catch (Exception) {
+                            wb.Dispose();
+                            throw;
+                        }
+                    }, cts.Token))),
+                r => {
+                    try {
+                        cts.Token.ThrowIfCancellationRequested();
 
-                    SafeDispose(ref _wicBitmap);
-                    SafeRelease(ref _pBitmap);
+                        SafeDispose.Array(ref _wicBitmaps);
+                        SafeReleaseArray(ref _pBitmaps);
+                        _layout = null;
 
-                    if (r.IsCompletedSuccessfully) {
-                        _wicBitmap = r.Result;
-                        State = ITexRenderer.LoadState.Loaded;
-                    } else {
-                        LastException = r.Exception ?? new Exception("This exception should not happen");
-                        State = ITexRenderer.LoadState.Error;
+                        if (r.IsCompletedSuccessfully) {
+                            _wicBitmaps = r.Result;
+                            _layout = Control.CreateGridLayout(mipIndex);
+                            State = ITexRenderer.LoadState.Loaded;
+                        } else {
+                            LastException = r.Exception ?? new Exception("This exception should not happen");
+                            State = ITexRenderer.LoadState.Error;
 
-                        throw LastException;
+                            throw LastException;
+                        }
+                    } catch (Exception) {
+                        if (r.IsCompletedSuccessfully)
+                            SafeDispose.Enumerable(r.Result);
+
+                        throw;
+                    } finally {
+                        if (cts == _loadCancellationTokenSource)
+                            _loadCancellationTokenSource = null;
+                        cts.Dispose();
                     }
-                } catch (Exception) {
-                    if (r.IsCompletedSuccessfully)
-                        r.Result.Dispose();
-                    throw;
-                } finally {
-                    if (cts == _loadCancellationTokenSource)
-                        _loadCancellationTokenSource = null;
-                    cts.Dispose();
-                }
-            });
+                });
         }
 
         public void Reset(bool disposeBitmap = true) {
             LastException = null;
 
             if (disposeBitmap) {
-                SafeDispose(ref _wicBitmap);
-                SafeRelease(ref _pBitmap);
+                SafeDispose.Array(ref _wicBitmaps);
+                SafeReleaseArray(ref _pBitmaps);
+                _layout = null;
             }
 
             _loadCancellationTokenSource?.Cancel();
@@ -143,7 +162,7 @@ public partial class TexFileViewerControl {
                 clientSize.Height - Control.Padding.Vertical - Control.Margin.Vertical);
 
             var box = Control.ClientRectangle.ToSilkFloat();
-            if (Bitmap is null) {
+            if (_layout is not { } layout) {
                 BackColorBrush->SetOpacity(1f);
                 pRenderTarget->FillRectangle(&box, BackColorBrush);
                 return;
@@ -152,62 +171,89 @@ public partial class TexFileViewerControl {
             BackColorWhenLoadedBrush->SetOpacity(1f);
             pRenderTarget->FillRectangle(&box, BackColorWhenLoadedBrush);
 
-            if (Control.ShouldDrawTransparencyGrid(Control.ClientRectangle,
-                    out var multiplier,
-                    out var minX,
-                    out var minY,
-                    out var dx,
-                    out var dy)) {
-                box.Min.Y = minY * multiplier + dy;
-                box.Max.Y = box.Min.Y + multiplier;
-                var yLim = Math.Min(imageRect.Bottom, clientSize.Height);
-                var xLim = Math.Min(imageRect.Right, clientSize.Width);
-                TransparencyCellColor1Brush->SetOpacity(1f);
-                TransparencyCellColor2Brush->SetOpacity(1f);
-                for (var y = minY;; y++) {
-                    var height = Math.Min(multiplier, yLim - box.Min.Y);
-                    if (height > 0)
-                        box.Max.Y = box.Min.Y + height;
-                    else
-                        break;
+            if (Control.ContentBorderWidth > 0)
+                ContentBorderColorBrush->SetOpacity(1f);
 
-                    box.Min.X = minX * multiplier + dx;
-                    box.Max.X = box.Min.X + multiplier;
-                    for (var x = minX;; x++) {
-                        var width = Math.Min(multiplier, xLim - box.Min.X);
-                        if (width > 0)
-                            box.Max.X = box.Min.X + width;
-                        else
+            // 1. Draw transparency grids
+            for (var i = 0; i < _wicBitmaps.Length; i++) {
+                var cellRectF = layout.RectOf(i, imageRect);
+                if (Control.ShouldDrawTransparencyGrid(
+                        cellRectF,
+                        Control.ClientRectangle,
+                        out var multiplier,
+                        out var minX,
+                        out var minY,
+                        out var dx,
+                        out var dy)) {
+                    var yLim = Math.Min(cellRectF.Bottom, clientSize.Height);
+                    var xLim = Math.Min(cellRectF.Right, clientSize.Width);
+                    TransparencyCellColor1Brush->SetOpacity(1f);
+                    TransparencyCellColor2Brush->SetOpacity(1f);
+                    for (var y = minY;; y++) {
+                        box.Min.Y = y * multiplier + dy;
+                        box.Max.Y = box.Min.Y + Math.Min(multiplier, yLim - box.Min.Y);
+                        if (box.Min.Y >= box.Max.Y)
                             break;
 
-                        pRenderTarget->FillRectangle(
-                            &box,
-                            (x + y) % 2 == 0
-                                ? TransparencyCellColor1Brush
-                                : TransparencyCellColor2Brush);
+                        for (var x = minX;; x++) {
+                            box.Min.X = x * multiplier + dx;
+                            box.Max.X = box.Min.X + Math.Min(multiplier, xLim - box.Min.X);
+                            if (box.Min.X >= box.Max.X)
+                                break;
 
-                        box.Min.X += multiplier;
+                            pRenderTarget->FillRectangle(
+                                &box,
+                                (x + y) % 2 == 0
+                                    ? TransparencyCellColor1Brush
+                                    : TransparencyCellColor2Brush);
+                        }
                     }
-
-                    box.Min.Y += multiplier;
                 }
             }
 
-            pRenderTarget->DrawBitmap(
-                Bitmap,
-                imageRect.ToSilkFloat(),
-                1f, // opacity
-                Control.NearestNeighborMinimumZoom <= Control.Viewport.EffectiveZoom
-                    ? BitmapInterpolationMode.NearestNeighbor
-                    : BitmapInterpolationMode.Linear,
-                null);
-
+            // 2. Draw cell borders
             if (Control.ContentBorderWidth > 0) {
-                box = RectangleF.Inflate(imageRect, Control.ContentBorderWidth / 2f, Control.ContentBorderWidth / 2f)
-                    .ToSilkFloat();
-                ContentBorderColorBrush->SetOpacity(1f);
-                pRenderTarget->DrawRectangle(&box, ContentBorderColorBrush, Control.ContentBorderWidth, null);
+                for (var i = 0; i < _wicBitmaps.Length; i++) {
+                    var cellRectF = layout.RectOf(i, imageRect);
+
+                    box = RectangleF.Inflate(
+                        cellRectF,
+                        Control.ContentBorderWidth / 2f,
+                        Control.ContentBorderWidth / 2f).ToSilkFloat();
+                    pRenderTarget->DrawRectangle(&box, ContentBorderColorBrush, Control.ContentBorderWidth, null);
+                }
             }
+
+            // 3. Draw bitmaps
+            for (var i = 0; i < _wicBitmaps.Length; i++) {
+                var cellRectF = layout.RectOf(i, imageRect);
+
+                box = cellRectF.ToSilkFloat();
+                pRenderTarget->DrawBitmap(
+                    GetBitmapAt(i),
+                    box,
+                    1f, // opacity
+                    Control.NearestNeighborMinimumZoom <= Control.Viewport.EffectiveZoom
+                        ? BitmapInterpolationMode.NearestNeighbor
+                        : BitmapInterpolationMode.Linear,
+                    null);
+            }
+            
+            // 4. Draw pixel grids
+            if (Control.PixelGridMinimumZoom <= Control.Viewport.EffectiveZoom) {
+                // TODO
+            }
+
+            DrawText(
+                Control.AutoDescription,
+                overlayRect,
+                wordWrapping: WordWrapping.EmergencyBreak,
+                textAlignment: TextAlignment.Leading,
+                paragraphAlignment: ParagraphAlignment.Near,
+                textBrush: ForeColorWhenLoadedBrush,
+                shadowBrush: BackColorWhenLoadedBrush,
+                opacity: Control.AutoDescriptionOpacity,
+                borderWidth: 2);
 
             if (State is ITexRenderer.LoadState.Loading or ITexRenderer.LoadState.Empty) {
                 box = Control.ClientRectangle.ToSilkFloat();
@@ -222,17 +268,6 @@ public partial class TexFileViewerControl {
                     paragraphAlignment: ParagraphAlignment.Center,
                     textBrush: ForeColorBrush,
                     shadowBrush: BackColorBrush,
-                    borderWidth: 2);
-            } else {
-                DrawText(
-                    Control.AutoDescription,
-                    overlayRect,
-                    wordWrapping: WordWrapping.EmergencyBreak,
-                    textAlignment: TextAlignment.Leading,
-                    paragraphAlignment: ParagraphAlignment.Near,
-                    textBrush: ForeColorWhenLoadedBrush,
-                    shadowBrush: BackColorWhenLoadedBrush,
-                    opacity: Control.AutoDescriptionOpacity,
                     borderWidth: 2);
             }
         }

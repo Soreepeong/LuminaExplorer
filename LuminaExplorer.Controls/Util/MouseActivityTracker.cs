@@ -40,6 +40,9 @@ public sealed class MouseActivityTracker : IDisposable {
 
     public Control Control => _control;
 
+    public event Action? DragStart;
+    public event Action? DragEnd;
+
     public event PanDelegate? Pan;
     public event ZoomDelegate? ZoomDrag;
     public event ZoomDelegate? ZoomWheel;
@@ -359,6 +362,8 @@ public sealed class MouseActivityTracker : IDisposable {
             Cursor.Position = _control.PointToScreen(dragBase);
             Cursor.Hide();
         }
+        
+        DragStart?.Invoke();
     }
 
     private void ExitDragState() {
@@ -379,6 +384,8 @@ public sealed class MouseActivityTracker : IDisposable {
         _control.Capture = false;
 
         DragOrigin = DragBase = null;
+        
+        DragEnd?.Invoke();
     }
 
     private void RecordActivity(Activity activity) {

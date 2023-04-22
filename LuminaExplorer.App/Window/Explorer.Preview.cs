@@ -60,8 +60,9 @@ public partial class Explorer {
                 ?.GetLookup(file)
                 .AsFileResource(token)
                 .ContinueWith(fr => {
-                        if (_previewingFile != file)
+                        if (_previewingFile != file || _explorer.Tree is not { } tree)
                             return;
+                        
                         if (!fr.IsCompletedSuccessfully) {
                             ClearPreview();
                             return;
@@ -69,9 +70,11 @@ public partial class Explorer {
 
                         _explorer.ppgPreview.SelectedObject = new WrapperTypeConverter().ConvertFrom(fr.Result);
                         _explorer.hbxPreview.ByteProvider = new FileResourceByteProvider(fr.Result);
-                        if (fr.Result is TexFile tf) {
-                            if (_explorer.Tree is { } tree)
-                                _explorer.texPreview.SetFile(tree, file, tf);
+                        if (fr.Result is TexFile tf)
+                            _explorer.texPreview.SetFile(tree, file, tf);
+                        else {
+                            _explorer.texPreview.LoadingFileNameWhenEmpty = null;
+                            _explorer.texPreview.ClearFile();
                         }
                     },
                     token,

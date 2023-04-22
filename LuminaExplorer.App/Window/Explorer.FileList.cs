@@ -87,7 +87,7 @@ public partial class Explorer {
                 if (_tree is not null) {
                     _tree.FolderChanged -= VirtualFolderChanged;
                     _tree.FileChanged -= VirtualFileChanged;
-                    SafeDispose.D(ref _source);
+                    SafeDispose.One(ref _source);
                     // cannot set to null, so replace it with an empty data source.
                     _listView.VirtualListDataSource = new AbstractVirtualListDataSource(_listView);
                 }

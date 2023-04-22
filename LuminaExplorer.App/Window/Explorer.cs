@@ -64,11 +64,11 @@ public partial class Explorer : Form {
     protected override void Dispose(bool disposing) {
         if (disposing) {
             Hide();
-            SafeDispose.D(ref _previewHandler);
-            SafeDispose.D(ref _fileListHandler);
-            SafeDispose.D(ref _navigationHandler);
-            SafeDispose.D(ref _fileTreeHandler);
-            SafeDispose.D(ref _searchHandler);
+            SafeDispose.One(ref _previewHandler);
+            SafeDispose.One(ref _fileListHandler);
+            SafeDispose.One(ref _navigationHandler);
+            SafeDispose.One(ref _fileTreeHandler);
+            SafeDispose.One(ref _searchHandler);
 
             components?.Dispose();
         }
