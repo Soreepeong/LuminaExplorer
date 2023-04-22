@@ -1,5 +1,3 @@
-using Lumina.Data.Files;
-
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
 public partial class TexFileViewerControl {
@@ -14,7 +12,7 @@ public partial class TexFileViewerControl {
         void Reset(bool disposeBitmap = true);
         bool Draw(PaintEventArgs e);
 
-        Task LoadTexFileAsync(TexFile texFile, int mipIndex);
+        Task LoadFileAsync(int mipIndex);
 
         public enum LoadState {
             Empty,

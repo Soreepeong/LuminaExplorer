@@ -90,8 +90,18 @@ public partial class TexFileViewerControl {
             return _pBitmaps[slice] = GetOrCreateFromWicBitmap(ref _pBitmaps[slice], _wicBitmaps[slice]);
         }
 
-        public Task LoadTexFileAsync(TexFile texFile, int mipIndex) {
-            // Currently in UI thread
+        public Task LoadFileAsync(int mipIndex) {
+            if (Control.FileResourceTyped is { } texFile)
+                return LoadTexFileAsync(texFile, mipIndex);
+            if (Control.PhysicalFile is { } pfile) {
+                // TODO
+            }
+
+            Reset(false);
+            return Task.CompletedTask;
+        }
+
+        private Task LoadTexFileAsync(TexFile texFile, int mipIndex) {
             Reset(false);
             State = ITexRenderer.LoadState.Loading;
 

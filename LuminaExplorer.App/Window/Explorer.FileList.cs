@@ -5,7 +5,6 @@ using Lumina.Data;
 using Lumina.Data.Files;
 using LuminaExplorer.App.Utils;
 using LuminaExplorer.App.Window.FileViewers;
-using LuminaExplorer.Controls.FileResourceViewerControls;
 using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.Util;
 
@@ -61,7 +60,7 @@ public partial class Explorer {
             _listView.SelectionChanged += SelectionChanged;
             _listView.ItemDrag += ItemDrag;
             _listView.DoubleClick += DoubleClick;
-            _listView.KeyPress += KeyPress;
+            _listView.KeyDown += KeyDown;
             _listView.KeyUp += KeyUp;
             _listView.MouseUp += MouseUp;
             _listView.MouseWheel += MouseWheel;
@@ -117,7 +116,7 @@ public partial class Explorer {
                     _source.PreviewInterpolationMode = value.PreviewInterpolationMode;
                     _source.PreviewThreads = value.PreviewThumbnailerThreads;
                     _source.SortThreads = value.SortThreads;
-                    
+
                     _cboView.SelectedIndex = value.ListViewMode;
                     _listView.View = value.ListViewMode switch {
                         <= 7 => View.LargeIcon,
@@ -162,7 +161,7 @@ public partial class Explorer {
             _listView.SelectionChanged -= SelectionChanged;
             _listView.ItemDrag -= ItemDrag;
             _listView.DoubleClick -= DoubleClick;
-            _listView.KeyPress -= KeyPress;
+            _listView.KeyDown -= KeyDown;
             _listView.KeyUp -= KeyUp;
             _listView.MouseUp -= MouseUp;
             _listView.MouseWheel -= MouseWheel;
@@ -271,10 +270,8 @@ public partial class Explorer {
             }
         }
 
-        private void KeyPress(object? sender, KeyPressEventArgs e) {
-            if (_listView.VirtualListDataSource is not ExplorerListViewDataSource source)
-                return;
-            if (e.KeyChar == (char) Keys.Enter)
+        private void KeyDown(object? sender, KeyEventArgs e) {
+            if (e.KeyCode == Keys.Enter)
                 ExecuteItems(GetSelectedFiles(), GetSelectedFolders());
         }
 
@@ -309,7 +306,7 @@ public partial class Explorer {
                 previewHandler.ClearPreview();
                 return;
             }
-            
+
             previewHandler.PreviewFile(vo.File);
         }
 
@@ -326,7 +323,7 @@ public partial class Explorer {
 
             if (_tree is not { } tree)
                 return;
-            
+
             foreach (var file in files.Take(16)) {
                 Task<FileResource> fileResourceTask;
                 if (_explorer._previewHandler is { } previewHandler &&

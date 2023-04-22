@@ -113,6 +113,13 @@ public partial class TextureViewer : Form {
                 break;
             case Keys.Left when e.Alt: // TODO: 90deg ccw rotate
                 break;
+            case Keys.OemOpenBrackets: // TODO: previous folder
+                break;
+            case Keys.OemCloseBrackets: // TODO: next folder
+                break;
+            case Keys.Oemcomma: // TODO: mipmapIndex--
+                break;
+            case Keys.OemPeriod: // TODO: mipmapIndex++
             case Keys.D9:
             case Keys.D1: // TODO: set default zoom to fit in window
                 break;

@@ -18,6 +18,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     private Task<ITexRenderer[]>? _renderers;
 
+    private int _currentMipmapSetIndex;
     private int _currentMipmap;
 
     private string? _loadingFileNameWhenEmpty;
@@ -43,7 +44,6 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     private long _loadStartTicks = long.MaxValue;
 
-    private string? _overlayString;
     private long _overlayShowUntilTicks;
 
     public TexFileViewerControl() {
@@ -146,6 +146,8 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     public event EventHandler? TransparencyCellColor2Changed;
 
     public event EventHandler? PixelGridLineColorChanged;
+
+    public string? FileName { get; private set; }
 
     public string? LoadingFileNameWhenEmpty {
         get => _loadingFileNameWhenEmpty;
@@ -311,54 +313,56 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
             if (_autoDescriptionCached is not null && Equals(effectiveZoom, _autoDescriptionSourceZoom))
                 return _autoDescriptionCached;
 
-            if (FileResourceTyped is not { } texFile ||
-                File is not { } file)
-                return "";
-
-            _autoDescriptionSourceZoom = effectiveZoom;
             var sb = new StringBuilder();
-            sb.AppendLine(file.Name);
-            sb.Append(texFile.Header.Format).Append("; ")
-                .Append($"{texFile.Data.Length:##,###} Bytes");
-            if (texFile.Header.MipLevels > 1)
-                sb.Append("; ").Append(texFile.Header.MipLevels).Append(" mipmaps");
-            sb.AppendLine();
-            if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType1D))
-                sb.Append("1D: ").Append(texFile.Header.Width);
-            if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType2D))
-                sb.Append("2D: ").Append(texFile.Header.Width)
-                    .Append(" x ").Append(texFile.Header.Height);
-            if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType3D))
-                sb.Append("3D: ").Append(texFile.Header.Width)
-                    .Append(" x ").Append(texFile.Header.Height)
-                    .Append(" x ").Append(texFile.Header.Depth);
-            if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureTypeCube))
-                sb.Append("Cube: ").Append(texFile.Header.Width)
-                    .Append(" x ").Append(texFile.Header.Height);
-            if (!Equals(effectiveZoom, 1f))
-                sb.Append($" ({effectiveZoom * 100:0.00}%)");
-            sb.AppendLine();
-            foreach (var f in new[] {
-                         TexFile.Attribute.DiscardPerFrame,
-                         TexFile.Attribute.DiscardPerMap,
-                         TexFile.Attribute.Managed,
-                         TexFile.Attribute.UserManaged,
-                         TexFile.Attribute.CpuRead,
-                         TexFile.Attribute.LocationMain,
-                         TexFile.Attribute.NoGpuRead,
-                         TexFile.Attribute.AlignedSize,
-                         TexFile.Attribute.EdgeCulling,
-                         TexFile.Attribute.LocationOnion,
-                         TexFile.Attribute.ReadWrite,
-                         TexFile.Attribute.Immutable,
-                         TexFile.Attribute.TextureRenderTarget,
-                         TexFile.Attribute.TextureDepthStencil,
-                         TexFile.Attribute.TextureSwizzle,
-                         TexFile.Attribute.TextureNoTiled,
-                         TexFile.Attribute.TextureNoSwizzle
-                     })
-                if (texFile.Header.Type.HasFlag(f))
-                    sb.Append("+ ").AppendLine(f.ToString());
+            _autoDescriptionSourceZoom = effectiveZoom;
+            sb.AppendLine(FileName);
+
+            if (PhysicalFile is { } physicalFile) {
+                // TODO
+            } else if (FileResourceTyped is { } texFile) {
+                sb.Append(texFile.Header.Format).Append("; ")
+                    .Append($"{texFile.Data.Length:##,###} Bytes");
+                if (texFile.Header.MipLevels > 1)
+                    sb.Append("; ").Append(texFile.Header.MipLevels).Append(" mipmaps");
+                sb.AppendLine();
+                if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType1D))
+                    sb.Append("1D: ").Append(texFile.Header.Width);
+                if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType2D))
+                    sb.Append("2D: ").Append(texFile.Header.Width)
+                        .Append(" x ").Append(texFile.Header.Height);
+                if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType3D))
+                    sb.Append("3D: ").Append(texFile.Header.Width)
+                        .Append(" x ").Append(texFile.Header.Height)
+                        .Append(" x ").Append(texFile.Header.Depth);
+                if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureTypeCube))
+                    sb.Append("Cube: ").Append(texFile.Header.Width)
+                        .Append(" x ").Append(texFile.Header.Height);
+                if (!Equals(effectiveZoom, 1f))
+                    sb.Append($" ({effectiveZoom * 100:0.00}%)");
+                sb.AppendLine();
+                foreach (var f in new[] {
+                             TexFile.Attribute.DiscardPerFrame,
+                             TexFile.Attribute.DiscardPerMap,
+                             TexFile.Attribute.Managed,
+                             TexFile.Attribute.UserManaged,
+                             TexFile.Attribute.CpuRead,
+                             TexFile.Attribute.LocationMain,
+                             TexFile.Attribute.NoGpuRead,
+                             TexFile.Attribute.AlignedSize,
+                             TexFile.Attribute.EdgeCulling,
+                             TexFile.Attribute.LocationOnion,
+                             TexFile.Attribute.ReadWrite,
+                             TexFile.Attribute.Immutable,
+                             TexFile.Attribute.TextureRenderTarget,
+                             TexFile.Attribute.TextureDepthStencil,
+                             TexFile.Attribute.TextureSwizzle,
+                             TexFile.Attribute.TextureNoTiled,
+                             TexFile.Attribute.TextureNoSwizzle
+                         })
+                    if (texFile.Header.Type.HasFlag(f))
+                        sb.Append("+ ").AppendLine(f.ToString());
+            }
+
             return _autoDescriptionCached = sb.ToString();
         }
     }
@@ -401,13 +405,15 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         }
     }
 
-    private string? LoadingText => File is null && _loadingFileNameWhenEmpty is null
-        ? null
-        : string.IsNullOrWhiteSpace(File?.Name ?? _loadingFileNameWhenEmpty)
-            ? "Loading..."
-            : $"Loading {File?.Name ?? _loadingFileNameWhenEmpty}...";
+    public FileInfo? PhysicalFile { get; private set; }
 
-    private string? OverlayString => _overlayString;
+    public string? LoadingText => FileName is null && _loadingFileNameWhenEmpty is null
+        ? null
+        : string.IsNullOrWhiteSpace(FileName ?? _loadingFileNameWhenEmpty)
+            ? "Loading..."
+            : $"Loading {FileName ?? _loadingFileNameWhenEmpty}...";
+
+    public string? OverlayString { get; private set; }
 
     public float OverlayOpacity {
         get {
@@ -498,7 +504,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                 LineAlignment = StringAlignment.Center,
             };
             bufferedGraphics.Graphics.DrawString(
-                $"Error displaying {File?.Name}." +
+                $"Error displaying {FileName}." +
                 string.Join(null, exceptions.Select(x => x is null ? "" : $"\n{x}")),
                 Font,
                 brush,
@@ -530,9 +536,9 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                     continue;
 
                 case ITexRenderer.LoadState.Empty:
-                    if (FileResourceTyped is { } fr) {
+                    if (FileResourceTyped is not null || PhysicalFile is not null) {
                         MouseActivity.Enabled = false;
-                        r.LoadTexFileAsync(fr, _currentMipmap)
+                        r.LoadFileAsync(_currentMipmap)
                             .ContinueWith(_ => {
                                 MouseActivity.Enabled = true;
                                 Viewport.Reset(r.ImageSize);
@@ -555,7 +561,8 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
             }
         }
 
-        if (FileResourceTyped is not null && renderers.All(x => x.State != ITexRenderer.LoadState.Loading))
+        if ((PhysicalFile is not null || FileResourceTyped is not null) &&
+            renderers.All(x => x.State != ITexRenderer.LoadState.Loading))
             OnPaintWithBackgroundImplDrawExceptions(e, renderers.Select(x => x.LastException));
         else if (_loadingFileNameWhenEmpty is not null)
             OnPaintWithBackgroundImplDrawLoading(e);
@@ -601,11 +608,12 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     public override Size GetPreferredSize(Size proposedSize) =>
         Size.Add(CreateGridLayout(_currentMipmap).GridSize, new(Margin.Horizontal, Margin.Vertical));
 
-    public void ChangeDisplayedMipmap(int mipmap, bool force = false) {
-        if (!force && _currentMipmap == mipmap)
+    public void ChangeDisplayedMipmap(int mipmapSet, int mipmap, bool force = false) {
+        if (!force && _currentMipmap == mipmap && _currentMipmapSetIndex == mipmapSet)
             return;
 
         _currentMipmap = mipmap;
+        _currentMipmapSetIndex = mipmapSet;
         _loadStartTicks = Environment.TickCount64;
         _fadeTimer.Enabled = true;
         _fadeTimer.Interval = 1;
@@ -618,10 +626,18 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         Invalidate();
     }
 
+    public void SetFile(FileInfo fileInfo) {
+        ClearFileImpl();
+        FileName = fileInfo.Name;
+        PhysicalFile = fileInfo;
+        ChangeDisplayedMipmap(0, 0);
+    }
+
     public override void SetFile(VirtualSqPackTree tree, VirtualFile file, FileResource fileResource) {
         base.SetFile(tree, file, fileResource);
+        FileName = file.Name;
         ClearFileImpl();
-        ChangeDisplayedMipmap(0);
+        ChangeDisplayedMipmap(0, 0);
     }
 
     public override void ClearFile(bool keepContentsDisplayed = false) {
@@ -653,7 +669,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     public void ShowOverlayString(string? overlayString, TimeSpan overlayTextMessageDuration) {
         var now = Environment.TickCount64;
-        _overlayString = overlayString;
+        OverlayString = overlayString;
         _overlayShowUntilTicks = now + (int) overlayTextMessageDuration.TotalMilliseconds;
 
         if (_overlayShowUntilTicks <= now)
@@ -673,6 +689,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     private void ClearFileImpl() {
         MouseActivity.Enabled = false;
         _loadStartTicks = long.MaxValue;
+        FileName = null;
         ClearDisplayInformationCache();
         _currentMipmap = -1;
     }
