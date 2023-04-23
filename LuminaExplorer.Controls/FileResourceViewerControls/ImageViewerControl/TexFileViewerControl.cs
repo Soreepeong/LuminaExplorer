@@ -142,11 +142,40 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     protected override void OnKeyDown(KeyEventArgs e) {
         if (MouseActivity.Enabled) {
             switch (e.KeyCode) {
+                case Keys.Up when e.Alt: // Disable rotation
+                    Rotation = 0;
+                    break;
+                case Keys.Right when e.Alt: // Rotate 90 degrees clockwise
+                    Rotation = MathF.PI / 2;
+                    break;
+                case Keys.Down when e.Alt: // Rotate 180 degrees
+                    Rotation = MathF.PI;
+                    break;
+                case Keys.Left when e.Alt: // Rotate 90 degrees counterclockwise
+                    Rotation = -MathF.PI / 2;
+                    break;
+                case Keys.Left: // TODO: Start pan left timer or prev file event
+                case Keys.NumPad4:
+                    break;
+                case Keys.Up: // TODO: Start pan up timer or prev file event
+                case Keys.NumPad8:
+                    break;
+                case Keys.Right: // TODO: Start pan right timer or next file event
+                case Keys.NumPad6:
+                    break;
+                case Keys.Down: // TODO: Start pan down timer or next file event
+                case Keys.NumPad2:
+                    break;
                 case Keys.C when e.Control: // TODO: Copy
                     break;
                 case Keys.Multiply:
                 case Keys.D8 when e.Shift: // Zoom to 100%
-                    Viewport.UpdateScaleMode(new NoZoomScaleMode());
+                    if (Math.Abs(Viewport.EffectiveZoom - 1) > 0.000001)
+                        Viewport.UpdateScaleMode(new NoZoomScaleMode());
+                    else
+                        Viewport.UpdateScaleMode(new FitInClientScaleMode(
+                            Viewport.Size.Width <= Viewport.ControlBodyWidth &&
+                            Viewport.Size.Height <= Viewport.ControlBodyHeight));
                     break;
                 case Keys.Oemplus when e.Control: // Zoom +1% (aligned)
                 case Keys.Add when e.Control:
@@ -163,18 +192,6 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                 case Keys.OemMinus: // Zoom -1% (aligned)
                 case Keys.Subtract:
                     Viewport.UpdateZoom((int) Math.Round(10 * Viewport.EffectiveZoom) / 10f - 0.1f);
-                    break;
-                case Keys.Up when e.Alt: // Disable rotation
-                    Rotation = 0;
-                    break;
-                case Keys.Right when e.Alt: // Rotate 90 degrees clockwise
-                    Rotation = MathF.PI / 2;
-                    break;
-                case Keys.Down when e.Alt: // Rotate 180 degrees
-                    Rotation = MathF.PI;
-                    break;
-                case Keys.Left when e.Alt: // Rotate 90 degrees counterclockwise
-                    Rotation = -MathF.PI / 2;
                     break;
                 case Keys.OemOpenBrackets: // Previous image in the set
                     if (_currentImageIndex > 0)

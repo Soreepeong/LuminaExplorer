@@ -40,7 +40,7 @@ public partial class TextureViewer : Form {
     public TextureViewer() {
         InitializeComponent();
 
-        TexViewer.MouseActivity.LeftClick += TexViewerOnLeftClick;
+        TexViewer.MouseActivity.LeftClick += _ => TogglePropertyGrid();
 
         _panelMouseTracker = new(PropertyPanel);
         _panelMouseTracker.UseLeftDrag = true;
@@ -48,9 +48,10 @@ public partial class TextureViewer : Form {
 
         PropertyPanel.Visible = false;
         PropertyPanel.VisibleChanged += PropertyPanelOnVisibleChanged;
+        PropertyPanelGrid.PreviewKeyDown += PropertyPanelGridOnPreviewKeyDown;
 
         TexViewer.Margin = new(); // required line
-        TexViewer.KeyDown += TexViewerOnKeyDown;
+        TexViewer.PreviewKeyDown += TexViewerOnPreviewKeyDown;
         TexViewer.MouseDown += TexViewerOnMouseDown;
     }
 
@@ -64,7 +65,8 @@ public partial class TextureViewer : Form {
             if (value == _isFullScreen)
                 return;
 
-            _isFullScreen = value;
+            using var redrawLock = new ControlExtensions.ScopedDisableRedraw(this);
+
             if (!value) {
                 ControlBox = _nonFullScreenControlBox;
                 FormBorderStyle = _nonFullScreenBorderStyle;
@@ -73,15 +75,19 @@ public partial class TextureViewer : Form {
             } else {
                 _nonFullScreenSize = Size;
 
-                _nonFullScreenWindowState = WindowState;
-                WindowState = FormWindowState.Maximized;
-
                 _nonFullScreenControlBox = ControlBox;
                 ControlBox = false;
 
                 _nonFullScreenBorderStyle = FormBorderStyle;
                 FormBorderStyle = FormBorderStyle.None;
+
+                _nonFullScreenWindowState = WindowState;
+                // Setting to normal then maximized is required to enter fullscreen, covering Windows task bar.
+                WindowState = FormWindowState.Normal;
+                WindowState = FormWindowState.Maximized;
             }
+            
+            _isFullScreen = value;
         }
     }
 
@@ -98,7 +104,15 @@ public partial class TextureViewer : Form {
         TexViewer.Focus();
     }
 
-    private void TexViewerOnKeyDown(object? sender, KeyEventArgs e) {
+    private void PropertyPanelGridOnPreviewKeyDown(object? sender, PreviewKeyDownEventArgs e) {
+        switch (e.KeyCode) {
+            case Keys.Tab:
+                TogglePropertyGrid();
+                break;
+        }
+    }
+
+    private void TexViewerOnPreviewKeyDown(object? sender, PreviewKeyDownEventArgs e) {
         switch (e.KeyCode) {
             case Keys.D9:
             case Keys.D1: // TODO: set default zoom to fit in window
@@ -111,6 +125,10 @@ public partial class TextureViewer : Form {
                 break;
             case Keys.D0: // TODO: set default zoom to 100%
                 break;
+            case Keys.Tab:
+                TogglePropertyGrid();
+                e.IsInputKey = true;
+                break;
             case Keys.Enter:
                 IsFullScreen = !IsFullScreen;
                 if (IsFullScreen)
@@ -121,7 +139,9 @@ public partial class TextureViewer : Form {
                 if (IsFullScreen) {
                     IsFullScreen = false;
                     TexViewer.ShowOverlayString("Press Esc key again to close.", OverlayShortDuration);
-                } else
+                } else if (PropertyPanel.Visible)
+                    TogglePropertyGrid();
+                else
                     Close();
 
                 break;
@@ -152,7 +172,9 @@ public partial class TextureViewer : Form {
         }
     }
 
-    private void TexViewerOnLeftClick(Point cursor) {
+    private void TogglePropertyGrid() {
+        using var redrawLock = new ControlExtensions.ScopedDisableRedraw(this);
+        
         using (this.DisableRedrawScoped()) {
             var prev = RectangleToScreen(new(
                 TexViewer.Left + TexViewer.Margin.Left,
@@ -169,8 +191,10 @@ public partial class TextureViewer : Form {
                         ? screen.WorkingArea.Right - newWidth
                         : Left;
                     SetBounds(newLeft, Top, newWidth, Height);
+                    PropertyPanel.Focus();
                 } else {
                     Width -= PropertyPanel.Width;
+                    TexViewer.Focus();
                 }
             }
 
@@ -343,9 +367,11 @@ public partial class TextureViewer : Form {
         _closeToken.Cancel();
         base.OnFormClosed(e);
     }
-
+    
     protected override void OnResize(EventArgs e) {
         base.OnResize(e);
+        if (WindowState == FormWindowState.Normal && IsFullScreen)
+            IsFullScreen = false;
         ResizePanel(_unconstrainedPanelWidth);
     }
 
