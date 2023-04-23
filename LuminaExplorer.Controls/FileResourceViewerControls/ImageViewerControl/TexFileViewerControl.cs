@@ -137,7 +137,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         if (disposing) {
             _bufferedGraphicsContext.Dispose();
             if (TryGetRenderers(out var renderers))
-                SafeDispose.Array(ref renderers);
+                _ = SafeDispose.EnumerableAsync(ref renderers);
             Viewport.Dispose();
             _fadeTimer.Dispose();
             _ = SafeDispose.OneAsync(ref _bitmapSourceTaskCurrent);
@@ -782,8 +782,12 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                 // new GdipTexRenderer(this),
             }), r => {
                 Invalidate();
-                foreach (var renderer in r.Result)
-                    renderer.AnyBitmapSourceSliceAvailableForDrawing += RendererOnAnyBitmapSourceSliceAvailableForDrawing;
+                foreach (var renderer in r.Result) {
+                    renderer.UiThreadInitialize();
+                    renderer.AnyBitmapSourceSliceAvailableForDrawing +=
+                        RendererOnAnyBitmapSourceSliceAvailableForDrawing;
+                }
+
                 return r.Result;
             });
         }

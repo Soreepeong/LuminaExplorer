@@ -18,6 +18,8 @@ internal sealed class GdipTexRenderer : ITexRenderer {
         Control = control;
     }
 
+    public void UiThreadInitialize() { }
+
     public void Dispose() {
         UpdateBitmapSource(null, null);
         _bufferedGraphicsContext.Dispose();
@@ -82,9 +84,7 @@ internal sealed class GdipTexRenderer : ITexRenderer {
         b.ContinueWith(r => {
             if (!r.IsCompletedSuccessfully)
                 return;
-            r.Result.GetGdipBitmapAsync(0).ContinueWith(_ => {
-                AnyBitmapSourceSliceAvailableForDrawing?.Invoke(b);
-            });
+            r.Result.GetGdipBitmapAsync(0).ContinueWith(_ => { AnyBitmapSourceSliceAvailableForDrawing?.Invoke(b); });
         });
     }
 

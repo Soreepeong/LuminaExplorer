@@ -14,10 +14,10 @@ namespace LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.
 
 public sealed class TexBitmapSource : IBitmapSource {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private readonly TexFile _texFile;
-    private readonly ResultDisposingTask<WicBitmapSource>?[ /* Mip */][ /* Slice */] _wicBitmaps;
-    private readonly ResultDisposingTask<Bitmap>?[ /* Mip */][ /* Slice */] _bitmaps;
     private readonly bool _isCube;
+    private TexFile _texFile;
+    private ResultDisposingTask<WicBitmapSource>?[ /* Mip */][ /* Slice */] _wicBitmaps;
+    private ResultDisposingTask<Bitmap>?[ /* Mip */][ /* Slice */] _bitmaps;
 
     private Size _sliceSpacing;
     private int _mipmap;
@@ -49,18 +49,12 @@ public sealed class TexBitmapSource : IBitmapSource {
         if (_disposed)
             return;
         _disposed = true;
+        _texFile = null!;
         _cancellationTokenSource.Cancel();
 
-        Task.WaitAll(
-            Task.WhenAll(_wicBitmaps
-                .SelectMany(x => x)
-                .Select(x => x?.DisposeAsync().AsTask() ?? Task.CompletedTask)
-            ),
-            Task.WhenAll(_bitmaps
-                .SelectMany(x => x)
-                .Select(x => x?.DisposeAsync().AsTask() ?? Task.CompletedTask)
-            )
-        );
+        var xd = _wicBitmaps.SelectMany(x => x);
+        SafeDispose.Enumerable(ref _wicBitmaps!);
+        SafeDispose.Enumerable(ref _bitmaps!);
 
         _cancellationTokenSource.Dispose();
     }
@@ -69,20 +63,17 @@ public sealed class TexBitmapSource : IBitmapSource {
         if (_disposed)
             return;
         _disposed = true;
+        _texFile = null!;
         _cancellationTokenSource.Cancel();
 
+        var xd = _wicBitmaps.SelectMany(x => x);
         await Task.WhenAll(
-            Task.WhenAll(_wicBitmaps
-                .SelectMany(x => x)
-                .Select(x => x?.DisposeAsync().AsTask() ?? Task.CompletedTask)
-            ),
-            Task.WhenAll(_bitmaps
-                .SelectMany(x => x)
-                .Select(x => x?.DisposeAsync().AsTask() ?? Task.CompletedTask)
-            )
-        );
+            SafeDispose.EnumerableAsync(ref _wicBitmaps!),
+            SafeDispose.EnumerableAsync(ref _bitmaps!));
 
         _cancellationTokenSource.Dispose();
+        
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true, true);
     }
 
     public event Action? ImageOrMipmapChanged;

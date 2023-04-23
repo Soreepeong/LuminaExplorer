@@ -1,12 +1,13 @@
 using System;
-using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.BitmapSource;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
+using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.DirectWrite;
 using Silk.NET.Maths;
@@ -81,7 +82,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
     private LoadState TryGetActiveSourceSet(
         out SourceSet sourceSet,
         out IBitmapSource source,
-        out ID2D1Bitmap*[] slices,
+        out TaskWrappingIUnknown<ID2D1Bitmap>?[] slices,
         out Exception? exception) {
         sourceSet = null!;
         source = null!;
@@ -398,7 +399,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
         private readonly CancellationTokenSource _cancellationTokenSource = new();
         public readonly Task<IBitmapSource> SourceTask;
 
-        private ID2D1Bitmap*[ /* Image */]?[ /* Mip */]?[ /* Slice */]? _pBitmaps;
+        private TaskWrappingIUnknown<ID2D1Bitmap>[ /* Image */]?[ /* Mip */]?[ /* Slice */]? _pBitmaps;
 
         public SourceSet(D2DTexRenderer renderer, Task<IBitmapSource> sourceTask) {
             _renderer = renderer;
@@ -413,7 +414,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
 
         public void Dispose() {
             _cancellationTokenSource.Cancel();
-            SafeReleaseArray(ref _pBitmaps);
+            _ = SafeDispose.EnumerableAsync(ref _pBitmaps);
             SourceTask.ContinueWith(r => {
                 if (r.IsCompletedSuccessfully)
                     r.Result.ImageOrMipmapChanged -= SourceTaskOnImageOrMipmapChanged;
@@ -429,7 +430,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
             SourceTask.IsCompletedSuccessfully &&
             Enumerable.Range(0, SourceTask.Result.Depth).All(SourceTask.Result.HasWicBitmapSource);
 
-        public LoadState TryGetSlices(out ID2D1Bitmap*[] slices, out Exception? exception) {
+        public LoadState TryGetSlices(out TaskWrappingIUnknown<ID2D1Bitmap>?[] slices, out Exception? exception) {
             slices = null!;
             exception = null;
 
@@ -441,31 +442,31 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
 
             var source = SourceTask.Result;
             if (_pBitmaps?.Length != source.ImageCount) {
-                SafeReleaseArray(ref _pBitmaps);
-                _pBitmaps = new ID2D1Bitmap*[source.ImageCount][][];
+                _ = SafeDispose.EnumerableAsync(ref _pBitmaps);
+                _pBitmaps = new TaskWrappingIUnknown<ID2D1Bitmap>[source.ImageCount][][];
             }
 
             var mipmaps = _pBitmaps[source.ImageIndex];
             if (mipmaps?.Length != source.NumMipmaps) {
-                SafeReleaseArray(ref _pBitmaps[source.ImageIndex]);
-                _pBitmaps[source.ImageIndex] = mipmaps = new ID2D1Bitmap*[source.NumMipmaps][];
+                _ = SafeDispose.EnumerableAsync(ref _pBitmaps[source.ImageIndex]);
+                _pBitmaps[source.ImageIndex] = mipmaps = new TaskWrappingIUnknown<ID2D1Bitmap>[source.NumMipmaps][];
             }
 
             var nullableSlices = mipmaps[source.Mipmap];
             if (nullableSlices?.Length != source.Depth) {
-                SafeReleaseArray(ref mipmaps[source.Mipmap]);
-                nullableSlices = mipmaps[source.Mipmap] = new ID2D1Bitmap*[source.Depth];
+                _ = SafeDispose.EnumerableAsync(ref mipmaps[source.Mipmap]);
+                nullableSlices = mipmaps[source.Mipmap] = new TaskWrappingIUnknown<ID2D1Bitmap>[source.Depth];
             }
 
             slices = nullableSlices;
             return LoadState.Loaded;
         }
 
-        public LoadState TryGetBitmapAt(
+        public LoadState TryGetBitmapWrapperTaskAt(
             int slice,
-            out ID2D1Bitmap* pBitmap,
+            out TaskWrappingIUnknown<ID2D1Bitmap>? wrapperTask,
             out Exception? exception) {
-            pBitmap = null;
+            wrapperTask = null;
             exception = null;
 
             var state = TryGetSlices(out var slices, out exception);
@@ -485,28 +486,94 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
             }
 
             if (task.IsCompleted) {
-                if (task.Result.ComObject.IsDisposed)
-                    Debugger.Break();
+                wrapperTask = slices[slice] ??= new(Task.Run(() => {
+                    var ptr = new ComPtr<ID2D1Bitmap>();
+                    // do NOT merge into constructor, or it will do AddRef, which we do not want.
+                    _renderer.GetOrCreateFromWicBitmap(ref ptr.Handle, task.Result);
+                    return ptr;
+                }, _cancellationTokenSource.Token));
 
-                pBitmap = _renderer.GetOrCreateFromWicBitmap(ref slices[slice], task.Result);
-                return LoadState.Loaded;
+                if (wrapperTask.IsCompletedSuccessfully)
+                    return LoadState.Loaded;
+
+                if (wrapperTask.IsFaulted) {
+                    exception = wrapperTask.Task.Exception;
+                    return LoadState.Error;
+                }
+
+                return LoadState.Loading;
             }
 
             return exception is null ? LoadState.Loading : LoadState.Error;
         }
 
+        public LoadState TryGetBitmapAt(
+            int slice,
+            out ID2D1Bitmap* pBitmap,
+            out Exception? exception) {
+            var state = TryGetBitmapWrapperTaskAt(slice, out var task, out exception);
+            pBitmap = state == LoadState.Loaded ? task!.Result : null;
+            return state;
+        }
+
         private void SourceTaskOnImageOrMipmapChanged() => Task.Factory.StartNew(
             () => SourceTask.Result
                 .GetWicBitmapSourceAsync(0)
-                .ContinueWith(_ => {
-                    SourceTask.ContinueWith(r => {
-                        if (!r.IsCompletedSuccessfully || this != _renderer._sourceCurrent)
+                .ContinueWith(result => {
+                    if (this != _renderer._sourceCurrent)
+                        return;
+
+                    if (!result.IsCompletedSuccessfully) {
+                        _renderer.AnyBitmapSourceSliceAvailableForDrawing?.Invoke(SourceTask);
+                        return;
+                    }
+
+                    TryGetBitmapWrapperTaskAt(0, out var wrapperTask, out _);
+                    if (wrapperTask is null) {
+                        _renderer.AnyBitmapSourceSliceAvailableForDrawing?.Invoke(SourceTask);
+                        return;
+                    }
+
+                    wrapperTask.Task.ContinueWith(_ => {
+                        if (this != _renderer._sourceCurrent)
                             return;
+                        
                         _renderer.AnyBitmapSourceSliceAvailableForDrawing?.Invoke(SourceTask);
                     });
                 }),
             _cancellationTokenSource.Token,
             TaskCreationOptions.None,
             _renderer._taskScheduler);
+    }
+
+    private sealed class TaskWrappingIUnknown<T> : IDisposable, IAsyncDisposable
+        where T : unmanaged, IComVtbl<T> {
+        public readonly Task<ComPtr<T>> Task;
+
+        public TaskWrappingIUnknown(Task<ComPtr<T>> task) {
+            Task = task;
+        }
+
+        public bool IsCompletedSuccessfully => Task.IsCompletedSuccessfully;
+        public bool IsCompleted => Task.IsCompleted;
+        public bool IsCanceled => Task.IsCanceled;
+        public bool IsFaulted => Task.IsFaulted;
+        public TaskStatus Status => Task.Status;
+        public T* Result => Task.Result.Handle;
+
+        public ConfiguredTaskAwaitable<ComPtr<T>> ConfigureAwait(bool continueOnCapturedContext) =>
+            Task.ConfigureAwait(continueOnCapturedContext);
+
+        public void Dispose() {
+            Task.ContinueWith(result => {
+                result.Result.Release();
+                ;
+            });
+        }
+
+        public ValueTask DisposeAsync() => new(Task.ContinueWith(result => {
+            result.Result.Release();
+            return ValueTask.CompletedTask;
+        }));
     }
 }

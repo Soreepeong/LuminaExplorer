@@ -10,6 +10,8 @@ internal interface ITexRenderer : IDisposable {
     
     Exception? LastException { get; }
 
+    public void UiThreadInitialize();
+
     bool Draw(PaintEventArgs e);
 
     void UpdateBitmapSource(Task<IBitmapSource>? previous, Task<IBitmapSource>? current);

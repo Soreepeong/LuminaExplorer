@@ -165,6 +165,30 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
         array = null;
     }
 
+    protected static void SafeReleaseArray<T>(ref ComPtr<T>[]?[]?[]? array) where T : unmanaged , IComVtbl<T>{
+        if (array is null)
+            return;
+        for (var i = 0; i < array.Length; i++)
+            SafeReleaseArray(ref array[i]);
+        array = null;
+    }
+
+    protected static void SafeReleaseArray<T>(ref ComPtr<T>[]?[]? array) where T : unmanaged , IComVtbl<T>{
+        if (array is null)
+            return;
+        for (var i = 0; i < array.Length; i++)
+            SafeReleaseArray(ref array[i]);
+        array = null;
+    }
+
+    protected static void SafeReleaseArray<T>(ref ComPtr<T>[]? array) where T : unmanaged, IComVtbl<T> {
+        if (array is null)
+            return;
+        for (var i = 0; i < array.Length; i++)
+            array[i].Release();
+        array = null;
+    }
+
     protected sealed class Direct3DDeviceBuilder : IDisposable {
         private readonly bool _disposeOnException;
 
