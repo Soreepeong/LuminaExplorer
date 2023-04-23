@@ -111,7 +111,7 @@ internal sealed class GdipTexRenderer : ITexRenderer {
                 case LoadState.Loaded: {
                     using (var backBrush = new SolidBrush(Control.BackColorWhenLoaded))
                         g.FillRectangle(backBrush, new(new(), Control.ClientSize));
-                    var imageRect = Control.Viewport.EffectiveRect;
+                    var imageRect = Control.ImageRect;
                     var clientSize = Control.ClientSize;
                     var overlayRect = new Rectangle(
                         Control.Padding.Left + Control.Margin.Left,
@@ -119,7 +119,7 @@ internal sealed class GdipTexRenderer : ITexRenderer {
                         clientSize.Width - Control.Padding.Horizontal - Control.Margin.Horizontal,
                         clientSize.Height - Control.Padding.Vertical - Control.Margin.Vertical);
 
-                    g.InterpolationMode = Control.NearestNeighborMinimumZoom <= Control.Viewport.EffectiveZoom
+                    g.InterpolationMode = Control.NearestNeighborMinimumZoom <= Control.EffectiveZoom
                         ? InterpolationMode.NearestNeighbor
                         : InterpolationMode.Bilinear;
 

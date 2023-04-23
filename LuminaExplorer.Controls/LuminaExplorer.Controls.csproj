@@ -15,9 +15,6 @@
     <Compile Update="FileResourceViewerControls\ImageViewerControl\TexFileViewerControl.cs">
       <SubType>Component</SubType>
     </Compile>
-    <Compile Update="FileResourceViewerControls\ImageViewerControl\TexFileViewerControl.GridLayout.cs">
-      <SubType>Component</SubType>
-    </Compile>
     <Compile Update="FileResourceViewerControls\ImageViewerControl\TexRenderer\GdipTexRenderer.cs">
       <SubType>Component</SubType>
     </Compile>

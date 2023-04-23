@@ -1,0 +1,346 @@
+﻿using System;
+using System.Diagnostics.CodeAnalysis;
+using System.Drawing;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.BitmapSource;
+using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.TexRenderer;
+using LuminaExplorer.Controls.Util;
+using LuminaExplorer.Core.Util;
+
+namespace LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl;
+
+public partial class TexFileViewerControl {
+    private readonly BufferedGraphicsContext _bufferedGraphicsContext = new();
+
+    private ResultDisposingTask<IBitmapSource>? _bitmapSourceTaskPrevious;
+    private ResultDisposingTask<IBitmapSource>? _bitmapSourceTaskCurrent;
+    private Task<ITexRenderer[]>? _renderers;
+
+    private string? _loadingFileNameWhenEmpty;
+    private Color _foreColorWhenLoaded = Color.White;
+    private Color _backColorWhenLoaded = Color.Black;
+    private Color _contentBorderColor = Color.DarkGray;
+    private int _contentBorderWidth = 1;
+    private Color _transparencyCellColor1 = Color.White;
+    private Color _transparencyCellColor2 = Color.LightGray;
+    private int _transparencyCellSize = 8;
+    private float _nearestNeighborMinimumZoom = 2f;
+    private Color _pixelGridLineColor = Color.LightGray.MultiplyOpacity(0.5f);
+    private float _pixelGridMinimumZoom = 5f;
+    private float _overlayBackgroundOpacity = 0.7f;
+    private Size _sliceSpacing = new(16, 16);
+    private VisibleColorChannelTypes _visibleColorChannel;
+    private bool _useAlphaChannel;
+    private float _rotation;
+
+    public event EventHandler? ForeColorWhenLoadedChanged;
+
+    public event EventHandler? BackColorWhenLoadedChanged;
+
+    public event EventHandler? BorderColorChanged;
+
+    public event EventHandler? TransparencyCellColor1Changed;
+
+    public event EventHandler? TransparencyCellColor2Changed;
+
+    public event EventHandler? PixelGridLineColorChanged;
+
+    // TODO: use this
+    public bool UseAlphaChannel {
+        get => _useAlphaChannel;
+        set {
+            if (_useAlphaChannel != value)
+                return;
+            _useAlphaChannel = value;
+            Invalidate();
+        }
+    }
+
+    // TODO: use this
+    public VisibleColorChannelTypes VisibleColorChannel {
+        get => _visibleColorChannel;
+        set {
+            if (_visibleColorChannel == value)
+                return;
+            _visibleColorChannel = value;
+            Invalidate();
+        }
+    }
+
+    // TODO: use this
+    public float Rotation {
+        get => _rotation;
+        set {
+            if (!Equals(_rotation, value))
+                return;
+            _rotation = value;
+            Invalidate();
+        }
+    }
+
+    public Color ForeColorWhenLoaded {
+        get => _foreColorWhenLoaded;
+        set {
+            if (_foreColorWhenLoaded == value)
+                return;
+            _foreColorWhenLoaded = value;
+            ForeColorWhenLoadedChanged?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+        }
+    }
+
+    public Color BackColorWhenLoaded {
+        get => _backColorWhenLoaded;
+        set {
+            if (_backColorWhenLoaded == value)
+                return;
+            _backColorWhenLoaded = value;
+            BackColorWhenLoadedChanged?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+        }
+    }
+
+    public Color ContentBorderColor {
+        get => _contentBorderColor;
+        set {
+            if (_contentBorderColor == value)
+                return;
+            _contentBorderColor = value;
+            BorderColorChanged?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+        }
+    }
+
+    public int ContentBorderWidth {
+        get => _contentBorderWidth;
+        set {
+            if (_contentBorderWidth == value)
+                return;
+            _contentBorderWidth = value;
+            Invalidate();
+        }
+    }
+
+    public Color TransparencyCellColor1 {
+        get => _transparencyCellColor1;
+        set {
+            if (_transparencyCellColor1 == value)
+                return;
+            _transparencyCellColor1 = value;
+            TransparencyCellColor1Changed?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+        }
+    }
+
+    public Color TransparencyCellColor2 {
+        get => _transparencyCellColor2;
+        set {
+            if (_transparencyCellColor2 == value)
+                return;
+            _transparencyCellColor2 = value;
+            TransparencyCellColor2Changed?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+        }
+    }
+
+    public int TransparencyCellSize {
+        get => _transparencyCellSize;
+        set {
+            if (_transparencyCellSize == value)
+                return;
+            _transparencyCellSize = value;
+            Invalidate();
+        }
+    }
+
+    public Padding PanExtraRange {
+        get => Viewport.PanExtraRange;
+        set => Viewport.PanExtraRange = value;
+    }
+
+    public TimeSpan DelayShowingLoadingBoxFor { get; set; } = TimeSpan.FromMilliseconds(300);
+
+    public bool IsLoadingBoxDelayed =>
+        _loadStartTicks == long.MaxValue ||
+        _loadStartTicks + DelayShowingLoadingBoxFor.Milliseconds > Environment.TickCount64;
+
+    public float OverlayBackgroundOpacity {
+        get => _overlayBackgroundOpacity;
+        set {
+            if (!Equals(_overlayBackgroundOpacity, value))
+                return;
+            _overlayBackgroundOpacity = value;
+            Invalidate();
+        }
+    }
+
+    public float NearestNeighborMinimumZoom {
+        get => _nearestNeighborMinimumZoom;
+        set {
+            if (Equals(_nearestNeighborMinimumZoom, value))
+                return;
+            _nearestNeighborMinimumZoom = value;
+            Invalidate();
+        }
+    }
+
+    public Color PixelGridLineColor {
+        get => _pixelGridLineColor;
+        set {
+            if (_pixelGridLineColor == value)
+                return;
+            _pixelGridLineColor = value;
+            PixelGridLineColorChanged?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+        }
+    }
+
+    public float PixelGridMinimumZoom {
+        get => _pixelGridMinimumZoom;
+        set {
+            if (Equals(_pixelGridMinimumZoom, value))
+                return;
+            _pixelGridMinimumZoom = value;
+            Invalidate();
+        }
+    }
+
+    public Size SliceSpacing {
+        get => _sliceSpacing;
+        set {
+            if (_sliceSpacing == value)
+                return;
+
+            _sliceSpacing = value;
+
+            _bitmapSourceTaskPrevious?.Task.ContinueWith(r => {
+                r.Result.SliceSpacing = value;
+                Invalidate();
+            }, UiTaskScheduler);
+            _bitmapSourceTaskCurrent?.Task.ContinueWith(r => {
+                r.Result.SliceSpacing = value;
+                Invalidate();
+            }, UiTaskScheduler);
+        }
+    }
+
+    public float AutoDescriptionOpacity {
+        get {
+            var d = _autoDescriptionShowUntilTicks - Environment.TickCount64;
+            return _autoDescriptionBeingHovered ? 1f :
+                d <= 0 ? 0f :
+                d >= FadeOutDurationMs ? 1f : (float) d / FadeOutDurationMs;
+        }
+    }
+
+    private Rectangle AutoDescriptionRectangle {
+        get {
+            if (_autoDescriptionRectangle is not null)
+                return _autoDescriptionRectangle.Value;
+            var rc = new Rectangle(
+                Padding.Left + Margin.Left,
+                Padding.Top + Margin.Top,
+                ClientSize.Width - Padding.Horizontal - Margin.Horizontal,
+                ClientSize.Height - Padding.Vertical - Margin.Vertical);
+
+            using var stringFormat = new StringFormat {
+                Alignment = StringAlignment.Near,
+                LineAlignment = StringAlignment.Near,
+                Trimming = StringTrimming.None,
+            };
+
+            using var g = CreateGraphics();
+            var measured = g.MeasureString(
+                AutoDescription,
+                Font,
+                new SizeF(rc.Width, rc.Height),
+                stringFormat);
+            rc.Width = (int) Math.Ceiling(measured.Width);
+            rc.Height = (int) Math.Ceiling(measured.Height);
+            _autoDescriptionRectangle = rc;
+            return rc;
+        }
+    }
+
+    internal bool ShouldDrawTransparencyGrid(
+        RectangleF cellRect,
+        RectangleF clipRect,
+        out int multiplier,
+        out int minX,
+        out int minY,
+        out int dx,
+        out int dy) {
+        multiplier = TransparencyCellSize;
+        dx = dy = minX = minY = 0;
+
+        // Is transparency grid disabled?
+        if (multiplier <= 0)
+            return false;
+
+        // Is image completely out of drawing region?
+        if (cellRect.Right <= clipRect.Left ||
+            cellRect.Bottom <= clipRect.Top ||
+            cellRect.Left >= clipRect.Right ||
+            cellRect.Top >= clipRect.Bottom)
+            return false;
+
+        minX = cellRect.Left < 0
+            ? (int) -MiscUtils.DivRem(cellRect.Left, -multiplier, out var fdx)
+            : (int) MiscUtils.DivRem(cellRect.Left, multiplier, out fdx);
+        minY = cellRect.Top < 0
+            ? (int) -MiscUtils.DivRem(cellRect.Top, -multiplier, out var fdy)
+            : (int) MiscUtils.DivRem(cellRect.Top, multiplier, out fdy);
+
+        if (minX * multiplier < clipRect.Left)
+            minX = (int) (clipRect.Left / multiplier);
+        if (minY * multiplier < clipRect.Top)
+            minY = (int) (clipRect.Top / multiplier);
+
+        dx = (int) fdx;
+        dy = (int) fdy;
+
+        return true;
+    }
+
+    private bool TryGetRenderers([MaybeNullWhen(false)] out ITexRenderer[] renderers, bool startLoading = false) {
+        if (_renderers?.IsCompletedSuccessfully is true) {
+            renderers = _renderers.Result;
+            return true;
+        }
+
+        renderers = null;
+        if (startLoading) {
+            if (_renderers?.IsFaulted is true)
+                _renderers = null;
+            _renderers ??= RunOnUiThreadAfter(Task.Run(() => new ITexRenderer[] {
+                new D2DTexRenderer(this, UiTaskScheduler),
+                new GdipTexRenderer(this),
+            }), r => {
+                Invalidate();
+                foreach (var renderer in r.Result) {
+                    renderer.UiThreadInitialize();
+                    renderer.AnyBitmapSourceSliceAvailableForDrawing +=
+                        RendererOnAnyBitmapSourceSliceAvailableForDrawing;
+                }
+
+                return r.Result;
+            });
+        }
+
+        return false;
+    }
+
+    private void RendererOnAnyBitmapSourceSliceAvailableForDrawing(Task<IBitmapSource> task) {
+        if (_bitmapSourceTaskCurrent?.Task != task)
+            return;
+        BeginInvoke(() => {
+            if (TryGetRenderers(out var renderers)) {
+                MouseActivity.Enabled = true;
+                foreach (var r in renderers)
+                    if (r.LastException is null)
+                        Viewport.Reset(task.Result.Layout.GridSize);
+            }
+        });
+    }
+}

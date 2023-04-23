@@ -100,34 +100,6 @@ public partial class TextureViewer : Form {
 
     private void TexViewerOnKeyDown(object? sender, KeyEventArgs e) {
         switch (e.KeyCode) {
-            case Keys.C when e.Control: // TODO: Copy
-                break;
-            case Keys.Multiply:
-            case Keys.D8 when e.Shift: // TODO: zoom 100%
-                break;
-            case Keys.Oemplus when e.Control: // TODO: zoom +1%
-                break;
-            case Keys.Oemplus: // TODO: zoom +10%
-                break;
-            case Keys.OemMinus when e.Control: // TODO: zoom -1% 
-                break;
-            case Keys.OemMinus: // TODO: zoom -10%
-                break;
-            case Keys.Up when e.Alt: // TODO: 0deg rotate
-                break;
-            case Keys.Right when e.Alt: // TODO: 90deg cw rotate
-                break;
-            case Keys.Down when e.Alt: // TODO: 180deg rotate
-                break;
-            case Keys.Left when e.Alt: // TODO: 90deg ccw rotate
-                break;
-            case Keys.OemOpenBrackets: // TODO: previous folder
-                break;
-            case Keys.OemCloseBrackets: // TODO: next folder
-                break;
-            case Keys.Oemcomma: // TODO: mipmapIndex--
-                break;
-            case Keys.OemPeriod: // TODO: mipmapIndex++
             case Keys.D9:
             case Keys.D1: // TODO: set default zoom to fit in window
                 break;
@@ -138,16 +110,6 @@ public partial class TextureViewer : Form {
             case Keys.Z: // TODO: above + stretch to fit; if already was then disable stretch to fit
                 break;
             case Keys.D0: // TODO: set default zoom to 100%
-                break;
-            case Keys.T: // TODO: Toggle alpha channel; independent from below
-                break;
-            case Keys.R: // TODO: toggle R-only mode
-                break;
-            case Keys.G: // TODO: toggle G-only mode
-                break;
-            case Keys.B: // TODO: toggle B-only mode
-                break;
-            case Keys.A: // TODO: toggle A-only mode
                 break;
             case Keys.Enter:
                 IsFullScreen = !IsFullScreen;
@@ -217,9 +179,9 @@ public partial class TextureViewer : Form {
                 TexViewer.Top + TexViewer.Margin.Top,
                 TexViewer.Width - TexViewer.Margin.Horizontal,
                 TexViewer.Height - TexViewer.Margin.Vertical));
-            TexViewer.Viewport.Pan = new(
-                TexViewer.Viewport.Pan.X + prev.X + prev.Width / 2f - curr.X - curr.Width / 2f,
-                TexViewer.Viewport.Pan.Y + prev.Y + prev.Height / 2f - curr.Y - curr.Height / 2f);
+            TexViewer.Pan = new(
+                TexViewer.Pan.X + prev.X + prev.Width / 2f - curr.X - curr.Width / 2f,
+                TexViewer.Pan.Y + prev.Y + prev.Height / 2f - curr.Y - curr.Height / 2f);
         }
     }
 

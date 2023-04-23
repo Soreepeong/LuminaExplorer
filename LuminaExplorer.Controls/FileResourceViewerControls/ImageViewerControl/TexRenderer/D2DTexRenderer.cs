@@ -154,7 +154,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
     protected override void DrawInternal() {
         var pRenderTarget = RenderTarget;
 
-        var imageRect = Rectangle.Truncate(Control.Viewport.EffectiveRect);
+        var imageRect = Rectangle.Truncate(Control.ImageRect);
         var clientSize = Control.ClientSize;
         var overlayRect = new Rectangle(
             Control.Padding.Left + Control.Margin.Left,
@@ -245,7 +245,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
                                 pBitmap,
                                 &box,
                                 1f, // opacity
-                                Control.NearestNeighborMinimumZoom <= Control.Viewport.EffectiveZoom
+                                Control.NearestNeighborMinimumZoom <= Control.EffectiveZoom
                                     ? BitmapInterpolationMode.NearestNeighbor
                                     : BitmapInterpolationMode.Linear,
                                 null);
@@ -258,7 +258,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
                                         pBitmap,
                                         &box,
                                         1f, // opacity
-                                        Control.NearestNeighborMinimumZoom <= Control.Viewport.EffectiveZoom
+                                        Control.NearestNeighborMinimumZoom <= Control.EffectiveZoom
                                             ? BitmapInterpolationMode.NearestNeighbor
                                             : BitmapInterpolationMode.Linear,
                                         null);
@@ -276,7 +276,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
                 }
 
                 // 4. Draw pixel grids
-                if (Control.PixelGridMinimumZoom <= Control.Viewport.EffectiveZoom) {
+                if (Control.PixelGridMinimumZoom <= Control.EffectiveZoom) {
                     var p1 = new Vector2D<float>();
                     var p2 = new Vector2D<float>();
 
@@ -284,9 +284,18 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
                         var cellRectUnscaled = source.Layout.RectOf(i);
                         var cellRect = source.Layout.RectOf(i, imageRect);
 
+                        // 0 <= cellTop + j * cellHeight / sliceHeight < clientHeight
+                        // -cellTop <= j * cellHeight / sliceHeight < clientHeight - cellTop
+                        // -cellTop * sliceHeight / cellHeight <= j < (clientHeight - cellTop) * sliceHeight / cellHeight
+                        // 0 <= j < cellRectUnscaled + 1
+                        
                         p1.X = cellRect.Left + 0.5f;
                         p2.X = cellRect.Right - 0.5f;
-                        for (var j = cellRectUnscaled.Height - 1; j >= 0; j--) {
+                        var rangeMin = Math.Max(0, (int) Math.Floor(1f *
+                            -cellRect.Top * cellRectUnscaled.Height / cellRect.Height));
+                        var rangeMax = Math.Min(cellRectUnscaled.Height + 1, (int)Math.Ceiling(1f *
+                            (clientSize.Height - cellRect.Top) * cellRectUnscaled.Height / cellRect.Height)); 
+                        for (var j = rangeMin; j < rangeMax; j++) {
                             var y = cellRect.Top + j * cellRect.Height / cellRectUnscaled.Height;
                             p1.Y = p2.Y = y + 0.5f;
                             pRenderTarget->DrawLine(p1, p2, PixelGridLineColorBrush, 1f, null);
@@ -294,7 +303,11 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
 
                         p1.Y = cellRect.Top + 0.5f;
                         p2.Y = cellRect.Bottom - 0.5f;
-                        for (var j = cellRectUnscaled.Width - 1; j >= 0; j--) {
+                        rangeMin = Math.Max(0, (int) Math.Floor(1f *
+                            -cellRect.Left * cellRectUnscaled.Width / cellRect.Width));
+                        rangeMax = Math.Min(cellRectUnscaled.Width + 1, (int)Math.Ceiling(1f *
+                            (clientSize.Width - cellRect.Left) * cellRectUnscaled.Width / cellRect.Width)); 
+                        for (var j = rangeMin; j < rangeMax; j++) {
                             var x = cellRect.Left + j * cellRect.Width / cellRectUnscaled.Width;
                             p1.X = p2.X = x + 0.5f;
                             pRenderTarget->DrawLine(p1, p2, PixelGridLineColorBrush, 1f, null);
@@ -564,12 +577,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
         public ConfiguredTaskAwaitable<ComPtr<T>> ConfigureAwait(bool continueOnCapturedContext) =>
             Task.ConfigureAwait(continueOnCapturedContext);
 
-        public void Dispose() {
-            Task.ContinueWith(result => {
-                result.Result.Release();
-                ;
-            });
-        }
+        public void Dispose() => Task.ContinueWith(result => result.Result.Release());
 
         public ValueTask DisposeAsync() => new(Task.ContinueWith(result => {
             result.Result.Release();
