@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Lumina.Misc;
 
 namespace LuminaExplorer.Core.LazySqPackTree;

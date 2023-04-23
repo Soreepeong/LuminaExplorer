@@ -1,3 +1,10 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.LazySqPackTree;
@@ -16,7 +23,7 @@ public partial class TextureViewer : Form {
 
     private readonly CancellationTokenSource _closeToken = new();
 
-    private readonly List<VirtualFile> _playlist = new();
+    private readonly List<Tuple<VirtualFile, bool>> _playlist = new();
     private VirtualFolder? _folder;
     private int _indexInPlaylist;
     private VirtualSqPackTree? _tree;
@@ -27,6 +34,7 @@ public partial class TextureViewer : Form {
     private Size _nonFullScreenSize;
     private bool _nonFullScreenControlBox;
 
+    private CancellationTokenSource? _texFileLoadCancelTokenSource;
     private Task _navigationTask = Task.CompletedTask;
 
     public TextureViewer() {
@@ -220,10 +228,15 @@ public partial class TextureViewer : Form {
         _tree = tree;
         _folder = folder;
         _playlist.Clear();
-        _playlist.AddRange(playlist);
-        _indexInPlaylist = _playlist.IndexOf(file);
+        _playlist.AddRange(playlist.Select(item => Tuple.Create(
+            item,
+            item.NameResolved && ValidTextureExtensions.All(
+                x => !item.Name.EndsWith(x, StringComparison.InvariantCultureIgnoreCase)))));
+
+        var fileTuple = Tuple.Create(file, true);
+        _indexInPlaylist = _playlist.IndexOf(fileTuple);
         if (_indexInPlaylist < 0)
-            _playlist.Insert(_indexInPlaylist = 0, file);
+            _playlist.Insert(_indexInPlaylist = 0, fileTuple);
         SelectFile(_indexInPlaylist, texFile);
     }
 
@@ -235,7 +248,15 @@ public partial class TextureViewer : Form {
         var invalidIndices = new List<int>();
         TexFile? texFile = null;
         for (; index >= 0 && index < _playlist.Count; index += step) {
-            var item = _playlist[index];
+            var (item, confirmed) = _playlist[index];
+
+            if (confirmed) {
+                await TexViewer.RunOnUiThread(() => {
+                    SelectFile(index, null);
+                    if (cycle)
+                        TexViewer.ShowOverlayString(null, OverlayShortDuration);
+                });
+            }
 
             if (item.NameResolved && ValidTextureExtensions.All(
                     x => !item.Name.EndsWith(x, StringComparison.InvariantCultureIgnoreCase))) {
@@ -243,9 +264,10 @@ public partial class TextureViewer : Form {
                 continue;
             }
 
-            var lookup = tree.GetLookup(item);
+            using var lookup = tree.GetLookup(item);
             try {
                 texFile = await lookup.AsFileResource<TexFile>(cancellationToken);
+                _playlist[index] = Tuple.Create(item, true);
                 break;
             } catch (Exception) {
                 invalidIndices.Add(index);
@@ -307,14 +329,36 @@ public partial class TextureViewer : Form {
         }
     }
 
-    private void SelectFile(int index, TexFile texFile) {
+    private void SelectFile(int index, TexFile? texFile) {
         if (_tree is not { } tree)
             return;
         _indexInPlaylist = index;
-        var file = _playlist[index];
+        var (file, _) = _playlist[index];
         Text = tree.GetFullPath(file);
-        TexViewer.SetFile(tree, file, texFile);
-        PropertyPanelGrid.SelectedObject = new WrapperTypeConverter().ConvertFrom(texFile);
+
+        _texFileLoadCancelTokenSource?.Cancel();
+        _texFileLoadCancelTokenSource = null;
+
+        if (texFile is not null) {
+            TexViewer.SetFile(tree, file, texFile);
+            PropertyPanelGrid.SelectedObject = new WrapperTypeConverter().ConvertFrom(texFile);
+            return;
+        }
+
+        _texFileLoadCancelTokenSource = new();
+
+        using var lookup = tree.GetLookup(file);
+        lookup.AsFileResource<TexFile>(_texFileLoadCancelTokenSource.Token)
+            .ContinueWith(
+                r => {
+                    if (!r.IsCompletedSuccessfully || index != _indexInPlaylist)
+                        return;
+                    TexViewer.SetFile(tree, file, r.Result);
+                    PropertyPanelGrid.SelectedObject = new WrapperTypeConverter().ConvertFrom(r.Result);
+                },
+                _texFileLoadCancelTokenSource.Token,
+                TaskContinuationOptions.None,
+                TaskScheduler.FromCurrentSynchronizationContext());
     }
 
     public void ShowRelativeTo(Control opener) {

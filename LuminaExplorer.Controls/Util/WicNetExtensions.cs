@@ -1,4 +1,5 @@
-﻿using DirectN;
+﻿using System;
+using DirectN;
 using Lumina.Data.Files;
 using LuminaExplorer.Core.Util.TexToDds;
 using WicNet;

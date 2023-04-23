@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace LuminaExplorer.Core.Util;
 
 public static class AsyncListSorter {

@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Silk.NET.Core.Contexts;
@@ -139,11 +141,28 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
         u = null;
     }
 
-    protected static void SafeReleaseArray<T>(ref T*[] u) where T : unmanaged {
-        foreach (var v in u)
-            if (v is not null)
-                ((IUnknown*) v)->Release();
-        u = new T*[0];
+    protected static void SafeReleaseArray<T>(ref T*[]?[]?[]? array) where T : unmanaged {
+        if (array is null)
+            return;
+        for (var i = 0; i < array.Length; i++)
+            SafeReleaseArray(ref array[i]);
+        array = null;
+    }
+
+    protected static void SafeReleaseArray<T>(ref T*[]?[]? array) where T : unmanaged {
+        if (array is null)
+            return;
+        for (var i = 0; i < array.Length; i++)
+            SafeReleaseArray(ref array[i]);
+        array = null;
+    }
+
+    protected static void SafeReleaseArray<T>(ref T*[]? array) where T : unmanaged {
+        if (array is null)
+            return;
+        for (var i = 0; i < array.Length; i++)
+            SafeRelease(ref array[i]);
+        array = null;
     }
 
     protected sealed class Direct3DDeviceBuilder : IDisposable {

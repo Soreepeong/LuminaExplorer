@@ -1,8 +1,12 @@
+using System;
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 using Lumina.Data;
 using Lumina.Data.Parsing;
 using Lumina.Data.Structs;

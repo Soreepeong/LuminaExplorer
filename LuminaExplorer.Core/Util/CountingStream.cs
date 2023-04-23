@@ -1,4 +1,9 @@
-﻿namespace LuminaExplorer.Core.Util;
+﻿using System;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace LuminaExplorer.Core.Util;
 
 public sealed class CountingStream : Stream {
     private readonly Stream _innerStream;

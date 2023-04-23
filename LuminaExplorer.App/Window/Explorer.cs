@@ -1,3 +1,5 @@
+using System;
+using System.Windows.Forms;
 using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.Util;
 

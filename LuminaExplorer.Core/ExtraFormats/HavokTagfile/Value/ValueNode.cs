@@ -1,4 +1,7 @@
-﻿using System.Collections.Immutable;
+﻿using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile.Field;
 
 namespace LuminaExplorer.Core.ExtraFormats.HavokTagfile.Value;

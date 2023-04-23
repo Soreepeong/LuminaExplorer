@@ -1,5 +1,8 @@
+using System;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LuminaExplorer.Core.LazySqPackTree.Matcher.TextMatchers;
 

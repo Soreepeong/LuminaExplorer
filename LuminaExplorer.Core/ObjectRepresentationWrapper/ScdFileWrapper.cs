@@ -1,4 +1,6 @@
-﻿using System.ComponentModel;
+﻿using System;
+using System.ComponentModel;
+using System.Linq;
 using Lumina.Data.Files;
 using Lumina.Data.Parsing.Scd;
 

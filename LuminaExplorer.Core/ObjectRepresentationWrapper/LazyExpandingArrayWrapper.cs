@@ -1,4 +1,6 @@
-﻿using System.ComponentModel;
+﻿using System;
+using System.ComponentModel;
+using System.Linq;
 using System.Reflection;
 
 namespace LuminaExplorer.Core.ObjectRepresentationWrapper;

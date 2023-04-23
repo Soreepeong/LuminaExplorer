@@ -1,4 +1,7 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System;
+using System.IO;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using Lumina.Data.Files;
 
 namespace LuminaExplorer.Core.Util.TexToDds;

@@ -1,4 +1,10 @@
-﻿using LuminaExplorer.Core.LazySqPackTree;
+﻿using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using LuminaExplorer.Core.LazySqPackTree;
 
 namespace LuminaExplorer.App.Window;
 

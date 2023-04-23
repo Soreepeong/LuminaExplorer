@@ -1,4 +1,9 @@
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using LuminaExplorer.Core.LazySqPackTree.Matcher;
 using Microsoft.Extensions.ObjectPool;
 
@@ -121,21 +126,26 @@ public sealed partial class VirtualSqPackTree {
                                         return null;
                                 case VirtualFile file:
                                     var lookup = new Lazy<VirtualFileLookup>(() => GetLookup(file));
-                                    var data = new Task<Task<string>>(
-                                        async () => new(
-                                            (await lookup.Value.ReadAll(cancellationToken))
-                                            .Select(x => (char) x)
-                                            .ToArray()),
-                                        cancellationToken);
-                                    if (await matcher.Matches(this, file, lookup, data, stopwatch, timeoutPerEntry,
-                                            cancellationToken))
-                                        return () => {
-                                            // Force name resolution
-                                            _ = file.Name;
-                                            fileFoundCallback(file);
-                                        };
-                                    else
-                                        return null;
+                                    try {
+                                        var data = new Task<Task<string>>(
+                                            async () => new(
+                                                (await lookup.Value.ReadAll(cancellationToken))
+                                                .Select(x => (char) x)
+                                                .ToArray()),
+                                            cancellationToken);
+                                        if (await matcher.Matches(this, file, lookup, data, stopwatch, timeoutPerEntry,
+                                                cancellationToken))
+                                            return () => {
+                                                // Force name resolution
+                                                _ = file.Name;
+                                                fileFoundCallback(file);
+                                            };
+                                        else
+                                            return null;
+                                    } finally {
+                                        if (lookup.IsValueCreated)
+                                            lookup.Value.Dispose();
+                                    }
                                 default:
                                     return (Action?) null;
                             }

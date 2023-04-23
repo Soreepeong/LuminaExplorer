@@ -1,4 +1,5 @@
-﻿using Microsoft.CSharp;
+﻿using System;
+using Microsoft.CSharp;
 
 namespace LuminaExplorer.Core.Util;
 

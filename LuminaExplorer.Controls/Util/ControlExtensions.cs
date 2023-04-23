@@ -1,4 +1,7 @@
-﻿namespace LuminaExplorer.Controls.Util;
+﻿using System;
+using System.Windows.Forms;
+
+namespace LuminaExplorer.Controls.Util;
 
 public static class ControlExtensions {
     private const int WmSetRedraw = 0x000B;

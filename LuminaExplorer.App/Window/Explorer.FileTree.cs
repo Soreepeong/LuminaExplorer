@@ -1,4 +1,9 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System;
+using System.Diagnostics.CodeAnalysis;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Forms;
 using LuminaExplorer.App.Utils;
 using LuminaExplorer.Core.LazySqPackTree;
 

@@ -1,4 +1,6 @@
-﻿using System.ComponentModel;
+﻿using System;
+using System.ComponentModel;
+using System.Linq;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile.Field;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile.Value;

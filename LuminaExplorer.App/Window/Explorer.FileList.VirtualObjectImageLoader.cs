@@ -1,6 +1,12 @@
+using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Lumina.Data.Files;
 using Lumina.Data.Structs;
 using LuminaExplorer.Core.LazySqPackTree;
@@ -186,8 +192,9 @@ public partial class Explorer {
 
                 var item = new PendingItem();
                 Bitmap? targetBitmap = null;
+                VirtualFileLookup? lookup = null;
                 try {
-                    if (!virtualObject.TryGetLookup(out var lookup) || lookup.File != virtualFile)
+                    if (!virtualObject.TryGetLookup(out lookup) || lookup.File != virtualFile)
                         continue;
 
                     var canBeTexture = false;
@@ -268,6 +275,7 @@ public partial class Explorer {
 
                 } finally {
                     targetBitmap?.Dispose();
+                    lookup?.Dispose();
                     lock (_syncRoot) {
                         if (_requests.Remove(virtualObject)) {
                             // did any of the configuration get changed while the process?

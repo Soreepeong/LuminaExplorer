@@ -1,6 +1,8 @@
-﻿using System.ComponentModel;
+﻿using System;
+using System.ComponentModel;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Windows.Forms;
 using BrightIdeasSoftware;
 
 namespace LuminaExplorer.Controls;
@@ -18,10 +20,10 @@ public class CoreVirtualObjectListView : VirtualObjectListView {
             if (value == VirtualListSize || value < 0)
                 return;
             _virtualListSizeFieldInfo ??= typeof (ListView).GetField("_virtualListSize", BindingFlags.Instance | BindingFlags.NonPublic);
-            _virtualListSizeFieldInfo!.SetValue((object) this, (object) value);
+            _virtualListSizeFieldInfo!.SetValue(this, value);
             if (!IsHandleCreated || DesignMode)
                 return;
-            NativeMethods.SetItemCount((ListView) this, value);
+            NativeMethods.SetItemCount(this, value);
         }
     }
 

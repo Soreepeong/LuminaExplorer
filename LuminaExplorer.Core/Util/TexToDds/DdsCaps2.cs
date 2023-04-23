@@ -1,4 +1,6 @@
-﻿namespace LuminaExplorer.Core.Util.TexToDds;
+﻿using System;
+
+namespace LuminaExplorer.Core.Util.TexToDds;
 
 [Flags]
 public enum DdsCaps2 {

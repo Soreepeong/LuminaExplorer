@@ -1,6 +1,13 @@
-﻿using System.IO.Compression;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Lumina.Data;
 using Lumina.Misc;
 using LuminaExplorer.Core.Util;

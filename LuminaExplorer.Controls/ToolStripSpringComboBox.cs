@@ -1,4 +1,7 @@
-﻿namespace LuminaExplorer.Controls;
+﻿using System.Drawing;
+using System.Windows.Forms;
+
+namespace LuminaExplorer.Controls;
 
 // https://learn.microsoft.com/en-us/dotnet/desktop/winforms/controls/stretch-a-toolstriptextbox-to-fill-the-remaining-width-of-a-toolstrip-wf?view=netframeworkdesktop-4.8
 public class ToolStripSpringComboBox : ToolStripComboBox {

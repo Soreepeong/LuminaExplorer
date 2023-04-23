@@ -1,6 +1,10 @@
-﻿using System.Numerics;
+﻿using System;
+using System.IO;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Lumina.Data;
 using Lumina.Data.Files;
 using Lumina.Data.Parsing.Tex.Buffers;

@@ -1,5 +1,8 @@
+using System;
 using System.Diagnostics;
+using System.Drawing;
 using System.Runtime.CompilerServices;
+using System.Windows.Forms;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.Direct3D11;
@@ -302,10 +305,15 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
             pBitmap = null;
         else if (pBitmap is null)
             fixed (ID2D1Bitmap** ppBitmap = &pBitmap)
-                ThrowH(RenderTarget->CreateBitmapFromWicBitmap(
-                    (IWICBitmapSource*) wicBitmapSource.ComObject.GetInterfacePointer<DirectN.IWICBitmapSource>(),
-                    null,
-                    ppBitmap));
+                try {
+                    ThrowH(RenderTarget->CreateBitmapFromWicBitmap(
+                        (IWICBitmapSource*) wicBitmapSource.ComObject.GetInterfacePointer<DirectN.IWICBitmapSource>(),
+                        null,
+                        ppBitmap));
+                } catch (Exception e) {
+                    Debugger.Break();
+                }
+
         return pBitmap;
     }
 

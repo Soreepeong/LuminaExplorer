@@ -1,3 +1,5 @@
+using System;
+
 namespace LuminaExplorer.Core.LazySqPackTree;
 
 public class VirtualFile {

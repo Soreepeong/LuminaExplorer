@@ -1,4 +1,8 @@
-﻿namespace LuminaExplorer.App.Window.FileViewers {
+﻿using System.Drawing;
+using System.Windows.Forms;
+using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl;
+
+namespace LuminaExplorer.App.Window.FileViewers {
     partial class TextureViewer {
         /// <summary>
         /// Required designer variable.
@@ -23,7 +27,7 @@
         /// the contents of this method with the code editor.
         /// </summary>
         private void InitializeComponent() {
-            TexViewer = new Controls.FileResourceViewerControls.TexFileViewerControl();
+            TexViewer = new TexFileViewerControl();
             PropertyPanel = new Panel();
             PropertyPanelGrid = new PropertyGrid();
             PropertyPanel.SuspendLayout();
@@ -79,7 +83,7 @@
 
         #endregion
 
-        private Controls.FileResourceViewerControls.TexFileViewerControl TexViewer;
+        private TexFileViewerControl TexViewer;
         private Panel PropertyPanel;
         private PropertyGrid PropertyPanelGrid;
     }

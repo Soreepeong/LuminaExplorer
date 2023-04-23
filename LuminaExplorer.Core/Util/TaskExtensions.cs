@@ -1,4 +1,7 @@
-﻿namespace LuminaExplorer.Core.Util;
+﻿using System;
+using System.Threading.Tasks;
+
+namespace LuminaExplorer.Core.Util;
 
 public static class TaskExtensions {
     public static Task AsStarted(this Task t) {

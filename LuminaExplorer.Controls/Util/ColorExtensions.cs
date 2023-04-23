@@ -1,4 +1,6 @@
-﻿namespace LuminaExplorer.Controls.Util; 
+﻿using System.Drawing;
+
+namespace LuminaExplorer.Controls.Util; 
 
 public static class ColorExtensions {
     public static Color MultiplyOpacity(this Color color, float opacityScaled) =>

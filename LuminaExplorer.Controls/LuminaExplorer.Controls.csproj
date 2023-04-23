@@ -2,16 +2,26 @@
 
   <PropertyGroup>
     <TargetFramework>net7.0-windows</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
-    <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>LuminaExplorer.Controls</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Update="CoreVirtualObjectListView.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Update="FileResourceViewerControls\ImageViewerControl\TexFileViewerControl.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Update="FileResourceViewerControls\ImageViewerControl\TexFileViewerControl.GridLayout.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Update="FileResourceViewerControls\ImageViewerControl\TexRenderer\GdipTexRenderer.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Update="FileResourceViewerControls\ImageViewerControl\TexRenderer\D2DTexRenderer.cs">
       <SubType>Component</SubType>
     </Compile>
   </ItemGroup>

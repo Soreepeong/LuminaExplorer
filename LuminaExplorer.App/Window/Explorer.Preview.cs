@@ -1,4 +1,7 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System;
+using System.Diagnostics.CodeAnalysis;
+using System.Threading;
+using System.Threading.Tasks;
 using Lumina.Data;
 using Lumina.Data.Files;
 using LuminaExplorer.App.Utils;
@@ -56,13 +59,14 @@ public partial class Explorer {
             _explorer.texPreview.LoadingFileNameWhenEmpty = file.Name;
             _explorer.texPreview.ClearFile(true);
 
-            _explorer.Tree
-                ?.GetLookup(file)
-                .AsFileResource(token)
+            if (_explorer.Tree is not { } tree)
+                return;
+            using var lookup = tree.GetLookup(file);
+            lookup.AsFileResource(token)
                 .ContinueWith(fr => {
-                        if (_previewingFile != file || _explorer.Tree is not { } tree)
+                        if (_previewingFile != file || _explorer.Tree is not { } tree2)
                             return;
-                        
+
                         if (!fr.IsCompletedSuccessfully) {
                             ClearPreview();
                             return;
@@ -71,7 +75,7 @@ public partial class Explorer {
                         _explorer.ppgPreview.SelectedObject = new WrapperTypeConverter().ConvertFrom(fr.Result);
                         _explorer.hbxPreview.ByteProvider = new FileResourceByteProvider(fr.Result);
                         if (fr.Result is TexFile tf)
-                            _explorer.texPreview.SetFile(tree, file, tf);
+                            _explorer.texPreview.SetFile(tree2, file, tf);
                         else {
                             _explorer.texPreview.LoadingFileNameWhenEmpty = null;
                             _explorer.texPreview.ClearFile();

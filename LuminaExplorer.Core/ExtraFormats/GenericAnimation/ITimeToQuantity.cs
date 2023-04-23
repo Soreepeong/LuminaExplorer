@@ -1,4 +1,6 @@
-﻿namespace LuminaExplorer.Core.ExtraFormats.GenericAnimation; 
+﻿using System.Collections.Generic;
+
+namespace LuminaExplorer.Core.ExtraFormats.GenericAnimation; 
 
 public interface ITimeToQuantity {
     bool IsEmpty { get; }

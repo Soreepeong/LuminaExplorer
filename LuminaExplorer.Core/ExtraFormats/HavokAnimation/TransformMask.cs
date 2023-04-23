@@ -1,4 +1,5 @@
-﻿using LuminaExplorer.Core.Util;
+﻿using System.IO;
+using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Core.ExtraFormats.HavokAnimation;
 

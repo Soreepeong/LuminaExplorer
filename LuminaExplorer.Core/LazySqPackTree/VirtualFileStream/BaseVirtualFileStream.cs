@@ -1,4 +1,6 @@
-﻿using Lumina.Data;
+﻿using System;
+using System.IO;
+using Lumina.Data;
 using Lumina.Data.Structs;
 
 namespace LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;

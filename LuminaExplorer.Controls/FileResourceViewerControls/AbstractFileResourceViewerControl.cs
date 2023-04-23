@@ -1,4 +1,7 @@
-﻿using JetBrains.Annotations;
+﻿using System;
+using System.Drawing;
+using System.Threading.Tasks;
+using System.Windows.Forms;
 using Lumina.Data;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.LazySqPackTree;
@@ -43,36 +46,44 @@ public abstract class AbstractFileResourceViewerControl : Control {
 
     public override Size GetPreferredSize(Size proposedSize) => new(320, 240);
 
-    public Rectangle GetViewportRectangleSuggestion(Control? opener) {
+    public virtual Task<Size> GetPreferredSizeAsync(Size proposedSize) =>
+        Task.FromResult(GetPreferredSize(proposedSize));
+
+    private Rectangle GetViewportRectangleSuggestionImpl(Control? opener, Size preferredSize) {
         var screen = opener is null ? Screen.FromPoint(Cursor.Position) : Screen.FromControl(opener);
 
         var pos = opener?.PointToScreen(new(opener.Width / 2, opener.Height / 2)) ?? new(
             screen.WorkingArea.Left + screen.WorkingArea.Width / 2,
             screen.WorkingArea.Top + screen.WorkingArea.Height / 2);
-        var size = GetPreferredSize(opener?.Size ?? new(320, 240));
 
         if (Parent is { } parent) {
             var rcParentClient = parent.RectangleToScreen(parent.ClientRectangle);
 
-            size = new(
-                Math.Min(size.Width + parent.Width - rcParentClient.Width, screen.WorkingArea.Width),
-                Math.Min(size.Height + parent.Height - rcParentClient.Height, screen.WorkingArea.Height));
+            preferredSize = new(
+                Math.Min(preferredSize.Width + parent.Width - rcParentClient.Width, screen.WorkingArea.Width),
+                Math.Min(preferredSize.Height + parent.Height - rcParentClient.Height, screen.WorkingArea.Height));
         } else {
-            size = new(
-                Math.Min(size.Width, screen.WorkingArea.Width),
-                Math.Min(size.Height, screen.WorkingArea.Height));
+            preferredSize = new(
+                Math.Min(preferredSize.Width, screen.WorkingArea.Width),
+                Math.Min(preferredSize.Height, screen.WorkingArea.Height));
         }
 
         pos = new(
             Math.Min(
-                Math.Max(pos.X - size.Width / 2, screen.WorkingArea.Left),
-                screen.WorkingArea.Right - size.Width),
+                Math.Max(pos.X - preferredSize.Width / 2, screen.WorkingArea.Left),
+                screen.WorkingArea.Right - preferredSize.Width),
             Math.Min(
-                Math.Max(pos.Y - size.Height / 2, screen.WorkingArea.Top),
-                screen.WorkingArea.Bottom - size.Height));
+                Math.Max(pos.Y - preferredSize.Height / 2, screen.WorkingArea.Top),
+                screen.WorkingArea.Bottom - preferredSize.Height));
 
-        return new(pos, size);
+        return new(pos, preferredSize);
     }
+
+    public Rectangle GetViewportRectangleSuggestion(Control? opener) =>
+        GetViewportRectangleSuggestionImpl(opener, GetPreferredSize(opener?.Size ?? Size.Empty));
+
+    public async Task<Rectangle> GetViewportRectangleSuggestionAsync(Control? opener) =>
+        GetViewportRectangleSuggestionImpl(opener,await  GetPreferredSizeAsync(opener?.Size ?? Size.Empty));
 
     public Task RunOnUiThread(Action action, bool allowChildAttach = false) => Task.Factory.StartNew(
         action,

@@ -1,6 +1,9 @@
+using System;
 using System.Diagnostics;
+using System.IO;
 using System.Reflection;
 using System.Text.Json;
+using System.Windows.Forms;
 using LuminaExplorer.App.Window;
 using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.SqPackPath;

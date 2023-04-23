@@ -1,4 +1,6 @@
-﻿namespace LuminaExplorer.Core.ExtraFormats.HavokTagfile.Value;
+﻿using System;
+
+namespace LuminaExplorer.Core.ExtraFormats.HavokTagfile.Value;
 
 public class ValueFloat : IValue {
     public readonly float Value;

@@ -1,4 +1,5 @@
-﻿using System.ComponentModel;
+﻿using System;
+using System.ComponentModel;
 using LuminaExplorer.Core.ExtraFormats.HavokAnimation;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile.Value;
@@ -7,11 +8,11 @@ namespace LuminaExplorer.Core.ObjectRepresentationWrapper;
 
 [TypeConverter(typeof(WrapperTypeConverter))]
 public class HavokNodeWrapper : BaseWrapper<Node> {
-    internal HavokNodeWrapper(Node obj) : base(obj) {}
+    internal HavokNodeWrapper(Node obj) : base(obj) { }
 
     public override PropertyDescriptorCollection GetProperties(Attribute[]? attributes) {
         var pds = new PropertyDescriptorCollection(null);
-        
+
         var obj = TransformObject(Obj);
         if (obj is null)
             return pds;

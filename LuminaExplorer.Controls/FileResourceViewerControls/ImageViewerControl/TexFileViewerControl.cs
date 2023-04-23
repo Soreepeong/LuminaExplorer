@@ -1,13 +1,21 @@
+using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Drawing;
+using System.IO;
+using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
 using Lumina.Data;
 using Lumina.Data.Files;
+using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.BitmapSource;
+using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.TexRenderer;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.Util;
 using Timer = System.Windows.Forms.Timer;
 
-namespace LuminaExplorer.Controls.FileResourceViewerControls;
+namespace LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl;
 
 public partial class TexFileViewerControl : AbstractFileResourceViewerControl<TexFile> {
     private const int FadeOutDurationMs = 200;
@@ -16,9 +24,11 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     public readonly PanZoomTracker Viewport;
 
+    private ResultDisposingTask<IBitmapSource>? _bitmapSourceTaskPrevious;
+    private ResultDisposingTask<IBitmapSource>? _bitmapSourceTaskCurrent;
     private Task<ITexRenderer[]>? _renderers;
 
-    private int _currentMipmapSetIndex;
+    private int _currentImageIndex;
     private int _currentMipmap;
 
     private string? _loadingFileNameWhenEmpty;
@@ -42,9 +52,10 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     private float _autoDescriptionSourceZoom = float.NaN;
     private Rectangle? _autoDescriptionRectangle;
 
-    private long _loadStartTicks = long.MaxValue;
-
+    private string? _overlayCustomString;
     private long _overlayShowUntilTicks;
+
+    private long _loadStartTicks = long.MaxValue;
 
     public TexFileViewerControl() {
         ResizeRedraw = true;
@@ -126,10 +137,11 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         if (disposing) {
             _bufferedGraphicsContext.Dispose();
             if (TryGetRenderers(out var renderers))
-                foreach (var r in renderers)
-                    r.Dispose();
+                SafeDispose.Array(ref renderers);
             Viewport.Dispose();
             _fadeTimer.Dispose();
+            _ = SafeDispose.OneAsync(ref _bitmapSourceTaskCurrent);
+            _ = SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
         }
 
         base.Dispose(disposing);
@@ -293,17 +305,15 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                 return;
 
             _sliceSpacing = value;
-            Viewport.Size = CreateGridLayout(_currentMipmap).GridSize;
-            Invalidate();
 
-            if (TryGetRenderers(out var renderers)) {
-                foreach (var r in renderers) {
-                    if (r.State is ITexRenderer.LoadState.Loading or ITexRenderer.LoadState.Loaded) {
-                        Viewport.Size = Size.Add(r.ImageSize, new(value.Width, value.Height));
-                        Invalidate();
-                    }
-                }
-            }
+            _bitmapSourceTaskPrevious?.Task.ContinueWith(r => {
+                r.Result.SliceSpacing = value;
+                Invalidate();
+            }, UiTaskScheduler);
+            _bitmapSourceTaskCurrent?.Task.ContinueWith(r => {
+                r.Result.SliceSpacing = value;
+                Invalidate();
+            }, UiTaskScheduler);
         }
     }
 
@@ -367,7 +377,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         }
     }
 
-    private float AutoDescriptionOpacity {
+    public float AutoDescriptionOpacity {
         get {
             var d = _autoDescriptionShowUntilTicks - Environment.TickCount64;
             return _autoDescriptionBeingHovered ? 1f :
@@ -407,22 +417,45 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     public FileInfo? PhysicalFile { get; private set; }
 
-    public string? LoadingText => FileName is null && _loadingFileNameWhenEmpty is null
-        ? null
-        : string.IsNullOrWhiteSpace(FileName ?? _loadingFileNameWhenEmpty)
-            ? "Loading..."
-            : $"Loading {FileName ?? _loadingFileNameWhenEmpty}...";
+    internal bool TryGetEffectiveOverlayInformation(
+        out string s,
+        out float foreOpacity,
+        out float backOpacity,
+        out bool hideIfNotLoading) {
+        hideIfNotLoading = false;
+        var now = Environment.TickCount64;
+        var customOverlayVisible =
+            !string.IsNullOrWhiteSpace(_overlayCustomString) &&
+            _overlayShowUntilTicks > Environment.TickCount64;
+        var hasLoadingText =
+            FileName is not null || _loadingFileNameWhenEmpty is not null;
 
-    public string? OverlayString { get; private set; }
-
-    public float OverlayOpacity {
-        get {
-            var d = _overlayShowUntilTicks - Environment.TickCount64;
-            return d <= 0 ? 0f : d >= FadeOutDurationMs ? 1f : (float) d / FadeOutDurationMs;
+        if (customOverlayVisible) {
+            var remaining = _overlayShowUntilTicks - now;
+            if (remaining >= FadeOutDurationMs / 2 || !hasLoadingText) {
+                s = _overlayCustomString!;
+                foreOpacity = remaining >= FadeOutDurationMs ? 1f : 1f * remaining / FadeOutDurationMs;
+                backOpacity = _overlayBackgroundOpacity * foreOpacity;
+                return true;
+            }
         }
+
+        if (hasLoadingText) {
+            s = string.IsNullOrWhiteSpace(FileName ?? _loadingFileNameWhenEmpty)
+                ? "Loading..."
+                : $"Loading {FileName ?? _loadingFileNameWhenEmpty}...";
+            foreOpacity = 1f;
+            backOpacity = _overlayBackgroundOpacity * foreOpacity;
+            hideIfNotLoading = true;
+            return true;
+        }
+
+        s = "";
+        foreOpacity = backOpacity = 0f;
+        return false;
     }
 
-    private bool ShouldDrawTransparencyGrid(
+    internal bool ShouldDrawTransparencyGrid(
         RectangleF cellRect,
         RectangleF clipRect,
         out int multiplier,
@@ -462,112 +495,57 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         return true;
     }
 
-    private void OnPaintWithBackgroundImplEmpty(PaintEventArgs e) {
-        BufferedGraphics? bufferedGraphics = null;
-        try {
-            bufferedGraphics = _bufferedGraphicsContext.Allocate(e.Graphics, e.ClipRectangle);
-            base.OnPaintBackground(new(bufferedGraphics.Graphics, e.ClipRectangle));
-        } finally {
-            bufferedGraphics?.Render();
-            bufferedGraphics?.Dispose();
-        }
-    }
-
-    private void OnPaintWithBackgroundImplDrawLoading(PaintEventArgs e) {
-        BufferedGraphics? bufferedGraphics = null;
-        try {
-            bufferedGraphics = _bufferedGraphicsContext.Allocate(e.Graphics, e.ClipRectangle);
-            base.OnPaintBackground(new(bufferedGraphics.Graphics, e.ClipRectangle));
-            using var brush = new SolidBrush(ForeColor);
-            using var stringFormat = new StringFormat {
-                Alignment = StringAlignment.Center,
-                LineAlignment = StringAlignment.Center,
-            };
-
-            bufferedGraphics.Graphics.DrawString(LoadingText, Font, brush, ClientRectangle, stringFormat);
-        } finally {
-            bufferedGraphics?.Render();
-            bufferedGraphics?.Dispose();
-        }
-    }
-
-    private void OnPaintWithBackgroundImplDrawExceptions(PaintEventArgs e, IEnumerable<Exception?> exceptions) {
-        BufferedGraphics? bufferedGraphics = null;
-        try {
-            bufferedGraphics = _bufferedGraphicsContext.Allocate(e.Graphics, e.ClipRectangle);
-            base.OnPaintBackground(new(bufferedGraphics.Graphics, e.ClipRectangle));
-            base.OnPaintBackground(e);
-
-            using var brush = new SolidBrush(ForeColor);
-            using var stringFormat = new StringFormat {
-                Alignment = StringAlignment.Center,
-                LineAlignment = StringAlignment.Center,
-            };
-            bufferedGraphics.Graphics.DrawString(
-                $"Error displaying {FileName}." +
-                string.Join(null, exceptions.Select(x => x is null ? "" : $"\n{x}")),
-                Font,
-                brush,
-                ClientRectangle,
-                stringFormat);
-        } finally {
-            bufferedGraphics?.Render();
-            bufferedGraphics?.Dispose();
-        }
-    }
-
     private void OnPaintWithBackground(PaintEventArgs e) {
+        var exceptions = Array.Empty<Exception>();
         if (!TryGetRenderers(out var renderers, true)) {
             if (_renderers?.IsFaulted is true)
-                OnPaintWithBackgroundImplDrawExceptions(
-                    e,
-                    _renderers.Exception?.InnerExceptions.AsEnumerable() ?? Array.Empty<Exception>());
-            else
-                OnPaintWithBackgroundImplDrawLoading(e);
-            return;
-        }
+                exceptions = _renderers.Exception?.InnerExceptions.ToArray() ??
+                             new Exception[] {new("Failed to load any renderer for unknown reasons.")};
+        } else {
+            if (MouseActivity.IsDragging)
+                ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
 
-        if (MouseActivity.IsDragging)
-            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
-
-        foreach (var r in renderers) {
-            switch (r.State) {
-                case ITexRenderer.LoadState.Error:
+            var hasException = false;
+            foreach (var r in renderers) {
+                if (r.LastException is not null) {
+                    hasException = true;
                     continue;
+                }
 
-                case ITexRenderer.LoadState.Empty:
-                    if (FileResourceTyped is not null || PhysicalFile is not null) {
-                        MouseActivity.Enabled = false;
-                        r.LoadFileAsync(_currentMipmap)
-                            .ContinueWith(_ => {
-                                MouseActivity.Enabled = true;
-                                Viewport.Reset(r.ImageSize);
-
-                                ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
-                                Invalidate();
-                            }, TaskScheduler.FromCurrentSynchronizationContext());
-                    }
-
-                    if (!r.HasNondisposedBitmap)
-                        break;
-
-                    goto case ITexRenderer.LoadState.Loading;
-
-                case ITexRenderer.LoadState.Loading:
-                case ITexRenderer.LoadState.Loaded:
-                    if (r.Draw(e))
-                        return;
-                    continue;
+                if (r.Draw(e))
+                    return;
             }
+
+            if (hasException)
+                exceptions = renderers.Where(x => x.LastException is not null).Select(x => x.LastException!).ToArray();
         }
 
-        if ((PhysicalFile is not null || FileResourceTyped is not null) &&
-            renderers.All(x => x.State != ITexRenderer.LoadState.Loading))
-            OnPaintWithBackgroundImplDrawExceptions(e, renderers.Select(x => x.LastException));
-        else if (_loadingFileNameWhenEmpty is not null)
-            OnPaintWithBackgroundImplDrawLoading(e);
-        else
-            OnPaintWithBackgroundImplEmpty(e);
+        BufferedGraphics? bufferedGraphics = null;
+        try {
+            bufferedGraphics = _bufferedGraphicsContext.Allocate(e.Graphics, e.ClipRectangle);
+            base.OnPaintBackground(new(bufferedGraphics.Graphics, e.ClipRectangle));
+
+            using var brush = new SolidBrush(ForeColor);
+            using var stringFormat = new StringFormat {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center,
+            };
+
+            if (exceptions.Any()) {
+                bufferedGraphics.Graphics.DrawString(
+                    $"Error displaying {FileName}.\n\n" +
+                    string.Join('\n', exceptions.Select(x => x.ToString())),
+                    Font,
+                    brush,
+                    ClientRectangle,
+                    stringFormat);
+            } else if (TryGetEffectiveOverlayInformation(out var overlayText, out _, out _, out _)) {
+                bufferedGraphics.Graphics.DrawString(overlayText, Font, brush, ClientRectangle, stringFormat);
+            }
+        } finally {
+            bufferedGraphics?.Render();
+            bufferedGraphics?.Dispose();
+        }
     }
 
     protected sealed override void OnPaintBackground(PaintEventArgs e) { }
@@ -606,52 +584,147 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
     }
 
     public override Size GetPreferredSize(Size proposedSize) =>
-        Size.Add(CreateGridLayout(_currentMipmap).GridSize, new(Margin.Horizontal, Margin.Vertical));
+        Size.Add(
+            _bitmapSourceTaskCurrent?.IsCompletedSuccessfully is true
+                ? _bitmapSourceTaskCurrent.Result.Layout.GridSize
+                : base.GetPreferredSize(proposedSize),
+            new(Margin.Horizontal, Margin.Vertical));
 
-    public void ChangeDisplayedMipmap(int mipmapSet, int mipmap, bool force = false) {
-        if (!force && _currentMipmap == mipmap && _currentMipmapSetIndex == mipmapSet)
+    public override async Task<Size> GetPreferredSizeAsync(Size proposedSize) {
+        Size? size = null;
+        if (_bitmapSourceTaskCurrent is not null) {
+            try {
+                size = (await _bitmapSourceTaskCurrent.ConfigureAwait(false)).Layout.GridSize;
+            } catch (Exception) {
+                // pass
+            }
+        }
+
+        size ??= await base.GetPreferredSizeAsync(proposedSize);
+
+        return Size.Add(size.Value, new(Margin.Horizontal, Margin.Vertical));
+    }
+
+    public void ChangeDisplayedMipmap(int imageIndex, int mipmap, bool force = false) {
+        if (_bitmapSourceTaskCurrent is not { } bitmapSource)
+            return;
+
+        if (!force && _currentMipmap == mipmap && _currentImageIndex == imageIndex)
             return;
 
         _currentMipmap = mipmap;
-        _currentMipmapSetIndex = mipmapSet;
+        _currentImageIndex = imageIndex;
         _loadStartTicks = Environment.TickCount64;
         _fadeTimer.Enabled = true;
         _fadeTimer.Interval = 1;
+        MouseActivity.Enabled = false;
 
         ClearDisplayInformationCache();
-        if (TryGetRenderers(out var renderers, true))
-            foreach (var r in renderers)
-                r.Reset(false);
+        bitmapSource.Task.ContinueWith(r => {
+            if (!r.IsCompletedSuccessfully ||
+                bitmapSource != _bitmapSourceTaskCurrent ||
+                _currentMipmap != mipmap ||
+                _currentImageIndex != imageIndex)
+                return;
+
+            r.Result.UpdateSelection(imageIndex, mipmap);
+        }, UiTaskScheduler);
 
         Invalidate();
     }
 
     public void SetFile(FileInfo fileInfo) {
         ClearFileImpl();
-        FileName = fileInfo.Name;
         PhysicalFile = fileInfo;
-        ChangeDisplayedMipmap(0, 0);
+
+        throw new NotImplementedException();
+        SetFileImpl(fileInfo.Name, Task.FromResult((IBitmapSource) new TexBitmapSource(FileResourceTyped!)));
     }
 
     public override void SetFile(VirtualSqPackTree tree, VirtualFile file, FileResource fileResource) {
         base.SetFile(tree, file, fileResource);
-        FileName = file.Name;
         ClearFileImpl();
+
+        SetFileImpl(file.Name, Task.FromResult((IBitmapSource) new TexBitmapSource(FileResourceTyped!)));
+    }
+
+    private void SetFileImpl(string fileName, Task<IBitmapSource> sourceTask) {
+        FileName = fileName;
+
+        if (_bitmapSourceTaskCurrent is not null) {
+            if (IsCurrentBitmapSourceReadyOnRenderer()) {
+                if (TryGetRenderers(out var renderers))
+                    foreach (var renderer in renderers)
+                        renderer.UpdateBitmapSource(_bitmapSourceTaskCurrent?.Task, null);
+
+                SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
+                _bitmapSourceTaskPrevious = _bitmapSourceTaskCurrent;
+                _bitmapSourceTaskCurrent = null;
+            } else {
+                if (TryGetRenderers(out var renderers))
+                    foreach (var renderer in renderers)
+                        renderer.UpdateBitmapSource(_bitmapSourceTaskPrevious?.Task, null);
+                SafeDispose.OneAsync(ref _bitmapSourceTaskCurrent);
+            }
+        }
+
+        var sourceTaskCurrent = _bitmapSourceTaskCurrent = new(sourceTask);
+
+        {
+            if (TryGetRenderers(out var renderers, true)) {
+                foreach (var renderer in renderers)
+                    renderer.UpdateBitmapSource(_bitmapSourceTaskPrevious?.Task, _bitmapSourceTaskCurrent?.Task);
+            } else {
+                _renderers!.ContinueWith(result => {
+                    if (sourceTaskCurrent != _bitmapSourceTaskCurrent || !result.IsCompletedSuccessfully)
+                        return;
+
+                    foreach (var renderer in result.Result)
+                        renderer.UpdateBitmapSource(_bitmapSourceTaskPrevious?.Task, _bitmapSourceTaskCurrent?.Task);
+                }, UiTaskScheduler);
+            }
+        }
+
         ChangeDisplayedMipmap(0, 0);
     }
 
     public override void ClearFile(bool keepContentsDisplayed = false) {
         ClearFileImpl();
 
-        if (TryGetRenderers(out var renderers))
-            foreach (var r in renderers)
-                r.Reset(!keepContentsDisplayed);
+        if (keepContentsDisplayed) {
+            if (_bitmapSourceTaskCurrent is not null) {
+                if (IsCurrentBitmapSourceReadyOnRenderer()) {
+                    if (TryGetRenderers(out var renderers))
+                        foreach (var r in renderers)
+                            r.UpdateBitmapSource(_bitmapSourceTaskCurrent?.Task, null);
 
-        if (!keepContentsDisplayed)
+                    SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
+                    _bitmapSourceTaskPrevious = _bitmapSourceTaskCurrent;
+                    _bitmapSourceTaskCurrent = null;
+                } else {
+                    if (TryGetRenderers(out var renderers))
+                        foreach (var r in renderers)
+                            r.UpdateBitmapSource(_bitmapSourceTaskPrevious?.Task, null);
+                    SafeDispose.OneAsync(ref _bitmapSourceTaskCurrent);
+                }
+            }
+        } else {
+            if (TryGetRenderers(out var renderers))
+                foreach (var r in renderers)
+                    r.UpdateBitmapSource(null, null);
+
+            SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
+            SafeDispose.OneAsync(ref _bitmapSourceTaskCurrent);
             Viewport.Reset(Size.Empty);
+        }
 
         base.ClearFile(keepContentsDisplayed);
     }
+
+    private bool IsCurrentBitmapSourceReadyOnRenderer() =>
+        _bitmapSourceTaskCurrent is {IsCompletedSuccessfully: true} sourceTask &&
+        TryGetRenderers(out var renderers) &&
+        renderers.Any(r => r.LastException is null && r.HasBitmapSourceReadyForDrawing(sourceTask.Task));
 
     public void ExtendDescriptionMandatoryDisplay(TimeSpan duration) {
         var now = Environment.TickCount64;
@@ -669,7 +742,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     public void ShowOverlayString(string? overlayString, TimeSpan overlayTextMessageDuration) {
         var now = Environment.TickCount64;
-        OverlayString = overlayString;
+        _overlayCustomString = overlayString;
         _overlayShowUntilTicks = now + (int) overlayTextMessageDuration.TotalMilliseconds;
 
         if (_overlayShowUntilTicks <= now)
@@ -702,15 +775,32 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
         renderers = null;
         if (startLoading) {
+            if (_renderers?.IsFaulted is true)
+                _renderers = null;
             _renderers ??= RunOnUiThreadAfter(Task.Run(() => new ITexRenderer[] {
-                new D2DTexRenderer(this),
-                new GdipRenderer(this),
+                new D2DTexRenderer(this, UiTaskScheduler),
+                // new GdipTexRenderer(this),
             }), r => {
                 Invalidate();
+                foreach (var renderer in r.Result)
+                    renderer.AnyBitmapSourceSliceAvailableForDrawing += RendererOnAnyBitmapSourceSliceAvailableForDrawing;
                 return r.Result;
             });
         }
 
         return false;
+    }
+
+    private void RendererOnAnyBitmapSourceSliceAvailableForDrawing(Task<IBitmapSource> task) {
+        if (_bitmapSourceTaskCurrent?.Task != task)
+            return;
+        BeginInvoke(() => {
+            if (TryGetRenderers(out var renderers)) {
+                MouseActivity.Enabled = true;
+                foreach (var r in renderers)
+                    if (r.LastException is null)
+                        Viewport.Reset(new(task.Result.Width, task.Result.Height));
+            }
+        });
     }
 }

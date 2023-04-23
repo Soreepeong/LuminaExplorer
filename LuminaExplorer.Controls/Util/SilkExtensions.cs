@@ -1,4 +1,5 @@
-﻿using Silk.NET.Maths;
+﻿using System.Drawing;
+using Silk.NET.Maths;
 
 namespace LuminaExplorer.Controls.Util;
 

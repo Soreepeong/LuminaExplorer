@@ -1,4 +1,6 @@
-﻿namespace LuminaExplorer.Core.ExtraFormats.HavokTagfile.Field;
+﻿using System;
+
+namespace LuminaExplorer.Core.ExtraFormats.HavokTagfile.Field;
 
 public class FieldType {
     public readonly FieldArrayType ArrayType;

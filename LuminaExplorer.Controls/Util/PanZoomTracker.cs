@@ -1,4 +1,7 @@
+using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Drawing;
+using System.Windows.Forms;
 using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Controls.Util;

@@ -1,4 +1,7 @@
-﻿namespace LuminaExplorer.Core.LazySqPackTree.Matcher;
+﻿using System.Threading;
+using System.Threading.Tasks;
+
+namespace LuminaExplorer.Core.LazySqPackTree.Matcher;
 
 public class SizeMatcher {
     private readonly ulong _minValue, _maxValue;

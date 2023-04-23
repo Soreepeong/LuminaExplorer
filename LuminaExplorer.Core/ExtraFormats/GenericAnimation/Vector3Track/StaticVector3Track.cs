@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace LuminaExplorer.Core.ExtraFormats.GenericAnimation.Vector3Track;

@@ -1,4 +1,6 @@
-﻿using Lumina.Data;
+﻿using System;
+using System.Linq;
+using Lumina.Data;
 using Lumina.Data.Attributes;
 
 namespace LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;

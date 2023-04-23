@@ -1,5 +1,11 @@
+using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Forms;
 using BrightIdeasSoftware;
 using Lumina.Data;
 using Lumina.Data.Files;
@@ -257,13 +263,16 @@ public partial class Explorer {
                 var virtualFileDataObject = new VirtualFileDataObject();
 
                 // Provide a virtual file (generated on demand) containing the letters 'a'-'z'
-                virtualFileDataObject.SetData(files.Select(x => new VirtualFileDataObject.FileDescriptor {
-                    Name = x.Name,
-                    Length = tree.GetLookup(x).Size,
-                    StreamContents = dstStream => {
-                        using var srcStream = tree.GetLookup(x).CreateStream();
-                        srcStream.CopyTo(dstStream);
-                    },
+                virtualFileDataObject.SetData(files.Select(x => {
+                    using var lookup = tree.GetLookup(x);
+                    return new VirtualFileDataObject.FileDescriptor {
+                        Name = x.Name,
+                        Length = lookup.Size,
+                        StreamContents = dstStream => {
+                            using var srcStream = lookup.CreateStream();
+                            srcStream.CopyTo(dstStream);
+                        },
+                    };
                 }).ToArray());
 
                 _explorer.DoDragDrop(virtualFileDataObject, DragDropEffects.Copy);

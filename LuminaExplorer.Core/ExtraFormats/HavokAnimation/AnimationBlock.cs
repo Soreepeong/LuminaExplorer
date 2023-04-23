@@ -1,4 +1,5 @@
 ﻿using System.Collections.Immutable;
+using System.Linq;
 using LuminaExplorer.Core.ExtraFormats.GenericAnimation;
 using LuminaExplorer.Core.ExtraFormats.GenericAnimation.QuaternionTrack;
 using LuminaExplorer.Core.ExtraFormats.GenericAnimation.Vector3Track;

@@ -1,3 +1,5 @@
+using System;
+
 namespace LuminaExplorer.Core.Util.TexToDds;
 
 [Flags]

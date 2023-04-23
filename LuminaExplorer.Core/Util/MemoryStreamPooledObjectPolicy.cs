@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.ObjectPool;
+﻿using System.IO;
+using Microsoft.Extensions.ObjectPool;
 
 namespace LuminaExplorer.Core.Util;
 

@@ -1,4 +1,6 @@
-﻿namespace LuminaExplorer.Core.ExtraFormats.HavokAnimation;
+﻿using System;
+
+namespace LuminaExplorer.Core.ExtraFormats.HavokAnimation;
 
 [Flags]
 public enum QuaternionType : byte {
