@@ -282,8 +282,8 @@ public partial class TexFileViewerControl {
             var now = Math.Min(Environment.TickCount64, ReleaseTick);
             var prevElapsedSecs = (DeltaBaseTick - PressTick) / 1000f;
             var newElapsedSecs = (now - PressTick) / 1000f;
-            var prevTotal = Math.Pow(prevElapsedSecs, 2) * 1024;
-            var newTotal = Math.Pow(newElapsedSecs, 2) * 1024;
+            var prevTotal = MathF.Pow(0.5f + prevElapsedSecs, 4) * 1024;
+            var newTotal = MathF.Pow(0.5f + newElapsedSecs, 4) * 1024;
             var delta = (int) (newTotal - prevTotal);
 
             // Make sure that the keypress gets actualized once in case keydown/keyup has happened before

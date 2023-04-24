@@ -21,7 +21,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         MouseActivity.UseLeftDrag = true;
         MouseActivity.UseMiddleDrag = true;
         MouseActivity.UseRightDrag = true;
-        MouseActivity.UseDoubleDetection = true;
+        MouseActivity.UseLeftDouble = true;
         MouseActivity.UseWheelZoom = true;
         MouseActivity.UseDragZoom = true;
         MouseActivity.UseInfiniteLeftDrag = true;
@@ -148,6 +148,16 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         if (_autoDescriptionBeingHovered) {
             _autoDescriptionBeingHovered = false;
             ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
+        }
+    }
+
+    protected override void OnMouseWheel(MouseEventArgs e) {
+        base.OnMouseWheel(e);
+        if (0 == (ModifierKeys & Keys.Modifiers) && !MouseActivity.IsDragging) {
+            if (e.Delta > 0)
+                NavigateToPrevFile?.Invoke(this, EventArgs.Empty);
+            else
+                NavigateToNextFile?.Invoke(this, EventArgs.Empty);
         }
     }
 

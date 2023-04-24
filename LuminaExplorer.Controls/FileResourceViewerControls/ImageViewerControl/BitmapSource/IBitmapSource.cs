@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Drawing;
+using System.IO;
 using System.Threading.Tasks;
 using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.GridLayout;
 using WicNet;
@@ -43,4 +44,8 @@ public interface IBitmapSource : IDisposable, IAsyncDisposable {
     public int HeightOfMipmap(int imageIndex, int mipmap);
 
     public int DepthOfMipmap(int imageIndex, int mipmap);
+
+    public void WriteTexFile(Stream stream);
+
+    public void WriteDdsFile(Stream stream);
 }

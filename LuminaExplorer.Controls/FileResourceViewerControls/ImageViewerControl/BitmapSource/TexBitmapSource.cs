@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using DirectN;
@@ -8,6 +9,7 @@ using Lumina.Data.Files;
 using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.GridLayout;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
+using LuminaExplorer.Core.Util.TexToDds;
 using WicNet;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.BitmapSource;
@@ -122,11 +124,11 @@ public sealed class TexBitmapSource : IBitmapSource {
             throw new ObjectDisposedException(nameof(TexBitmapSource));
         if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
-        return (_wicBitmaps[_mipmap][slice] ??= new(Task.Run(
+        return (_wicBitmaps[mipmap][slice] ??= new(Task.Run(
             () => {
                 WicBitmapSource? wb = null;
                 try {
-                    wb = _texFile.ToWicBitmap(_mipmap, slice);
+                    wb = _texFile.ToWicBitmap(mipmap, slice);
                     _cancellationTokenSource.Token.ThrowIfCancellationRequested();
                     wb.ConvertTo(
                         WicPixelFormat.GUID_WICPixelFormat32bppPBGRA,
@@ -143,7 +145,7 @@ public sealed class TexBitmapSource : IBitmapSource {
     public bool HasWicBitmapSource(int imageIndex, int mipmap, int slice) {
         if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
-        return _wicBitmaps[_mipmap][slice]?.IsCompletedSuccessfully is true;
+        return _wicBitmaps[mipmap][slice]?.IsCompletedSuccessfully is true;
     }
 
     Task<Bitmap> IBitmapSource.GetGdipBitmapAsync(int imageIndex, int mipmap, int slice) {
@@ -153,12 +155,12 @@ public sealed class TexBitmapSource : IBitmapSource {
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         return (_bitmaps[mipmap][slice] ??= new(Task.Run(
             () => {
-                if (_wicBitmaps[_mipmap][slice] is {Task.IsCompletedSuccessfully: true} wicBitmapTask) {
+                if (_wicBitmaps[mipmap][slice] is {Task.IsCompletedSuccessfully: true} wicBitmapTask) {
                     if (wicBitmapTask.Result.TryToGdipBitmap(out var b))
                         return b;
                 }
                 
-                var texBuf = _texFile.TextureBuffer.Filter(_mipmap, slice, TexFile.TextureFormat.B8G8R8A8);
+                var texBuf = _texFile.TextureBuffer.Filter(mipmap, slice, TexFile.TextureFormat.B8G8R8A8);
                 unsafe {
                     fixed (void* p = texBuf.RawData) {
                         using var b = new Bitmap(
@@ -202,6 +204,13 @@ public sealed class TexBitmapSource : IBitmapSource {
         if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         return _texFile.TextureBuffer.DepthOfMipmap(mipmap);
+    }
+
+    public void WriteTexFile(Stream stream) => stream.Write(_texFile.Data);
+
+    public void WriteDdsFile(Stream stream) {
+        using var ms = new DdsFile(_texFile).CreateStream();
+        ms.CopyTo(stream);
     }
 
     private void Relayout() {

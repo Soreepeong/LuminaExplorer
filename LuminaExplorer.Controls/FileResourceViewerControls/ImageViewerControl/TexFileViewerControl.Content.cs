@@ -28,6 +28,10 @@ public partial class TexFileViewerControl {
 
     public float EffectiveZoom => Viewport.EffectiveZoom;
 
+    public IBitmapSource? CurrentBitmapSource => _bitmapSourceTaskCurrent?.IsCompletedSuccessfully is true
+        ? _bitmapSourceTaskCurrent.Result
+        : null;
+
     public override Size GetPreferredSize(Size proposedSize) =>
         Size.Add(
             _bitmapSourceTaskCurrent?.IsCompletedSuccessfully is true
