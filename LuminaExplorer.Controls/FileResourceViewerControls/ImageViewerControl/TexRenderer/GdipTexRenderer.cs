@@ -123,13 +123,12 @@ internal sealed class GdipTexRenderer : ITexRenderer {
                     out var hideIfNotLoading))
                 overlayString = null;
 
-            Color brushColor;
             if (IsAnyVisibleSliceReadyForDrawing(SourceTaskCurrent))
-                brushColor = Control.BackColorWhenLoaded;
+                g.Clear(Control.BackColorWhenLoaded);
             else if (SourceTaskCurrent?.IsFaulted is true)
-                brushColor = Control.BackColor;
+                g.Clear(Control.BackColor);
             else if (IsAnyVisibleSliceReadyForDrawing(SourceTaskPrevious))
-                brushColor = Control.BackColorWhenLoaded;
+                g.Clear(Control.BackColorWhenLoaded);
             else
                 g.Clear(Control.BackColor);
 
@@ -143,7 +142,7 @@ internal sealed class GdipTexRenderer : ITexRenderer {
                     continue;
                 }
 
-                if (sourceTask.IsCompletedSuccessfully) { 
+                if (sourceTask.IsCompletedSuccessfully) {
                     var source = sourceTask.Result;
                     var imageRect = Control.ImageRect;
                     var clientSize = Control.ClientSize;
@@ -229,13 +228,13 @@ internal sealed class GdipTexRenderer : ITexRenderer {
                         Control.BackColorWhenLoaded,
                         Control.AutoDescriptionOpacity,
                         2);
-                }else if (sourceTask.IsFaulted)
+                } else if (sourceTask.IsFaulted)
                     overlayString = $"Error occurred loading the file.\n{sourceTask.Exception}";
                 else
                     isLoading = true;
             }
 
-            if (hideIfNotLoading && isLoading)
+            if (hideIfNotLoading && !isLoading)
                 overlayString = null;
 
             if (overlayString is null)

@@ -12,7 +12,6 @@ using LuminaExplorer.Core.Util;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.DirectWrite;
-using Silk.NET.DXGI;
 using Silk.NET.Maths;
 using Rectangle = System.Drawing.Rectangle;
 
@@ -308,7 +307,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
                 isLoading = true;
         }
 
-        if (hideIfNotLoading && isLoading)
+        if (hideIfNotLoading && !isLoading)
             overlayString = null;
 
         if (overlayString is null)

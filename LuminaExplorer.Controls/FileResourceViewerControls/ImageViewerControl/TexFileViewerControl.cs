@@ -119,6 +119,12 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         }
     }
 
+    protected override void OnMouseDown(MouseEventArgs e) {
+        base.OnMouseDown(e);
+
+        Focus();
+    }
+
     protected override void OnMouseMove(MouseEventArgs e) {
         base.OnMouseMove(e);
         if (!_autoDescriptionBeingHovered) {
@@ -167,7 +173,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                 case Keys.Down: // TODO: Start pan down timer or next file event
                 case Keys.NumPad2:
                     break;
-                case Keys.C when e.Control: // TODO: Copy
+                case Keys.C when e.Control:
                     (_bitmapSourceTaskCurrent ?? _bitmapSourceTaskPrevious)?.Task.ContinueWith(r => {
                         if (r.IsCompletedSuccessfully)
                             _ = r.Result.SetClipboardImage(UiTaskScheduler);
