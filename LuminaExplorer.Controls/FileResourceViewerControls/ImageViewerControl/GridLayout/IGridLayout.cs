@@ -1,38 +1,30 @@
-﻿using System.Drawing;
+﻿using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.GridLayout;
 
-public interface IGridLayout {
+public interface IGridLayout : IEnumerable<GridLayoutCell> {
     private const float LayoutTableMaxRatio = 2.5f;
+    
+    public int Count { get; }
 
     public Size GridSize { get; }
 
     public Rectangle RectOf(int cellIndex);
 
-    public RectangleF ScaleOf(int cellIndex) {
-        var k = RectOf(cellIndex);
-        return new(
-            1f * k.X / GridSize.Width,
-            1f * k.Y / GridSize.Height,
-            1f * k.Width / GridSize.Width,
-            1f * k.Height / GridSize.Height);
-    }
+    public GridLayoutCell this[int cellIndex] { get; }
 
-    public RectangleF RectOf(int cellIndex, RectangleF actualGridRect) {
-        var scaledRect = ScaleOf(cellIndex);
-        return new(
-            actualGridRect.X + scaledRect.Left * actualGridRect.Width,
-            actualGridRect.Y + scaledRect.Top * actualGridRect.Height,
-            scaledRect.Width * actualGridRect.Width,
-            scaledRect.Height * actualGridRect.Height);
-    }
-    
-    public static IGridLayout CreateGridLayout(int w, int h, int d, bool isCube, Size sliceSpacing) {
+    public static IGridLayout CreateGridLayoutForDepthView(int imageIndex, int mipmap, int w, int h, int d, bool isCube, Size sliceSpacing) {
         if (w == 0 || h == 0 || d == 0)
             return EmptyGridLayout.Instance;
 
         if (d == 6 && isCube)
-            return new CubeGridLayout(w, h, 0, 0);
-        return new AutoGridLayout(w, h, sliceSpacing.Width, sliceSpacing.Height, d, LayoutTableMaxRatio);
+            return new CubeGridLayout(imageIndex, mipmap, w, h, 0, 0);
+        return new EquallCellSizeGridLayout(
+            sliceSpacing.Width,
+            sliceSpacing.Height,
+            Enumerable.Range(0, d).Select(x => new GridLayoutCell(x, imageIndex, mipmap, x, w, h)),
+            LayoutTableMaxRatio);
     }
 }

@@ -1,21 +1,30 @@
 ﻿using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.GridLayout;
 
 public sealed class CubeGridLayout : IGridLayout {
+    private readonly GridLayoutCell[] _cells;
+
     public CubeGridLayout(
+        int imageIndex,
+        int mipmap,
         int cellWidth,
         int cellHeight,
         int horizontalSpacing,
         int verticalSpacing) {
-        CellSize = new(cellWidth, cellHeight);
         GridSize = new(cellWidth * 4 + horizontalSpacing * 3, cellHeight * 3 + verticalSpacing * 2);
         Spacing = new(horizontalSpacing, verticalSpacing);
+        _cells = Enumerable.Range(0, 6)
+            .Select(x => new GridLayoutCell(x, imageIndex, mipmap, x, cellWidth, cellHeight))
+            .ToArray();
     }
 
+    public int Count => 6;
     public Size GridSize { get; }
-    private Size CellSize { get; }
     private Size Spacing { get; }
 
     // Index ref
@@ -39,10 +48,17 @@ public sealed class CubeGridLayout : IGridLayout {
             5 => (3, 1),
             _ => throw new ArgumentOutOfRangeException(nameof(cellIndex), cellIndex, null),
         };
+        var cell = _cells[cellIndex];
         return new(
-            (CellSize.Width + Spacing.Width) * x,
-            (CellSize.Height + Spacing.Height) * y,
-            CellSize.Width,
-            CellSize.Height);
+            (cell.Width + Spacing.Width) * x,
+            (cell.Height + Spacing.Height) * y,
+            cell.Width,
+            cell.Height);
     }
+
+    public GridLayoutCell this[int cellIndex] => _cells[cellIndex];
+
+    public IEnumerator<GridLayoutCell> GetEnumerator() => ((IEnumerable<GridLayoutCell>) _cells).GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => _cells.GetEnumerator();
 }

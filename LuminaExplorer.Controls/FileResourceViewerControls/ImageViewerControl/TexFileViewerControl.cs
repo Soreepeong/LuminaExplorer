@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using Lumina.Data.Files;
+using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.BitmapSource;
 using LuminaExplorer.Controls.Util.ScaleMode;
 using LuminaExplorer.Core.Util;
 using Timer = System.Windows.Forms.Timer;
@@ -167,6 +168,10 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                 case Keys.NumPad2:
                     break;
                 case Keys.C when e.Control: // TODO: Copy
+                    (_bitmapSourceTaskCurrent ?? _bitmapSourceTaskPrevious)?.Task.ContinueWith(r => {
+                        if (r.IsCompletedSuccessfully)
+                            _ = r.Result.SetClipboardImage(UiTaskScheduler);
+                    });
                     break;
                 case Keys.Multiply:
                 case Keys.D8 when e.Shift: // Zoom to 100%
@@ -215,7 +220,7 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
                 case Keys.OemPeriod: // Next mipmap in the image
                 {
                     var count = _bitmapSourceTaskCurrent?.IsCompletedSuccessfully is true
-                        ? _bitmapSourceTaskCurrent.Result.NumMipmaps
+                        ? _bitmapSourceTaskCurrent.Result.NumberOfMipmaps(_currentImageIndex)
                         : 0;
                     if (_currentMipmap < count - 1)
                         ChangeDisplayedMipmap(_currentImageIndex, _currentMipmap + 1);

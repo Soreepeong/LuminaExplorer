@@ -16,5 +16,7 @@ internal interface ITexRenderer : IDisposable {
 
     void UpdateBitmapSource(Task<IBitmapSource>? previous, Task<IBitmapSource>? current);
     
-    bool HasBitmapSourceReadyForDrawing(Task<IBitmapSource> bitmapSourceTask);
+    bool IsAnyVisibleSliceReadyForDrawing(Task<IBitmapSource>? bitmapSourceTask);
+    
+    bool IsEveryVisibleSliceReadyForDrawing(Task<IBitmapSource>? bitmapSourceTask);
 }

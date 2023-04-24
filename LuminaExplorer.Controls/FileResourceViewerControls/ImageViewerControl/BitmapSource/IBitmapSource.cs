@@ -7,7 +7,7 @@ using WicNet;
 namespace LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.BitmapSource;
 
 public interface IBitmapSource : IDisposable, IAsyncDisposable {
-    public event Action? ImageOrMipmapChanged;
+    public event Action? LayoutChanged;
     
     /// <summary>
     /// Number of elements in the array.
@@ -15,26 +15,6 @@ public interface IBitmapSource : IDisposable, IAsyncDisposable {
     /// See <see cref="LuminaExplorer.Core.Util.TexToDds.DdsHeaderDxt10.ArraySize"/>
     /// </summary>
     public int ImageCount { get; }
-
-    /// <summary>
-    /// Number of mipmap levels.
-    /// </summary>
-    public int NumMipmaps { get; }
-
-    /// <summary>
-    /// Width of the first mipmap.
-    /// </summary>
-    public int BaseWidth { get; }
-
-    /// <summary>
-    /// Height of the first mipmap.
-    /// </summary>
-    public int BaseHeight { get; }
-
-    /// <summary>
-    /// Depth of the first mipmap.
-    /// </summary>
-    public int BaseDepth { get; }
 
     /// <summary>
     /// Spacing between slices in layout.
@@ -46,38 +26,21 @@ public interface IBitmapSource : IDisposable, IAsyncDisposable {
     /// </summary>
     public IGridLayout Layout { get; }
 
-    /// <summary>
-    /// Width of the current mipmap.
-    /// </summary>
-    public int Width { get; }
-
-    /// <summary>
-    /// Height of the current mipmap.
-    /// </summary>
-    public int Height { get; }
-
-    /// <summary>
-    /// Depth of the current mipmap.
-    /// </summary>
-    public int Depth { get; }
-
-    /// <summary>
-    /// Index of image being currently used.
-    /// </summary>
-    public int ImageIndex { get; set; }
-
-    /// <summary>
-    /// Mipmap being currently used. 
-    /// </summary>
-    public int Mipmap { get; set; }
-
     public void UpdateSelection(int imageIndex, int mipmap);
 
-    public Task<WicBitmapSource> GetWicBitmapSourceAsync(int slice);
+    public Task<WicBitmapSource> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice);
 
-    public bool HasWicBitmapSource(int slice);
+    public bool HasWicBitmapSource(int imageIndex, int mipmap, int slice);
 
-    public Task<Bitmap> GetGdipBitmapAsync(int slice);
+    public Task<Bitmap> GetGdipBitmapAsync(int imageIndex, int mipmap, int slice);
 
-    public bool HasGdipBitmap(int slice);
+    public bool HasGdipBitmap(int imageIndex, int mipmap, int slice);
+
+    public int NumberOfMipmaps(int imageIndex);
+
+    public int WidthOfMipmap(int imageIndex, int mipmap);
+
+    public int HeightOfMipmap(int imageIndex, int mipmap);
+
+    public int DepthOfMipmap(int imageIndex, int mipmap);
 }

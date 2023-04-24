@@ -1,15 +1,18 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.BitmapSource;
+using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.GridLayout;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.DirectWrite;
+using Silk.NET.DXGI;
 using Silk.NET.Maths;
 using Rectangle = System.Drawing.Rectangle;
 
@@ -25,8 +28,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
     private ID2D1Brush* _pTransparencyCellColor2Brush;
     private ID2D1Brush* _pPixelGridLineColorBrush;
 
-    private SourceSet? _sourcePrevious;
-    private SourceSet? _sourceCurrent;
+    private readonly SourceSet?[] _sourceSets = new SourceSet?[2];
 
     public D2DTexRenderer(TexFileViewerControl control, TaskScheduler scheduler) : base(control) {
         _taskScheduler = scheduler;
@@ -59,6 +61,16 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
         base.Dispose(disposing);
     }
 
+    private SourceSet? SourcePrevious {
+        get => _sourceSets[0];
+        set => _sourceSets[0] = value;
+    }
+
+    private SourceSet? SourceCurrent {
+        get => _sourceSets[1];
+        set => _sourceSets[1] = value;
+    }
+
     public event Action<Task<IBitmapSource>>? AnyBitmapSourceSliceAvailableForDrawing;
 
     private ID2D1Brush* BackColorWhenLoadedBrush =>
@@ -79,77 +91,48 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
     private ID2D1Brush* PixelGridLineColorBrush =>
         GetOrCreateSolidColorBrush(ref _pPixelGridLineColorBrush, Control.PixelGridLineColor);
 
-    private LoadState TryGetActiveSourceSet(
-        out SourceSet sourceSet,
-        out IBitmapSource source,
-        out TaskWrappingIUnknown<ID2D1Bitmap>?[] slices,
-        out Exception? exception) {
-        sourceSet = null!;
-        source = null!;
-        slices = null!;
-        exception = null;
-
-        Exception? currentException = null;
-        Exception? previousException = null;
-
-        var stateCurrent = _sourceCurrent?.TryGetSlices(out slices, out currentException) ?? LoadState.Empty;
-        if (stateCurrent is LoadState.Loaded) {
-            sourceSet = _sourceCurrent!;
-            source = _sourceCurrent!.SourceTask.Result;
-            return stateCurrent;
-        }
-
-        var statePrevious = _sourcePrevious?.TryGetSlices(out slices, out previousException) ?? LoadState.Empty;
-        if (statePrevious is LoadState.Loaded) {
-            sourceSet = _sourcePrevious!;
-            source = _sourcePrevious!.SourceTask.Result;
-            return statePrevious;
-        }
-
-        exception = stateCurrent switch {
-            LoadState.Error => currentException,
-            LoadState.Empty when statePrevious == LoadState.Error => previousException,
-            _ => null,
-        };
-        return stateCurrent;
-    }
-
     public void UpdateBitmapSource(Task<IBitmapSource>? previous, Task<IBitmapSource>? current) {
         LastException = null;
 
         if (previous == current)
             previous = null;
 
-        if (_sourcePrevious?.SourceTask == current) {
-            if (_sourceCurrent?.SourceTask == previous) {
+        if (SourcePrevious?.SourceTask == current) {
+            if (SourceCurrent?.SourceTask == previous) {
                 // swap
-                (_sourceCurrent, _sourcePrevious) = (_sourcePrevious, _sourceCurrent);
+                (SourceCurrent, SourcePrevious) = (SourcePrevious, SourceCurrent);
                 return;
             }
 
             // move from prev to current
-            SafeDispose.OneAsync(ref _sourceCurrent);
-            (_sourceCurrent, _sourcePrevious) = (_sourcePrevious, null);
-        } else if (_sourceCurrent?.SourceTask == previous) {
+            SourceCurrent?.Dispose();
+            (SourceCurrent, SourcePrevious) = (SourcePrevious, null);
+        } else if (SourceCurrent?.SourceTask == previous) {
             // move from curr to prev
-            SafeDispose.OneAsync(ref _sourcePrevious);
-            (_sourcePrevious, _sourceCurrent) = (_sourceCurrent, null);
+            SourcePrevious?.Dispose();
+            (SourcePrevious, SourceCurrent) = (SourceCurrent, null);
         }
 
-        if (previous != _sourcePrevious?.SourceTask) {
-            SafeDispose.OneAsync(ref _sourcePrevious);
-            _sourcePrevious = previous is null ? null : new(this, previous);
+        if (previous != SourcePrevious?.SourceTask) {
+            SourcePrevious?.Dispose();
+            SourcePrevious = previous is null ? null : new(this, previous);
         }
 
-        if (current != _sourceCurrent?.SourceTask) {
-            SafeDispose.OneAsync(ref _sourceCurrent);
-            _sourceCurrent = current is null ? null : new(this, current);
+        if (current != SourceCurrent?.SourceTask) {
+            SourceCurrent?.Dispose();
+            SourceCurrent = current is null ? null : new(this, current);
         }
     }
 
-    public bool HasBitmapSourceReadyForDrawing(Task<IBitmapSource> bitmapSourceTask) =>
-        (bitmapSourceTask == _sourceCurrent?.SourceTask && _sourceCurrent.IsEverySliceReadyForDrawing()) ||
-        (bitmapSourceTask == _sourcePrevious?.SourceTask && _sourcePrevious.IsEverySliceReadyForDrawing());
+    public bool IsAnyVisibleSliceReadyForDrawing(Task<IBitmapSource>? bitmapSourceTask) =>
+        bitmapSourceTask is not null && (
+            (bitmapSourceTask == SourceCurrent?.SourceTask && SourceCurrent.IsAnyVisibleSliceReadyForDrawing()) ||
+            (bitmapSourceTask == SourcePrevious?.SourceTask && SourcePrevious.IsAnyVisibleSliceReadyForDrawing()));
+
+    public bool IsEveryVisibleSliceReadyForDrawing(Task<IBitmapSource>? bitmapSourceTask) =>
+        bitmapSourceTask is not null && (
+            (bitmapSourceTask == SourceCurrent?.SourceTask && SourceCurrent.IsEveryVisibleSliceReadyForDrawing()) ||
+            (bitmapSourceTask == SourcePrevious?.SourceTask && SourcePrevious.IsEveryVisibleSliceReadyForDrawing()));
 
     protected override void DrawInternal() {
         var pRenderTarget = RenderTarget;
@@ -170,22 +153,31 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
                 out var hideIfNotLoading))
             overlayString = null;
 
-        var loadState = TryGetActiveSourceSet(
-            out var sourceSet,
-            out var source,
-            out var slices,
-            out var exception);
-        switch (loadState) {
-            case LoadState.Loaded: {
-                BackColorWhenLoadedBrush->SetOpacity(1f);
-                pRenderTarget->FillRectangle(&box, BackColorWhenLoadedBrush);
+        if (SourceCurrent?.IsAnyVisibleSliceReadyForDrawing() is true)
+            pRenderTarget->Clear(Control.BackColorWhenLoaded.ToD3Dcolorvalue());
+        else if (SourceCurrent?.SourceTask.IsFaulted is true)
+            pRenderTarget->Clear(Control.BackColor.ToD3Dcolorvalue());
+        else if (SourcePrevious?.IsAnyVisibleSliceReadyForDrawing() is true)
+            pRenderTarget->Clear(Control.BackColorWhenLoaded.ToD3Dcolorvalue());
+        else
+            pRenderTarget->Clear(Control.BackColor.ToD3Dcolorvalue());
 
-                if (Control.ContentBorderWidth > 0)
-                    ContentBorderColorBrush->SetOpacity(1f);
+        var currentSourceFullyAvailable = SourceCurrent?.IsEveryVisibleSliceReadyForDrawing() is true;
+        var isLoading = false;
+        foreach (var sourceSet in _sourceSets) {
+            if (sourceSet is null)
+                continue;
+            if (currentSourceFullyAvailable && SourcePrevious == sourceSet) {
+                Debug.Assert(SourcePrevious != SourceCurrent);
+                continue;
+            }
+
+            if (sourceSet.SourceTask.IsCompletedSuccessfully) {
+                var source = sourceSet.SourceTask.Result;
 
                 // 1. Draw transparency grids
-                for (var i = 0; i < slices.Length; i++) {
-                    var cellRect = source.Layout.RectOf(i, imageRect);
+                foreach (var sliceCell in source.Layout) {
+                    var cellRect = source.Layout.RectOf(sliceCell, imageRect);
                     if (Control.ShouldDrawTransparencyGrid(
                             cellRect,
                             Control.ClientRectangle,
@@ -222,22 +214,21 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
 
                 // 2. Draw cell borders
                 if (Control.ContentBorderWidth > 0) {
-                    for (var i = 0; i < slices.Length; i++) {
+                    ContentBorderColorBrush->SetOpacity(1f);
+                    foreach (var sliceCell in source.Layout) {
                         box = RectangleF.Inflate(
-                            source.Layout.RectOf(i, imageRect),
+                            source.Layout.RectOf(sliceCell, imageRect),
                             Control.ContentBorderWidth / 2f,
                             Control.ContentBorderWidth / 2f).ToSilkFloat();
-                        pRenderTarget->DrawRectangle(&box, ContentBorderColorBrush, Control.ContentBorderWidth, null);
+                        pRenderTarget->DrawRectangle(&box, ContentBorderColorBrush, Control.ContentBorderWidth,
+                            null);
                     }
                 }
 
                 // 3. Draw bitmaps
-                for (var i = 0; i < slices.Length; i++) {
-                    box = source.Layout.RectOf(i, imageRect).ToSilkFloat();
-                    var loadState2 = sourceSet.TryGetBitmapAt(
-                        i,
-                        out var pBitmap,
-                        out exception);
+                foreach (var sliceCell in source.Layout) {
+                    box = source.Layout.RectOf(sliceCell, imageRect).ToSilkFloat();
+                    var loadState2 = sourceSet.TryGetBitmapAt(sliceCell, out var pBitmap, out var exception);
 
                     switch (loadState2) {
                         case LoadState.Loaded: {
@@ -252,20 +243,6 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
                             break;
                         }
                         case LoadState.Loading:
-                            if (sourceSet == _sourceCurrent && _sourcePrevious is not null) {
-                                if (_sourcePrevious.TryGetBitmapAt(i, out pBitmap, out _) == LoadState.Loaded) {
-                                    pRenderTarget->DrawBitmap(
-                                        pBitmap,
-                                        &box,
-                                        1f, // opacity
-                                        Control.NearestNeighborMinimumZoom <= Control.EffectiveZoom
-                                            ? BitmapInterpolationMode.NearestNeighbor
-                                            : BitmapInterpolationMode.Linear,
-                                        null);
-                                }
-                            }
-
-                            goto case LoadState.Error;
                         case LoadState.Error:
                         case LoadState.Empty:
                         default: {
@@ -280,21 +257,21 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
                     var p1 = new Vector2D<float>();
                     var p2 = new Vector2D<float>();
 
-                    for (var i = 0; i < slices.Length; i++) {
-                        var cellRectUnscaled = source.Layout.RectOf(i);
-                        var cellRect = source.Layout.RectOf(i, imageRect);
+                    foreach (var sliceCell in source.Layout) {
+                        var cellRectUnscaled = source.Layout.RectOf(sliceCell);
+                        var cellRect = source.Layout.RectOf(sliceCell, imageRect);
 
                         // 0 <= cellTop + j * cellHeight / sliceHeight < clientHeight
                         // -cellTop <= j * cellHeight / sliceHeight < clientHeight - cellTop
                         // -cellTop * sliceHeight / cellHeight <= j < (clientHeight - cellTop) * sliceHeight / cellHeight
                         // 0 <= j < cellRectUnscaled + 1
-                        
+
                         p1.X = cellRect.Left + 0.5f;
                         p2.X = cellRect.Right - 0.5f;
                         var rangeMin = Math.Max(0, (int) Math.Floor(1f *
                             -cellRect.Top * cellRectUnscaled.Height / cellRect.Height));
-                        var rangeMax = Math.Min(cellRectUnscaled.Height + 1, (int)Math.Ceiling(1f *
-                            (clientSize.Height - cellRect.Top) * cellRectUnscaled.Height / cellRect.Height)); 
+                        var rangeMax = Math.Min(cellRectUnscaled.Height + 1, (int) Math.Ceiling(1f *
+                            (clientSize.Height - cellRect.Top) * cellRectUnscaled.Height / cellRect.Height));
                         for (var j = rangeMin; j < rangeMax; j++) {
                             var y = cellRect.Top + j * cellRect.Height / cellRectUnscaled.Height;
                             p1.Y = p2.Y = y + 0.5f;
@@ -305,8 +282,8 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
                         p2.Y = cellRect.Bottom - 0.5f;
                         rangeMin = Math.Max(0, (int) Math.Floor(1f *
                             -cellRect.Left * cellRectUnscaled.Width / cellRect.Width));
-                        rangeMax = Math.Min(cellRectUnscaled.Width + 1, (int)Math.Ceiling(1f *
-                            (clientSize.Width - cellRect.Left) * cellRectUnscaled.Width / cellRect.Width)); 
+                        rangeMax = Math.Min(cellRectUnscaled.Width + 1, (int) Math.Ceiling(1f *
+                            (clientSize.Width - cellRect.Left) * cellRectUnscaled.Width / cellRect.Width));
                         for (var j = rangeMin; j < rangeMax; j++) {
                             var x = cellRect.Left + j * cellRect.Width / cellRectUnscaled.Width;
                             p1.X = p2.X = x + 0.5f;
@@ -325,28 +302,18 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
                     shadowBrush: BackColorWhenLoadedBrush,
                     opacity: Control.AutoDescriptionOpacity,
                     borderWidth: 2);
-                break;
-            }
-            case LoadState.Loading:
-            case LoadState.Error:
-            case LoadState.Empty:
-            default: {
-                BackColorBrush->SetOpacity(1f);
-                pRenderTarget->FillRectangle(&box, BackColorBrush);
-
-                if (overlayString is null && exception is not null)
-                    overlayString = $"Error occurred loading the file.\n{exception}";
-                break;
-            }
+            } else if (sourceSet.SourceTask.IsFaulted)
+                overlayString = $"Error occurred loading the file.\n{sourceSet.SourceTask.Exception}";
+            else
+                isLoading = true;
         }
 
-        if (hideIfNotLoading && loadState != LoadState.Loading)
+        if (hideIfNotLoading && isLoading)
             overlayString = null;
 
         if (overlayString is null)
             return;
 
-        box = Control.ClientRectangle.ToSilkFloat();
         var textLayout = LayoutText(
             out var metrics,
             overlayString,
@@ -412,16 +379,27 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
         private readonly CancellationTokenSource _cancellationTokenSource = new();
         public readonly Task<IBitmapSource> SourceTask;
 
-        private TaskWrappingIUnknown<ID2D1Bitmap>[ /* Image */]?[ /* Mip */]?[ /* Slice */]? _pBitmaps;
+        private TaskWrappingIUnknown<ID2D1Bitmap>?[ /* Image */][ /* Mip */][ /* Slice */]? _pBitmaps;
 
         public SourceSet(D2DTexRenderer renderer, Task<IBitmapSource> sourceTask) {
             _renderer = renderer;
             SourceTask = sourceTask;
             SourceTask.ContinueWith(r => {
-                if (r.IsCompletedSuccessfully) {
-                    r.Result.ImageOrMipmapChanged += SourceTaskOnImageOrMipmapChanged;
-                    SourceTaskOnImageOrMipmapChanged();
+                if (!r.IsCompletedSuccessfully)
+                    return;
+
+                var source = r.Result;
+                _ = SafeDispose.EnumerableAsync(ref _pBitmaps);
+
+                _pBitmaps = new TaskWrappingIUnknown<ID2D1Bitmap>[source.ImageCount][][];
+                for (var i = 0; i < _pBitmaps.Length; i++) {
+                    var a1 = _pBitmaps[i] = new TaskWrappingIUnknown<ID2D1Bitmap>[source.NumberOfMipmaps(i)][];
+                    for (var j = 0; j < a1.Length; j++)
+                        a1[j] = new TaskWrappingIUnknown<ID2D1Bitmap>[source.DepthOfMipmap(i, j)];
                 }
+
+                r.Result.LayoutChanged += SourceTaskOnLayoutChanged;
+                SourceTaskOnLayoutChanged();
             });
         }
 
@@ -430,7 +408,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
             _ = SafeDispose.EnumerableAsync(ref _pBitmaps);
             SourceTask.ContinueWith(r => {
                 if (r.IsCompletedSuccessfully)
-                    r.Result.ImageOrMipmapChanged -= SourceTaskOnImageOrMipmapChanged;
+                    r.Result.LayoutChanged -= SourceTaskOnLayoutChanged;
             });
         }
 
@@ -439,12 +417,19 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
             return new(Task.Run(Dispose));
         }
 
-        public bool IsEverySliceReadyForDrawing() =>
+        public bool IsAnyVisibleSliceReadyForDrawing() =>
             SourceTask.IsCompletedSuccessfully &&
-            Enumerable.Range(0, SourceTask.Result.Depth).All(SourceTask.Result.HasWicBitmapSource);
+            SourceTask.Result.Layout.Any(SourceTask.Result.HasWicBitmapSource);
 
-        public LoadState TryGetSlices(out TaskWrappingIUnknown<ID2D1Bitmap>?[] slices, out Exception? exception) {
-            slices = null!;
+        public bool IsEveryVisibleSliceReadyForDrawing() =>
+            SourceTask.IsCompletedSuccessfully &&
+            SourceTask.Result.Layout.All(SourceTask.Result.HasWicBitmapSource);
+
+        private LoadState TryGetBitmapWrapperTaskAt(
+            GridLayoutCell cell,
+            out TaskWrappingIUnknown<ID2D1Bitmap>? wrapperTask,
+            out Exception? exception) {
+            wrapperTask = null;
             exception = null;
 
             if (SourceTask.IsCompletedSuccessfully is not true) {
@@ -454,57 +439,22 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
             }
 
             var source = SourceTask.Result;
-            if (_pBitmaps?.Length != source.ImageCount) {
-                _ = SafeDispose.EnumerableAsync(ref _pBitmaps);
-                _pBitmaps = new TaskWrappingIUnknown<ID2D1Bitmap>[source.ImageCount][][];
-            }
 
-            var mipmaps = _pBitmaps[source.ImageIndex];
-            if (mipmaps?.Length != source.NumMipmaps) {
-                _ = SafeDispose.EnumerableAsync(ref _pBitmaps[source.ImageIndex]);
-                _pBitmaps[source.ImageIndex] = mipmaps = new TaskWrappingIUnknown<ID2D1Bitmap>[source.NumMipmaps][];
-            }
-
-            var nullableSlices = mipmaps[source.Mipmap];
-            if (nullableSlices?.Length != source.Depth) {
-                _ = SafeDispose.EnumerableAsync(ref mipmaps[source.Mipmap]);
-                nullableSlices = mipmaps[source.Mipmap] = new TaskWrappingIUnknown<ID2D1Bitmap>[source.Depth];
-            }
-
-            slices = nullableSlices;
-            return LoadState.Loaded;
-        }
-
-        public LoadState TryGetBitmapWrapperTaskAt(
-            int slice,
-            out TaskWrappingIUnknown<ID2D1Bitmap>? wrapperTask,
-            out Exception? exception) {
-            wrapperTask = null;
-            exception = null;
-
-            var state = TryGetSlices(out var slices, out exception);
-            if (state is not LoadState.Loaded)
-                return state;
-
-            var source = SourceTask.Result;
-
-            // This case happens when previous image does not have enough depth when current image is being loaded.
-            if (slice >= source.Depth)
-                return LoadState.Loading;
-
-            var task = source.GetWicBitmapSourceAsync(slice);
+            var task = source.GetWicBitmapSourceAsync(cell);
             if (task.IsFaulted) {
                 exception = task.Exception;
                 return LoadState.Error;
             }
 
-            if (task.IsCompleted) {
-                wrapperTask = slices[slice] ??= new(Task.Run(() => {
-                    var ptr = new ComPtr<ID2D1Bitmap>();
-                    // do NOT merge into constructor, or it will do AddRef, which we do not want.
-                    _renderer.GetOrCreateFromWicBitmap(ref ptr.Handle, task.Result);
-                    return ptr;
-                }, _cancellationTokenSource.Token));
+            if (task.IsCompleted && _pBitmaps is { } pBitmaps) {
+                wrapperTask = pBitmaps[cell.ImageIndex][cell.Mipmap][cell.Slice] ??= new(Task.Run(
+                    () => {
+                        var ptr = new ComPtr<ID2D1Bitmap>();
+                        // do NOT merge into constructor, or it will do AddRef, which we do not want.
+                        _renderer.GetOrCreateFromWicBitmap(ref ptr.Handle, task.Result);
+                        return ptr;
+                    },
+                    _cancellationTokenSource.Token));
 
                 if (wrapperTask.IsCompletedSuccessfully)
                     return LoadState.Loaded;
@@ -521,42 +471,46 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
         }
 
         public LoadState TryGetBitmapAt(
-            int slice,
+            GridLayoutCell cell,
             out ID2D1Bitmap* pBitmap,
             out Exception? exception) {
-            var state = TryGetBitmapWrapperTaskAt(slice, out var task, out exception);
+            var state = TryGetBitmapWrapperTaskAt(cell, out var task, out exception);
             pBitmap = state == LoadState.Loaded ? task!.Result : null;
             return state;
         }
 
-        private void SourceTaskOnImageOrMipmapChanged() => Task.Factory.StartNew(
-            () => SourceTask.Result
-                .GetWicBitmapSourceAsync(0)
-                .ContinueWith(result => {
-                    if (this != _renderer._sourceCurrent)
-                        return;
-
-                    if (!result.IsCompletedSuccessfully) {
-                        _renderer.AnyBitmapSourceSliceAvailableForDrawing?.Invoke(SourceTask);
-                        return;
-                    }
-
-                    TryGetBitmapWrapperTaskAt(0, out var wrapperTask, out _);
-                    if (wrapperTask is null) {
-                        _renderer.AnyBitmapSourceSliceAvailableForDrawing?.Invoke(SourceTask);
-                        return;
-                    }
-
-                    wrapperTask.Task.ContinueWith(_ => {
-                        if (this != _renderer._sourceCurrent)
+        private void SourceTaskOnLayoutChanged() {
+            var layout = SourceTask.Result.Layout;
+            var cell = layout[0];
+            Task.Factory.StartNew(
+                () => SourceTask.Result
+                    .GetWicBitmapSourceAsync(cell)
+                    .ContinueWith(result => {
+                        if (this != _renderer.SourceCurrent || layout != SourceTask.Result.Layout)
                             return;
-                        
-                        _renderer.AnyBitmapSourceSliceAvailableForDrawing?.Invoke(SourceTask);
-                    });
-                }),
-            _cancellationTokenSource.Token,
-            TaskCreationOptions.None,
-            _renderer._taskScheduler);
+
+                        if (!result.IsCompletedSuccessfully || layout.Count == 0 || layout[0] != cell) {
+                            _renderer.AnyBitmapSourceSliceAvailableForDrawing?.Invoke(SourceTask);
+                            return;
+                        }
+
+                        TryGetBitmapWrapperTaskAt(cell, out var wrapperTask, out _);
+                        if (wrapperTask is null) {
+                            _renderer.AnyBitmapSourceSliceAvailableForDrawing?.Invoke(SourceTask);
+                            return;
+                        }
+
+                        wrapperTask.Task.ContinueWith(_ => {
+                            if (this != _renderer.SourceCurrent)
+                                return;
+
+                            _renderer.AnyBitmapSourceSliceAvailableForDrawing?.Invoke(SourceTask);
+                        });
+                    }),
+                _cancellationTokenSource.Token,
+                TaskCreationOptions.None,
+                _renderer._taskScheduler);
+        }
     }
 
     private sealed class TaskWrappingIUnknown<T> : IDisposable, IAsyncDisposable
@@ -574,6 +528,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
         public TaskStatus Status => Task.Status;
         public T* Result => Task.Result.Handle;
 
+        // ReSharper disable once UnusedMember.Local
         public ConfiguredTaskAwaitable<ComPtr<T>> ConfigureAwait(bool continueOnCapturedContext) =>
             Task.ConfigureAwait(continueOnCapturedContext);
 

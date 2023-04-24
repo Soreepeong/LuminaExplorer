@@ -1,18 +1,19 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.BitmapSource;
+using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.GridLayout;
 using LuminaExplorer.Controls.Util;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.TexRenderer;
 
 internal sealed class GdipTexRenderer : ITexRenderer {
     private readonly BufferedGraphicsContext _bufferedGraphicsContext = new();
-    private Task<IBitmapSource>? _bitmapSourcePrevious;
-    private Task<IBitmapSource>? _bitmapSourceCurrent;
+    private readonly Task<IBitmapSource>?[] _sources = new Task<IBitmapSource>?[2];
 
     public GdipTexRenderer(TexFileViewerControl control) {
         Control = control;
@@ -23,6 +24,16 @@ internal sealed class GdipTexRenderer : ITexRenderer {
     public void Dispose() {
         UpdateBitmapSource(null, null);
         _bufferedGraphicsContext.Dispose();
+    }
+
+    private Task<IBitmapSource>? SourceTaskPrevious {
+        get => _sources[0];
+        set => _sources[0] = value;
+    }
+
+    private Task<IBitmapSource>? SourceTaskCurrent {
+        get => _sources[1];
+        set => _sources[1] = value;
     }
 
     public event Action<Task<IBitmapSource>>? AnyBitmapSourceSliceAvailableForDrawing;
@@ -36,7 +47,7 @@ internal sealed class GdipTexRenderer : ITexRenderer {
         exception = null;
         var hasLoading = false;
 
-        foreach (var bitmapSourceTask in new[] {_bitmapSourceCurrent, _bitmapSourcePrevious}) {
+        foreach (var bitmapSourceTask in new[] {SourceTaskCurrent, SourceTaskPrevious}) {
             if (bitmapSourceTask?.IsCompletedSuccessfully is not true) {
                 if (exception is null && bitmapSourceTask?.IsFaulted is true)
                     exception = bitmapSourceTask.Exception;
@@ -61,37 +72,43 @@ internal sealed class GdipTexRenderer : ITexRenderer {
         if (previous == current)
             previous = null;
 
-        _bitmapSourcePrevious = previous;
+        SourceTaskPrevious = previous;
 
-        if (_bitmapSourceCurrent != current) {
-            _bitmapSourceCurrent?.ContinueWith(r => {
+        if (SourceTaskCurrent != current) {
+            SourceTaskCurrent?.ContinueWith(r => {
                 if (r.IsCompletedSuccessfully) {
-                    r.Result.ImageOrMipmapChanged -= BitmapSourceCurrentOnImageOrMipmapChanged;
-                    BitmapSourceCurrentOnImageOrMipmapChanged();
+                    r.Result.LayoutChanged -= BitmapSourceCurrentOnLayoutChanged;
+                    BitmapSourceCurrentOnLayoutChanged();
                 }
             });
-            _bitmapSourceCurrent = current;
-            _bitmapSourceCurrent?.ContinueWith(r => {
+            SourceTaskCurrent = current;
+            SourceTaskCurrent?.ContinueWith(r => {
                 if (r.IsCompletedSuccessfully)
-                    r.Result.ImageOrMipmapChanged += BitmapSourceCurrentOnImageOrMipmapChanged;
+                    r.Result.LayoutChanged += BitmapSourceCurrentOnLayoutChanged;
             });
         }
     }
 
-    private void BitmapSourceCurrentOnImageOrMipmapChanged() {
-        if (_bitmapSourceCurrent is not { } b)
+    private void BitmapSourceCurrentOnLayoutChanged() {
+        if (SourceTaskCurrent is not { } b)
             return;
         b.ContinueWith(r => {
             if (!r.IsCompletedSuccessfully)
                 return;
-            r.Result.GetGdipBitmapAsync(0).ContinueWith(_ => { AnyBitmapSourceSliceAvailableForDrawing?.Invoke(b); });
+            r.Result.GetGdipBitmapAsync(r.Result.Layout[0])
+                .ContinueWith(_ => AnyBitmapSourceSliceAvailableForDrawing?.Invoke(b));
         });
     }
 
-    public bool HasBitmapSourceReadyForDrawing(Task<IBitmapSource> bitmapSourceTask)
-        => bitmapSourceTask.IsCompletedSuccessfully &&
-           Enumerable.Range(0, bitmapSourceTask.Result.Depth).All(bitmapSourceTask.Result.HasGdipBitmap) &&
-           (bitmapSourceTask == _bitmapSourceCurrent || bitmapSourceTask == _bitmapSourcePrevious);
+    public bool IsAnyVisibleSliceReadyForDrawing(Task<IBitmapSource>? bitmapSourceTask)
+        => bitmapSourceTask?.IsCompletedSuccessfully is true &&
+           bitmapSourceTask.Result.Layout.Any(bitmapSourceTask.Result.HasGdipBitmap) &&
+           (bitmapSourceTask == SourceTaskCurrent || bitmapSourceTask == SourceTaskPrevious);
+
+    public bool IsEveryVisibleSliceReadyForDrawing(Task<IBitmapSource>? bitmapSourceTask)
+        => bitmapSourceTask?.IsCompletedSuccessfully is true &&
+           bitmapSourceTask.Result.Layout.All(bitmapSourceTask.Result.HasGdipBitmap) &&
+           (bitmapSourceTask == SourceTaskCurrent || bitmapSourceTask == SourceTaskPrevious);
 
     public bool Draw(PaintEventArgs e) {
         BufferedGraphics? bufferedGraphics = null;
@@ -106,11 +123,28 @@ internal sealed class GdipTexRenderer : ITexRenderer {
                     out var hideIfNotLoading))
                 overlayString = null;
 
-            var loadState = TryGetActiveSource(out var source, out var exception);
-            switch (loadState) {
-                case LoadState.Loaded: {
-                    using (var backBrush = new SolidBrush(Control.BackColorWhenLoaded))
-                        g.FillRectangle(backBrush, new(new(), Control.ClientSize));
+            Color brushColor;
+            if (IsAnyVisibleSliceReadyForDrawing(SourceTaskCurrent))
+                brushColor = Control.BackColorWhenLoaded;
+            else if (SourceTaskCurrent?.IsFaulted is true)
+                brushColor = Control.BackColor;
+            else if (IsAnyVisibleSliceReadyForDrawing(SourceTaskPrevious))
+                brushColor = Control.BackColorWhenLoaded;
+            else
+                g.Clear(Control.BackColor);
+
+            var currentSourceFullyAvailable = IsEveryVisibleSliceReadyForDrawing(SourceTaskCurrent);
+            var isLoading = false;
+            foreach (var sourceTask in _sources) {
+                if (sourceTask is null)
+                    continue;
+                if (currentSourceFullyAvailable && SourceTaskPrevious == sourceTask) {
+                    Debug.Assert(SourceTaskPrevious != SourceTaskCurrent);
+                    continue;
+                }
+
+                if (sourceTask.IsCompletedSuccessfully) { 
+                    var source = sourceTask.Result;
                     var imageRect = Control.ImageRect;
                     var clientSize = Control.ClientSize;
                     var overlayRect = new Rectangle(
@@ -124,8 +158,8 @@ internal sealed class GdipTexRenderer : ITexRenderer {
                         : InterpolationMode.Bilinear;
 
                     // 1. Draw transparency grids
-                    for (var i = 0; i < source.Depth; i++) {
-                        var cellRect = source.Layout.RectOf(i, imageRect);
+                    foreach (var sliceCell in source.Layout) {
+                        var cellRect = source.Layout.RectOf(sliceCell, imageRect);
 
                         if (Control.ShouldDrawTransparencyGrid(
                                 cellRect,
@@ -162,26 +196,20 @@ internal sealed class GdipTexRenderer : ITexRenderer {
                     var contentBorderWidth = Control.ContentBorderWidth;
                     if (contentBorderWidth > 0) {
                         using var borderPen = new Pen(Control.ContentBorderColor, Control.ContentBorderWidth);
-                        for (var i = 0; i < source.Depth; i++) {
+                        foreach (var sliceCell in source.Layout) {
                             g.DrawRectangle(borderPen, RectangleF.Inflate(
-                                source.Layout.RectOf(i, imageRect),
+                                source.Layout.RectOf(sliceCell, imageRect),
                                 contentBorderWidth / 2f,
                                 contentBorderWidth / 2f));
                         }
                     }
 
                     // 3. Draw bitmaps
-                    for (var i = 0; i < source.Depth; i++) {
-                        var bitmapTask = source.GetGdipBitmapAsync(i);
+                    foreach (var sliceCell in source.Layout) {
+                        var bitmapTask = source.GetGdipBitmapAsync(sliceCell);
                         if (bitmapTask.IsCompletedSuccessfully) {
-                            g.DrawImage(bitmapTask.Result, source.Layout.RectOf(i, imageRect));
+                            g.DrawImage(bitmapTask.Result, source.Layout.RectOf(sliceCell, imageRect));
                         } else if (!bitmapTask.IsFaulted) {
-                            if (_bitmapSourcePrevious?.IsCompletedSuccessfully is true &&
-                                _bitmapSourcePrevious.Result != source) {
-                                var bitmapTask2 = _bitmapSourcePrevious.Result.GetGdipBitmapAsync(i);
-                                if (bitmapTask2.IsCompletedSuccessfully)
-                                    g.DrawImage(bitmapTask2.Result, source.Layout.RectOf(i, imageRect));
-                            }
                             // TODO: draw loading
                         } else {
                             // TODO: draw error
@@ -201,26 +229,13 @@ internal sealed class GdipTexRenderer : ITexRenderer {
                         Control.BackColorWhenLoaded,
                         Control.AutoDescriptionOpacity,
                         2);
-                    break;
-                }
-
-                case LoadState.Loading:
-                case LoadState.Error:
-                case LoadState.Empty:
-                default: {
-                    using (var backBrush = new SolidBrush(Control.BackColor))
-                        g.FillRectangle(backBrush, new(new(), Control.ClientSize));
-
-                    if (hideIfNotLoading && loadState != LoadState.Loading)
-                        overlayString = null;
-
-                    if (overlayString is null && exception is not null)
-                        overlayString = $"Error occurred loading the file.\n{exception}";
-                    break;
-                }
+                }else if (sourceTask.IsFaulted)
+                    overlayString = $"Error occurred loading the file.\n{sourceTask.Exception}";
+                else
+                    isLoading = true;
             }
 
-            if (hideIfNotLoading && loadState != LoadState.Loading)
+            if (hideIfNotLoading && isLoading)
                 overlayString = null;
 
             if (overlayString is null)

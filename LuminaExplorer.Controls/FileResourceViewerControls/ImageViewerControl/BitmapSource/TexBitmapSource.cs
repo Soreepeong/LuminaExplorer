@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Drawing;
-using System.Linq;
+using System.Drawing.Imaging;
 using System.Threading;
 using System.Threading.Tasks;
 using DirectN;
@@ -52,7 +52,6 @@ public sealed class TexBitmapSource : IBitmapSource {
         _texFile = null!;
         _cancellationTokenSource.Cancel();
 
-        var xd = _wicBitmaps.SelectMany(x => x);
         SafeDispose.Enumerable(ref _wicBitmaps!);
         SafeDispose.Enumerable(ref _bitmaps!);
 
@@ -66,24 +65,19 @@ public sealed class TexBitmapSource : IBitmapSource {
         _texFile = null!;
         _cancellationTokenSource.Cancel();
 
-        var xd = _wicBitmaps.SelectMany(x => x);
         await Task.WhenAll(
             SafeDispose.EnumerableAsync(ref _wicBitmaps!),
             SafeDispose.EnumerableAsync(ref _bitmaps!));
 
         _cancellationTokenSource.Dispose();
-        
+
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true, true);
     }
 
-    public event Action? ImageOrMipmapChanged;
+    public event Action? LayoutChanged;
 
     public int ImageCount => 1;
-    public int NumMipmaps => _texFile.Header.MipLevels;
     public IGridLayout Layout { get; private set; }
-    public int BaseWidth => _texFile.Header.Width;
-    public int BaseHeight => _texFile.Header.Height;
-    public int BaseDepth => _texFile.Header.Depth;
 
     public Size SliceSpacing {
         get => _sliceSpacing;
@@ -95,10 +89,6 @@ public sealed class TexBitmapSource : IBitmapSource {
             Relayout();
         }
     }
-
-    public int Width => _texFile.TextureBuffer.WidthOfMipmap(_mipmap);
-    public int Height => _texFile.TextureBuffer.HeightOfMipmap(_mipmap);
-    public int Depth => _texFile.TextureBuffer.DepthOfMipmap(_mipmap);
 
     public int ImageIndex {
         get => 0;
@@ -113,12 +103,12 @@ public sealed class TexBitmapSource : IBitmapSource {
         set {
             if (_mipmap == value)
                 return;
-            if (value < 0 || value >= NumMipmaps)
+            if (value < 0 || value >= _texFile.Header.MipLevels)
                 throw new ArgumentOutOfRangeException(nameof(value), value, null);
 
             _mipmap = value;
             Relayout();
-            ImageOrMipmapChanged?.Invoke();
+            LayoutChanged?.Invoke();
         }
     }
 
@@ -127,9 +117,11 @@ public sealed class TexBitmapSource : IBitmapSource {
         Mipmap = mipmap;
     }
 
-    public Task<WicBitmapSource> GetWicBitmapSourceAsync(int slice) {
+    public Task<WicBitmapSource> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice) {
         if (_disposed)
             throw new ObjectDisposedException(nameof(TexBitmapSource));
+        if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+            throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         return (_wicBitmaps[_mipmap][slice] ??= new(Task.Run(
             () => {
                 WicBitmapSource? wb = null;
@@ -148,13 +140,24 @@ public sealed class TexBitmapSource : IBitmapSource {
             _cancellationTokenSource.Token))).Task;
     }
 
-    public bool HasWicBitmapSource(int slice) => _wicBitmaps[_mipmap][slice]?.IsCompletedSuccessfully is true;
+    public bool HasWicBitmapSource(int imageIndex, int mipmap, int slice) {
+        if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+            throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+        return _wicBitmaps[_mipmap][slice]?.IsCompletedSuccessfully is true;
+    }
 
-    Task<Bitmap> IBitmapSource.GetGdipBitmapAsync(int slice) {
+    Task<Bitmap> IBitmapSource.GetGdipBitmapAsync(int imageIndex, int mipmap, int slice) {
         if (_disposed)
             throw new ObjectDisposedException(nameof(TexBitmapSource));
-        return (_bitmaps[_mipmap][slice] ??= new(Task.Run(
+        if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+            throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+        return (_bitmaps[mipmap][slice] ??= new(Task.Run(
             () => {
+                if (_wicBitmaps[_mipmap][slice] is {Task.IsCompletedSuccessfully: true} wicBitmapTask) {
+                    if (wicBitmapTask.Result.TryToGdipBitmap(out var b))
+                        return b;
+                }
+                
                 var texBuf = _texFile.TextureBuffer.Filter(_mipmap, slice, TexFile.TextureFormat.B8G8R8A8);
                 unsafe {
                     fixed (void* p = texBuf.RawData) {
@@ -162,7 +165,7 @@ public sealed class TexBitmapSource : IBitmapSource {
                             texBuf.Width,
                             texBuf.Height,
                             4 * texBuf.Width,
-                            System.Drawing.Imaging.PixelFormat.Format32bppArgb,
+                            PixelFormat.Format32bppArgb,
                             (nint) p);
                         return new Bitmap(b);
                     }
@@ -171,9 +174,41 @@ public sealed class TexBitmapSource : IBitmapSource {
             _cancellationTokenSource.Token))).Task;
     }
 
-    public bool HasGdipBitmap(int slice) => _bitmaps[_mipmap][slice]?.IsCompletedSuccessfully is true;
+    public bool HasGdipBitmap(int imageIndex, int mipmap, int slice) {
+        if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+            throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+        return _bitmaps[mipmap][slice]?.IsCompletedSuccessfully is true;
+    }
+
+    public int NumberOfMipmaps(int imageIndex) {
+        if (imageIndex != 0)
+            throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+        return _texFile.Header.MipLevels;
+    }
+
+    public int WidthOfMipmap(int imageIndex, int mipmap) {
+        if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+            throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+        return _texFile.TextureBuffer.WidthOfMipmap(mipmap);
+    }
+
+    public int HeightOfMipmap(int imageIndex, int mipmap) {
+        if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+            throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+        return _texFile.TextureBuffer.HeightOfMipmap(mipmap);
+    }
+
+    public int DepthOfMipmap(int imageIndex, int mipmap) {
+        if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+            throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+        return _texFile.TextureBuffer.DepthOfMipmap(mipmap);
+    }
 
     private void Relayout() {
-        Layout = IGridLayout.CreateGridLayout(Width, Height, Depth, _isCube, _sliceSpacing);
+        var width = _texFile.TextureBuffer.WidthOfMipmap(_mipmap);
+        var height = _texFile.TextureBuffer.HeightOfMipmap(_mipmap);
+        var depth = _texFile.TextureBuffer.DepthOfMipmap(_mipmap);
+
+        Layout = IGridLayout.CreateGridLayoutForDepthView(0, _mipmap, width, height, depth, _isCube, _sliceSpacing);
     }
 }

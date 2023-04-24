@@ -1,20 +1,26 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.GridLayout;
 
-public sealed class AutoGridLayout : IGridLayout {
-    public AutoGridLayout(
-        int cellWidth,
-        int cellHeight,
+public sealed class EquallCellSizeGridLayout : IGridLayout {
+    private readonly GridLayoutCell[] _cells;
+
+    public EquallCellSizeGridLayout(
         int horizontalSpacing,
         int verticalSpacing,
-        int items,
+        IEnumerable<GridLayoutCell> cells,
         float suggestedScaleBoundary) {
-        if (items <= 0)
+
+        _cells = cells.ToArray();
+        if (!_cells.Any())
             return;
+
+        var cellWidth = _cells[0].Width;
+        var cellHeight = _cells[0].Height;
 
         CellSize = new(cellWidth, cellHeight);
 
@@ -26,8 +32,8 @@ public sealed class AutoGridLayout : IGridLayout {
         // pick cells and rows that are:
         // 1. Find (cols, rows) candidates that satisfy 1 / N <= cellWidth * cols / cellHeight / rows <= N
         var candidates = new List<(int Cols, int Rows)>();
-        for (var cols = 1; cols <= items; cols++) {
-            var rows = (items + cols - 1) / cols;
+        for (var cols = 1; cols <= _cells.Length; cols++) {
+            var rows = (_cells.Length + cols - 1) / cols;
             var m = 1f *
                     (cellWidth * cols + horizontalSpacing * (cols - 1)) /
                     (cellHeight * rows + verticalSpacing * (rows - 1));
@@ -39,8 +45,8 @@ public sealed class AutoGridLayout : IGridLayout {
         if (!candidates.Any()) {
             foreach (var x in new[] {cellWidth, cellHeight}) {
                 foreach (var y in new[] {cellWidth, cellHeight}) {
-                    var n = (int) Math.Max(1, Math.Sqrt(items * cellWidth * cellHeight) / x / y);
-                    var m = (items + n - 1) / n;
+                    var n = (int) Math.Max(1, Math.Sqrt(_cells.Length * cellWidth * cellHeight) / x / y);
+                    var m = (_cells.Length + n - 1) / n;
                     candidates.Add((Cols: n, Rows: m));
                     candidates.Add((Cols: m, Rows: n));
                 }
@@ -48,9 +54,9 @@ public sealed class AutoGridLayout : IGridLayout {
         }
 
         // 2. Among the candidates, find the one with the least number of remainder cells, and choose the squarest one.
-        var minRemainder = candidates.Min(x => items % x.Rows);
+        var minRemainder = candidates.Min(x => _cells.Length % x.Rows);
         var squarest = candidates
-            .Where(x => items % x.Rows == minRemainder)
+            .Where(x => _cells.Length % x.Rows == minRemainder)
             .OrderBy(x =>
                 x.Rows * cellHeight + (x.Rows - 1) * verticalSpacing -
                 (x.Cols * cellWidth + (x.Cols - 1) * horizontalSpacing))
@@ -64,6 +70,7 @@ public sealed class AutoGridLayout : IGridLayout {
         Spacing = new(horizontalSpacing, verticalSpacing);
     }
 
+    public int Count => _cells.Length;
     public Size GridSize { get; }
     private Size CellSize { get; }
     private Size Spacing { get; }
@@ -71,6 +78,9 @@ public sealed class AutoGridLayout : IGridLayout {
     private int Rows { get; }
 
     public Rectangle RectOf(int cellIndex) {
+        if (cellIndex < 0 || 0 >= Count)
+            throw new ArgumentOutOfRangeException(nameof(cellIndex), cellIndex, null);
+
         var row = Math.DivRem(cellIndex, Columns, out var col);
         return new(
             col * (CellSize.Width + Spacing.Width),
@@ -78,4 +88,10 @@ public sealed class AutoGridLayout : IGridLayout {
             CellSize.Width,
             CellSize.Height);
     }
+
+    public GridLayoutCell this[int cellIndex] => _cells[cellIndex];
+
+    public IEnumerator<GridLayoutCell> GetEnumerator() => ((IEnumerable<GridLayoutCell>) _cells).GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => _cells.GetEnumerator();
 }

@@ -90,7 +90,9 @@ public partial class TexFileViewerControl {
         base.SetFile(tree, file, fileResource);
         ClearFileImpl();
 
-        SetFileImpl(file.Name, Task.FromResult((IBitmapSource) new TexBitmapSource(FileResourceTyped!)));
+        SetFileImpl(file.Name, Task.FromResult((IBitmapSource) new TexBitmapSource(
+            FileResourceTyped!,
+            sliceSpacing: _sliceSpacing)));
     }
 
     private void SetFileImpl(string fileName, Task<IBitmapSource> sourceTask) {
@@ -183,5 +185,5 @@ public partial class TexFileViewerControl {
     private bool IsCurrentBitmapSourceReadyOnRenderer() =>
         _bitmapSourceTaskCurrent is {IsCompletedSuccessfully: true} sourceTask &&
         TryGetRenderers(out var renderers) &&
-        renderers.Any(r => r.LastException is null && r.HasBitmapSourceReadyForDrawing(sourceTask.Task));
+        renderers.Any(r => r.LastException is null && r.IsAnyVisibleSliceReadyForDrawing(sourceTask.Task));
 }

@@ -1,6 +1,10 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
+using System.Drawing;
+using System.Drawing.Imaging;
 using DirectN;
 using Lumina.Data.Files;
+using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.Util.TexToDds;
 using WicNet;
 
@@ -49,5 +53,24 @@ public static class WicNetExtensions {
             },
             texBuf.Width * bpp / 8,
             texBuf.RawData).Object);
+    }
+
+    public static bool TryToGdipBitmap(this WicBitmapSource wicBitmap, [MaybeNullWhen(false)] out Bitmap b) {
+        b = null!;
+        try {
+            b = new(wicBitmap.Width, wicBitmap.Height, PixelFormat.Format32bppArgb);
+            var bd = b.LockBits(
+                new(Point.Empty, b.Size),
+                ImageLockMode.WriteOnly,
+                PixelFormat.Format32bppArgb);
+            wicBitmap.CopyPixels(bd.Width * bd.Height * bd.Stride, bd.Scan0, bd.Stride);
+            // TODO: flip BGRA to ARGB
+            b.UnlockBits(bd);
+            return true;
+        } catch (Exception) {
+            SafeDispose.One(ref b);
+            b = null;
+            return false;
+        }
     }
 }
