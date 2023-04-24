@@ -4,10 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using Lumina.Data.Files;
-using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.BitmapSource;
-using LuminaExplorer.Controls.Util.ScaleMode;
 using LuminaExplorer.Core.Util;
-using Timer = System.Windows.Forms.Timer;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl;
 
@@ -17,7 +14,6 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
     private int _currentImageIndex;
     private int _currentMipmap;
-    private readonly Timer _fadeTimer;
 
     public TexFileViewerControl() {
         ResizeRedraw = true;
@@ -40,10 +36,10 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
             Invalidate();
         };
 
-        _fadeTimer = new();
-        _fadeTimer.Enabled = false;
-        _fadeTimer.Interval = 1;
-        _fadeTimer.Tick += OnFadeTimerOnTick;
+        _timer = new();
+        _timer.Enabled = false;
+        _timer.Interval = 1;
+        _timer.Tick += TimerOnTick;
 
         TryGetRenderers(out _, true);
     }
@@ -54,13 +50,21 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
             if (TryGetRenderers(out var renderers))
                 _ = SafeDispose.EnumerableAsync(ref renderers);
             Viewport.Dispose();
-            _fadeTimer.Dispose();
+            _timer.Dispose();
             _ = SafeDispose.OneAsync(ref _bitmapSourceTaskCurrent);
             _ = SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
         }
 
         base.Dispose(disposing);
     }
+
+    public event EventHandler? NavigateToNextFile;
+
+    public event EventHandler? NavigateToPrevFile;
+
+    public event EventHandler? NavigateToNextFolder;
+
+    public event EventHandler? NavigateToPrevFolder;
 
     public FileInfo? PhysicalFile { get; private set; }
 
@@ -78,7 +82,8 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
 
             var hasException = false;
             foreach (var r in renderers) {
-                if (r.LastException is not null) {
+                if (!r.UpdateBitmapSource(_bitmapSourceTaskPrevious?.Task, _bitmapSourceTaskCurrent?.Task) &&
+                    r.LastException is not null) {
                     hasException = true;
                     continue;
                 }
@@ -146,123 +151,12 @@ public partial class TexFileViewerControl : AbstractFileResourceViewerControl<Te
         }
     }
 
-    protected override void OnKeyDown(KeyEventArgs e) {
-        if (MouseActivity.Enabled) {
-            switch (e.KeyCode) {
-                case Keys.Up when e.Alt: // Disable rotation
-                    Rotation = 0;
-                    break;
-                case Keys.Right when e.Alt: // Rotate 90 degrees clockwise
-                    Rotation = MathF.PI / 2;
-                    break;
-                case Keys.Down when e.Alt: // Rotate 180 degrees
-                    Rotation = MathF.PI;
-                    break;
-                case Keys.Left when e.Alt: // Rotate 90 degrees counterclockwise
-                    Rotation = -MathF.PI / 2;
-                    break;
-                case Keys.Left: // TODO: Start pan left timer or prev file event
-                case Keys.NumPad4:
-                    break;
-                case Keys.Up: // TODO: Start pan up timer or prev file event
-                case Keys.NumPad8:
-                    break;
-                case Keys.Right: // TODO: Start pan right timer or next file event
-                case Keys.NumPad6:
-                    break;
-                case Keys.Down: // TODO: Start pan down timer or next file event
-                case Keys.NumPad2:
-                    break;
-                case Keys.C when e.Control:
-                    (_bitmapSourceTaskCurrent ?? _bitmapSourceTaskPrevious)?.Task.ContinueWith(r => {
-                        if (r.IsCompletedSuccessfully)
-                            _ = r.Result.SetClipboardImage(UiTaskScheduler);
-                    });
-                    break;
-                case Keys.Multiply:
-                case Keys.D8 when e.Shift: // Zoom to 100%
-                    if (Math.Abs(Viewport.EffectiveZoom - 1) > 0.000001)
-                        Viewport.UpdateScaleMode(new NoZoomScaleMode());
-                    else
-                        Viewport.UpdateScaleMode(new FitInClientScaleMode(
-                            Viewport.Size.Width <= Viewport.ControlBodyWidth &&
-                            Viewport.Size.Height <= Viewport.ControlBodyHeight));
-                    break;
-                case Keys.Oemplus when e.Control: // Zoom +1% (aligned)
-                case Keys.Add when e.Control:
-                    Viewport.UpdateZoom((int) Math.Round(100 * Viewport.EffectiveZoom) / 100f + 0.01f);
-                    break;
-                case Keys.Oemplus: // Zoom +10% (aligned)
-                case Keys.Add:
-                    Viewport.UpdateZoom((int) Math.Round(10 * Viewport.EffectiveZoom) / 10f + 0.1f);
-                    break;
-                case Keys.OemMinus when e.Control: // Zoom -1% (aligned)
-                case Keys.Subtract when e.Control:
-                    Viewport.UpdateZoom((int) Math.Round(100 * Viewport.EffectiveZoom) / 100f - 0.01f);
-                    break;
-                case Keys.OemMinus: // Zoom -1% (aligned)
-                case Keys.Subtract:
-                    Viewport.UpdateZoom((int) Math.Round(10 * Viewport.EffectiveZoom) / 10f - 0.1f);
-                    break;
-                case Keys.OemOpenBrackets: // Previous image in the set
-                    if (_currentImageIndex > 0)
-                        ChangeDisplayedMipmap(_currentImageIndex - 1, _currentMipmap);
-                    // TODO: event: previous folder
-                    break;
-                case Keys.OemCloseBrackets: // Next image in the set 
-                {
-                    var count = _bitmapSourceTaskCurrent?.IsCompletedSuccessfully is true
-                        ? _bitmapSourceTaskCurrent.Result.ImageCount
-                        : 0;
-                    if (_currentImageIndex < count - 1)
-                        ChangeDisplayedMipmap(_currentImageIndex + 1, _currentMipmap);
-                    // TODO: event: next folder
-                    break;
-                }
-                case Keys.Oemcomma: // Previous mipmap in the image
-                    if (_currentMipmap > 0)
-                        ChangeDisplayedMipmap(_currentImageIndex, _currentMipmap - 1);
-                    break;
-                case Keys.OemPeriod: // Next mipmap in the image
-                {
-                    var count = _bitmapSourceTaskCurrent?.IsCompletedSuccessfully is true
-                        ? _bitmapSourceTaskCurrent.Result.NumberOfMipmaps(_currentImageIndex)
-                        : 0;
-                    if (_currentMipmap < count - 1)
-                        ChangeDisplayedMipmap(_currentImageIndex, _currentMipmap + 1);
-                    break;
-                }
-                case Keys.T: // Toggle alpha channel; independent from below
-                    UseAlphaChannel = !UseAlphaChannel;
-                    break;
-                case Keys.R: // Show red channel only, or back to showing all channels
-                    VisibleColorChannel = VisibleColorChannel == VisibleColorChannelTypes.Red
-                        ? VisibleColorChannelTypes.All
-                        : VisibleColorChannelTypes.Red;
-                    break;
-                case Keys.G: // Show green channel only, or back to showing all channels
-                    VisibleColorChannel = VisibleColorChannel == VisibleColorChannelTypes.Green
-                        ? VisibleColorChannelTypes.All
-                        : VisibleColorChannelTypes.Green;
-                    break;
-                case Keys.B: // Show blue channel only, or back to showing all channels
-                    VisibleColorChannel = VisibleColorChannel == VisibleColorChannelTypes.Blue
-                        ? VisibleColorChannelTypes.All
-                        : VisibleColorChannelTypes.Blue;
-                    break;
-                case Keys.A: // Show alpha channel only, or back to showing all channels
-                    VisibleColorChannel = VisibleColorChannel == VisibleColorChannelTypes.Alpha
-                        ? VisibleColorChannelTypes.All
-                        : VisibleColorChannelTypes.Alpha;
-                    break;
-            }
-        }
+    protected override void OnLostFocus(EventArgs e) {
+        base.OnLostFocus(e);
 
-        base.OnKeyDown(e);
-    }
-
-    protected override void OnKeyUp(KeyEventArgs e) {
-        base.OnKeyUp(e);
+        // need to mutate; no foreach
+        for (var i = 0; i < _keys.Length; i++)
+            _keys[i].Release();
     }
 
     protected override void OnMarginChanged(EventArgs e) {

@@ -2,7 +2,7 @@
 
 namespace LuminaExplorer.Controls.Util.ScaleMode;
 
-public readonly struct FitInClientScaleMode : IScaleMode {
+public readonly struct FitInClientScaleMode : IScaleModeWithZoomInToFit {
     public FitInClientScaleMode(bool zoomInToFit) {
         ZoomInToFit = zoomInToFit;
     }

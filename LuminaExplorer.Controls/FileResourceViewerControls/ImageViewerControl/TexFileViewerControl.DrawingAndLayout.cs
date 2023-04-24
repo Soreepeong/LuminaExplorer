@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.BitmapSource;
@@ -33,6 +35,16 @@ public partial class TexFileViewerControl {
     private VisibleColorChannelTypes _visibleColorChannel;
     private bool _useAlphaChannel;
     private float _rotation;
+    private IReadOnlyList<Tuple<Size, float>> _fontSizeStepLevel = new[] {
+        Tuple.Create(new Size(480, 360), 9f),
+        Tuple.Create(new Size(720, 540), 15f),
+        Tuple.Create(new Size(1280, 720), 18f),
+        Tuple.Create(new Size(1920, 1080), 30f),
+        Tuple.Create(new Size(2560, 1440), 36f),
+        Tuple.Create(new Size(3840, 2160), 60f),
+    };
+
+    public event EventHandler? FontSizeStepLevelChanged;
 
     public event EventHandler? ForeColorWhenLoadedChanged;
 
@@ -75,6 +87,17 @@ public partial class TexFileViewerControl {
             if (!Equals(_rotation, value))
                 return;
             _rotation = value;
+            Invalidate();
+        }
+    }
+
+    public IReadOnlyList<Tuple<Size, float>> FontSizeStepLevel {
+        get => _fontSizeStepLevel;
+        set {
+            if (Equals(_fontSizeStepLevel, value))
+                return;
+            _fontSizeStepLevel = value;
+            FontSizeStepLevelChanged?.Invoke(this, EventArgs.Empty);
             Invalidate();
         }
     }
@@ -225,6 +248,16 @@ public partial class TexFileViewerControl {
         }
     }
 
+    public float EffectiveFontSizeScale =>
+        _fontSizeStepLevel.LastOrDefault(
+            x => x.Item1.Width <= ClientSize.Width && x.Item1.Height <= ClientSize.Height,
+            _fontSizeStepLevel.FirstOrDefault(Tuple.Create(Size.Empty, Font.Size))).Item2 / 9 * DeviceDpi / 96;
+
+    public float EffectiveFontSizeInPoints =>
+        _fontSizeStepLevel.LastOrDefault(
+            x => x.Item1.Width <= ClientSize.Width && x.Item1.Height <= ClientSize.Height,
+            _fontSizeStepLevel.FirstOrDefault(Tuple.Create(Size.Empty, Font.Size))).Item2 / 9 * Font.SizeInPoints;
+
     public float AutoDescriptionOpacity {
         get {
             var d = _autoDescriptionShowUntilTicks - Environment.TickCount64;
@@ -234,32 +267,14 @@ public partial class TexFileViewerControl {
         }
     }
 
-    private Rectangle AutoDescriptionRectangle {
+    public Rectangle AutoDescriptionRectangle {
         get {
-            if (_autoDescriptionRectangle is not null)
-                return _autoDescriptionRectangle.Value;
-            var rc = new Rectangle(
-                Padding.Left + Margin.Left,
-                Padding.Top + Margin.Top,
-                ClientSize.Width - Padding.Horizontal - Margin.Horizontal,
-                ClientSize.Height - Padding.Vertical - Margin.Vertical);
-
-            using var stringFormat = new StringFormat {
-                Alignment = StringAlignment.Near,
-                LineAlignment = StringAlignment.Near,
-                Trimming = StringTrimming.None,
-            };
-
-            using var g = CreateGraphics();
-            var measured = g.MeasureString(
-                AutoDescription,
-                Font,
-                new SizeF(rc.Width, rc.Height),
-                stringFormat);
-            rc.Width = (int) Math.Ceiling(measured.Width);
-            rc.Height = (int) Math.Ceiling(measured.Height);
-            _autoDescriptionRectangle = rc;
-            return rc;
+            if (TryGetRenderers(out var renderers))
+                foreach (var r in renderers)
+                    if (r.AutoDescriptionRectangle is { } rc)
+                        return Rectangle.Truncate(rc);
+            
+            return Rectangle.Empty;
         }
     }
 

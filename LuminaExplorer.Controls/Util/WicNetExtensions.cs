@@ -63,8 +63,8 @@ public static class WicNetExtensions {
                 new(Point.Empty, b.Size),
                 ImageLockMode.WriteOnly,
                 PixelFormat.Format32bppArgb);
-            wicBitmap.CopyPixels(bd.Width * bd.Height * bd.Stride, bd.Scan0, bd.Stride);
-            // TODO: flip BGRA to ARGB
+            wicBitmap.CopyPixels(bd.Height * bd.Stride, bd.Scan0, bd.Stride);
+            // WICPixelFormat says it's "BGRA"; Imaging.PixelFormat says it's "ARGB"
             b.UnlockBits(bd);
             return true;
         } catch (Exception) {

@@ -10,7 +10,6 @@ public partial class TexFileViewerControl {
     private bool _autoDescriptionBeingHovered;
     private string? _autoDescriptionCached;
     private float _autoDescriptionSourceZoom = float.NaN;
-    private Rectangle? _autoDescriptionRectangle;
 
     private string? _overlayCustomString;
     private long _overlayShowUntilTicks;
@@ -18,6 +17,10 @@ public partial class TexFileViewerControl {
     private long _loadStartTicks = long.MaxValue;
 
     public string? FileName { get; private set; }
+    
+    public TimeSpan OverlayShortDuration = TimeSpan.FromSeconds(0.5);
+
+    public TimeSpan OverlayLongDuration = TimeSpan.FromSeconds(1);
 
     public string? LoadingFileNameWhenEmpty {
         get => _loadingFileNameWhenEmpty;
@@ -47,7 +50,7 @@ public partial class TexFileViewerControl {
                 if (texFile.Header.MipLevels > 1)
                     sb.Append("; ").Append(texFile.Header.MipLevels).Append(" mipmaps");
                 sb.AppendLine();
-                
+
                 if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType1D))
                     sb.Append("1D: ").Append(texFile.Header.Width);
                 if (texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType2D))
@@ -75,6 +78,7 @@ public partial class TexFileViewerControl {
                         sb.Append(texFile.TextureBuffer.WidthOfMipmap(_currentMipmap))
                             .Append(" x ").Append(texFile.TextureBuffer.HeightOfMipmap(_currentMipmap));
                 }
+
                 if (!Equals(effectiveZoom, 1f))
                     sb.Append($" ({effectiveZoom * 100:0.00}%)");
                 sb.AppendLine();
@@ -103,52 +107,6 @@ public partial class TexFileViewerControl {
 
             return _autoDescriptionCached = sb.ToString();
         }
-    }
-
-    private void OnFadeTimerOnTick(object? o, EventArgs eventArgs) {
-        var animating = false;
-        var now = Environment.TickCount64;
-
-        var autoDescriptionRemaining = _autoDescriptionShowUntilTicks - now;
-        switch (autoDescriptionRemaining) {
-            case < 0:
-                Invalidate(AutoDescriptionRectangle);
-                break;
-            case < FadeOutDurationMs:
-                animating = true;
-                Invalidate(AutoDescriptionRectangle);
-                break;
-        }
-
-        var overlayRemaining = _overlayShowUntilTicks - now;
-        switch (overlayRemaining) {
-            case < 0:
-                Invalidate();
-                break;
-            case < FadeOutDurationMs:
-                animating = true;
-                Invalidate();
-                break;
-        }
-
-        var loadingBoxRemainingUntilShow = _loadStartTicks == long.MaxValue
-            ? int.MaxValue
-            : (int) (_loadStartTicks + DelayShowingLoadingBoxFor.TotalMilliseconds - now);
-
-        if (animating) {
-            _fadeTimer.Interval = 1;
-            return;
-        }
-
-        var next = int.MaxValue;
-        if (autoDescriptionRemaining > 0) next = Math.Min(next, (int) (autoDescriptionRemaining - FadeOutDurationMs));
-        if (overlayRemaining > 0) next = Math.Min(next, (int) (overlayRemaining - FadeOutDurationMs));
-        if (loadingBoxRemainingUntilShow > 0) next = Math.Min(next, loadingBoxRemainingUntilShow);
-
-        if (next == int.MaxValue)
-            _fadeTimer.Enabled = false;
-        else
-            _fadeTimer.Interval = next;
     }
 
     internal bool TryGetEffectiveOverlayInformation(
@@ -198,9 +156,15 @@ public partial class TexFileViewerControl {
         if (_autoDescriptionShowUntilTicks <= now)
             return;
 
-        _fadeTimer.Enabled = true;
-        _fadeTimer.Interval = 1;
+        _timer.Enabled = true;
+        _timer.Interval = 1;
         Invalidate(AutoDescriptionRectangle);
+    }
+
+    public void ClearOverlayString() {
+        _overlayCustomString = null;
+        _overlayShowUntilTicks = 0;
+        Invalidate();
     }
 
     public void ShowOverlayString(string? overlayString, TimeSpan overlayTextMessageDuration) {
@@ -208,11 +172,15 @@ public partial class TexFileViewerControl {
         _overlayCustomString = overlayString;
         _overlayShowUntilTicks = now + (int) overlayTextMessageDuration.TotalMilliseconds;
 
-        if (_overlayShowUntilTicks <= now)
-            return;
+        if (_overlayShowUntilTicks > now) {
+            _timer.Enabled = true;
+            _timer.Interval = 1;
+        }
 
-        _fadeTimer.Enabled = true;
-        _fadeTimer.Interval = 1;
         Invalidate();
     }
+
+    public void ShowOverlayStringShort(string? overlayString) => ShowOverlayString(overlayString, OverlayShortDuration);
+    
+    public void ShowOverlayStringLong(string? overlayString) => ShowOverlayString(overlayString, OverlayLongDuration);
 }

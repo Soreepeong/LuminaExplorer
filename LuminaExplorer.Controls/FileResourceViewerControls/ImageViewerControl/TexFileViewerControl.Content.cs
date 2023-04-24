@@ -60,8 +60,8 @@ public partial class TexFileViewerControl {
         _currentMipmap = mipmap;
         _currentImageIndex = imageIndex;
         _loadStartTicks = Environment.TickCount64;
-        _fadeTimer.Enabled = true;
-        _fadeTimer.Interval = 1;
+        _timer.Enabled = true;
+        _timer.Interval = 1;
         MouseActivity.Enabled = false;
 
         ClearDisplayInformationCache();
@@ -101,16 +101,14 @@ public partial class TexFileViewerControl {
         if (_bitmapSourceTaskCurrent is not null) {
             if (IsCurrentBitmapSourceReadyOnRenderer()) {
                 if (TryGetRenderers(out var renderers))
-                    foreach (var renderer in renderers)
-                        renderer.UpdateBitmapSource(_bitmapSourceTaskCurrent?.Task, null);
+                    renderers.FirstOrDefault()?.UpdateBitmapSource(_bitmapSourceTaskCurrent?.Task, null);
 
                 SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
                 _bitmapSourceTaskPrevious = _bitmapSourceTaskCurrent;
                 _bitmapSourceTaskCurrent = null;
             } else {
                 if (TryGetRenderers(out var renderers))
-                    foreach (var renderer in renderers)
-                        renderer.UpdateBitmapSource(_bitmapSourceTaskPrevious?.Task, null);
+                    renderers.FirstOrDefault()?.UpdateBitmapSource(_bitmapSourceTaskPrevious?.Task, null);
                 SafeDispose.OneAsync(ref _bitmapSourceTaskCurrent);
             }
         }
@@ -119,15 +117,15 @@ public partial class TexFileViewerControl {
 
         {
             if (TryGetRenderers(out var renderers, true)) {
-                foreach (var renderer in renderers)
-                    renderer.UpdateBitmapSource(_bitmapSourceTaskPrevious?.Task, _bitmapSourceTaskCurrent?.Task);
+                renderers.FirstOrDefault()?.UpdateBitmapSource(
+                    _bitmapSourceTaskPrevious?.Task, _bitmapSourceTaskCurrent?.Task);
             } else {
                 _renderers!.ContinueWith(result => {
                     if (sourceTaskCurrent != _bitmapSourceTaskCurrent || !result.IsCompletedSuccessfully)
                         return;
 
-                    foreach (var renderer in result.Result)
-                        renderer.UpdateBitmapSource(_bitmapSourceTaskPrevious?.Task, _bitmapSourceTaskCurrent?.Task);
+                    result.Result.FirstOrDefault()?.UpdateBitmapSource(
+                        _bitmapSourceTaskPrevious?.Task, _bitmapSourceTaskCurrent?.Task);
                 }, UiTaskScheduler);
             }
         }
@@ -142,23 +140,20 @@ public partial class TexFileViewerControl {
             if (_bitmapSourceTaskCurrent is not null) {
                 if (IsCurrentBitmapSourceReadyOnRenderer()) {
                     if (TryGetRenderers(out var renderers))
-                        foreach (var r in renderers)
-                            r.UpdateBitmapSource(_bitmapSourceTaskCurrent?.Task, null);
+                        renderers.FirstOrDefault()?.UpdateBitmapSource(_bitmapSourceTaskCurrent?.Task, null);
 
                     SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
                     _bitmapSourceTaskPrevious = _bitmapSourceTaskCurrent;
                     _bitmapSourceTaskCurrent = null;
                 } else {
                     if (TryGetRenderers(out var renderers))
-                        foreach (var r in renderers)
-                            r.UpdateBitmapSource(_bitmapSourceTaskPrevious?.Task, null);
+                        renderers.FirstOrDefault()?.UpdateBitmapSource(_bitmapSourceTaskPrevious?.Task, null);
                     SafeDispose.OneAsync(ref _bitmapSourceTaskCurrent);
                 }
             }
         } else {
             if (TryGetRenderers(out var renderers))
-                foreach (var r in renderers)
-                    r.UpdateBitmapSource(null, null);
+                renderers.FirstOrDefault()?.UpdateBitmapSource(null, null);
 
             SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
             SafeDispose.OneAsync(ref _bitmapSourceTaskCurrent);
@@ -171,7 +166,9 @@ public partial class TexFileViewerControl {
     private void ClearDisplayInformationCache() {
         _autoDescriptionCached = null;
         _autoDescriptionSourceZoom = float.NaN;
-        _autoDescriptionRectangle = null;
+        if (TryGetRenderers(out var renderers))
+            foreach (var r in renderers)
+                r.AutoDescriptionRectangle = null;
     }
 
     private void ClearFileImpl() {

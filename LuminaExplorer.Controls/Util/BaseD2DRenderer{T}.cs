@@ -1,9 +1,6 @@
 using System;
-using System.Diagnostics;
 using System.Drawing;
-using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
@@ -208,7 +205,7 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
     protected IDWriteTextLayout* LayoutText(
         out TextMetrics metrics,
         string? @string,
-        Rectangle rectangle,
+        RectangleF rectangle,
         WordWrapping? wordWrapping = null,
         TextAlignment? textAlignment = null,
         ParagraphAlignment? paragraphAlignment = null,
@@ -353,11 +350,11 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
         return pBitmap;
     }
 
-    protected IDWriteTextFormat* GetOrCreateFromFont(ref IDWriteTextFormat* pTextLayout, Font font) {
-        if (pTextLayout is null)
+    protected IDWriteTextFormat* GetOrCreateFromFont(ref IDWriteTextFormat* textFormat, Font font) {
+        if (textFormat is null)
             fixed (char* pName = font.Name.AsSpan())
             fixed (char* pEmpty = "\0".AsSpan())
-            fixed (IDWriteTextFormat** ppFontTextFormat = &pTextLayout)
+            fixed (IDWriteTextFormat** ppFontTextFormat = &textFormat)
                 ThrowH(DWriteFactory->CreateTextFormat(
                     pName,
                     null,
@@ -367,6 +364,6 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
                     font.SizeInPoints * 4 / 3,
                     pEmpty,
                     ppFontTextFormat));
-        return pTextLayout;
+        return textFormat;
     }
 }

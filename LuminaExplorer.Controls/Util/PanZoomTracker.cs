@@ -18,11 +18,11 @@ public sealed class PanZoomTracker : IDisposable {
     private PointF _pan;
     private SizeF _size;
     private Padding _panExtraRange;
-    private IScaleMode _scaleModeDefault;
+    private IScaleMode _defaultScaleMode;
     private IScaleMode? _scaleMode;
 
     public PanZoomTracker(MouseActivityTracker mouseActivityTracker, IScaleMode? scaleModeDefault = null) {
-        _scaleModeDefault = scaleModeDefault ?? new FitInClientScaleMode(false);
+        _defaultScaleMode = scaleModeDefault ?? new FitInClientScaleMode(false);
         MouseActivity = mouseActivityTracker;
         MouseActivity.Pan += MouseActivityTrackerOnPan;
         MouseActivity.ZoomDrag += MouseActivityTrackerOnZoomDrag;
@@ -72,13 +72,20 @@ public sealed class PanZoomTracker : IDisposable {
         }
     }
 
-    public IScaleMode ScaleModeDefault {
-        get => _scaleModeDefault;
+    public IScaleMode DefaultScaleMode {
+        get => _defaultScaleMode;
         set {
-            if (_scaleModeDefault == value)
+            if (_defaultScaleMode == value)
                 return;
-            _scaleModeDefault = value;
-            EnforceLimits();
+
+            if (_scaleMode is null) {
+                UpdateScaleMode(value);
+                _scaleMode = null;
+                _defaultScaleMode = value;
+            } else {
+                _defaultScaleMode = value;
+                EnforceLimits();
+            }
         }
     }
 
@@ -88,12 +95,11 @@ public sealed class PanZoomTracker : IDisposable {
             if (_scaleMode == value)
                 return;
 
-            _scaleMode = value;
-            EnforceLimits();
+            UpdateScaleMode(value);
         }
     }
 
-    public IScaleMode EffectiveScaleMode => _scaleMode ?? _scaleModeDefault;
+    public IScaleMode EffectiveScaleMode => _scaleMode ?? _defaultScaleMode;
 
     public SizeF EffectiveSize => EffectiveScaleMode.CalcSize(Size, ControlBodySize, ZoomExponentUnit);
 
@@ -144,6 +150,8 @@ public sealed class PanZoomTracker : IDisposable {
             return new(p, s);
         }
     }
+
+    public bool CanPan => EffectiveSize.Width > ControlBodyWidth || EffectiveSize.Height > ControlBodyHeight;
 
     public void Reset(SizeF? size = null) {
         var changed = false;
@@ -199,14 +207,23 @@ public sealed class PanZoomTracker : IDisposable {
     public bool UpdateZoom(float? value) => UpdateZoom(value, DefaultScaleOrigin);
 
     public bool UpdateZoom(float? value, PointF cursor) =>
-        UpdateScaleMode(value is null ? null : new FreeScaleMode(value.Value), cursor);
+        UpdateScaleMode(value is null
+            ? null
+            : new FreeScaleMode(Math.Clamp(
+                value.Value,
+                IScaleMode.ExponentToZoom(-ZoomExponentRange, ZoomExponentUnit),
+                IScaleMode.ExponentToZoom(ZoomExponentRange, ZoomExponentUnit))), cursor);
 
     public bool UpdateZoomExponent(int? value) => UpdateZoom(value, DefaultScaleOrigin);
 
     public bool UpdateZoomExponent(int? value, PointF cursor) => 
-        UpdateScaleMode(value is null ? null : new FreeExponentScaleMode(value.Value), cursor);
+        UpdateScaleMode(value is null
+            ? null
+            : new FreeExponentScaleMode(Math.Clamp(value.Value, -ZoomExponentRange, ZoomExponentRange)), cursor);
 
-    public bool UpdatePan(PointF value) {
+    public bool WillPanChange(PointF desiredPan, out PointF adjustedPan) {
+        adjustedPan = desiredPan;
+        
         var scaled = EffectiveSize;
         var xrange = MiscUtils.DivRem(scaled.Width - ControlBodyWidth, 2, out var xrem);
         var yrange = MiscUtils.DivRem(scaled.Height - ControlBodyHeight, 2, out var yrem);
@@ -214,25 +231,51 @@ public sealed class PanZoomTracker : IDisposable {
         yrem = MathF.Ceiling(yrem);
 
         if (scaled.Width <= ControlBodyWidth)
-            value.X = 0;
+            adjustedPan.X = 0;
         else {
             var minX = -xrange - xrem - PanExtraRange.Right;
             var maxX = xrange + PanExtraRange.Left;
-            value.X = Math.Clamp(value.X, minX, maxX);
+            adjustedPan.X = Math.Clamp(adjustedPan.X, minX, maxX);
         }
 
         if (scaled.Height <= ControlBodyHeight)
-            value.Y = 0;
+            adjustedPan.Y = 0;
         else {
             var minY = -yrange - yrem - PanExtraRange.Bottom;
             var maxY = yrange + PanExtraRange.Top;
-            value.Y = Math.Clamp(value.Y, minY, maxY);
+            adjustedPan.Y = Math.Clamp(adjustedPan.Y, minY, maxY);
         }
 
-        if (value == _pan)
+        return adjustedPan != _pan;
+    }
+
+    public bool UpdatePan(PointF desiredPan) {
+        var scaled = EffectiveSize;
+        var xrange = MiscUtils.DivRem(scaled.Width - ControlBodyWidth, 2, out var xrem);
+        var yrange = MiscUtils.DivRem(scaled.Height - ControlBodyHeight, 2, out var yrem);
+        xrem = MathF.Ceiling(xrem);
+        yrem = MathF.Ceiling(yrem);
+
+        if (scaled.Width <= ControlBodyWidth)
+            desiredPan.X = 0;
+        else {
+            var minX = -xrange - xrem - PanExtraRange.Right;
+            var maxX = xrange + PanExtraRange.Left;
+            desiredPan.X = Math.Clamp(desiredPan.X, minX, maxX);
+        }
+
+        if (scaled.Height <= ControlBodyHeight)
+            desiredPan.Y = 0;
+        else {
+            var minY = -yrange - yrem - PanExtraRange.Bottom;
+            var maxY = yrange + PanExtraRange.Top;
+            desiredPan.Y = Math.Clamp(desiredPan.Y, minY, maxY);
+        }
+
+        if (desiredPan == _pan)
             return false;
 
-        _pan = value;
+        _pan = desiredPan;
         ViewportChanged?.Invoke();
         return true;
     }
@@ -258,7 +301,7 @@ public sealed class PanZoomTracker : IDisposable {
             UpdateZoomExponent(zoomExponent + normalizedDelta, new(origin.X, origin.Y));
         } else {
             var effectiveZoom = EffectiveZoom;
-            var defaultZoom = _scaleModeDefault.CalcZoom(Size, ControlBodySize, ZoomExponentUnit);
+            var defaultZoom = _defaultScaleMode.CalcZoom(Size, ControlBodySize, ZoomExponentUnit);
             var nextZoom = MathF.Pow(2, 1f * (freeScaleMode.ZoomExponent + normalizedDelta) / ZoomExponentUnit);
             if (effectiveZoom < defaultZoom && defaultZoom <= nextZoom)
                 UpdateScaleMode(null, new(origin.X, origin.Y));

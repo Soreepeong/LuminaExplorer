@@ -167,7 +167,7 @@ public sealed class TexBitmapSource : IBitmapSource {
                             4 * texBuf.Width,
                             PixelFormat.Format32bppArgb,
                             (nint) p);
-                        return new Bitmap(b);
+                        return new(b);
                     }
                 }
             },

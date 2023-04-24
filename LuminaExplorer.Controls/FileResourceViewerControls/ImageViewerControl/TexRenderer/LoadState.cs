@@ -1,6 +1,6 @@
 namespace LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.TexRenderer;
 
-internal enum LoadState {
+internal enum LoadState : byte {
     Empty,
     Loading,
     Loaded,

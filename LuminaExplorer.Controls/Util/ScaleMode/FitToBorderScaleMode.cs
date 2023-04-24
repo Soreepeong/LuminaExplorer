@@ -3,7 +3,7 @@ using System.Drawing;
 
 namespace LuminaExplorer.Controls.Util.ScaleMode;
 
-public readonly struct FitToBorderScaleMode : IScaleMode {
+public readonly struct FitToBorderScaleMode : IScaleModeWithZoomInToFit {
     public FitToBorderScaleMode(bool zoomInToFit, Direction directionToFit) {
         ZoomInToFit = zoomInToFit;
         DirectionToFit = directionToFit;

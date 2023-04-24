@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
@@ -13,6 +14,8 @@ using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.DirectWrite;
 using Silk.NET.Maths;
+using FontStyle = Silk.NET.DirectWrite.FontStyle;
+using IDWriteTextFormat = Silk.NET.DirectWrite.IDWriteTextFormat;
 using Rectangle = System.Drawing.Rectangle;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.TexRenderer;
@@ -26,11 +29,16 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
     private ID2D1Brush* _pTransparencyCellColor1Brush;
     private ID2D1Brush* _pTransparencyCellColor2Brush;
     private ID2D1Brush* _pPixelGridLineColorBrush;
+    private IDWriteTextFormat* _pScalingFontTextFormat;
+
+    private RectangleF? _autoDescriptionRectangle;
 
     private readonly SourceSet?[] _sourceSets = new SourceSet?[2];
 
     public D2DTexRenderer(TexFileViewerControl control, TaskScheduler scheduler) : base(control) {
         _taskScheduler = scheduler;
+        Control.Resize += ControlOnResize;
+        Control.FontSizeStepLevelChanged += ControlOnFontSizeStepLevelChanged;
         Control.ForeColorWhenLoadedChanged += ControlOnForeColorWhenLoadedChanged;
         Control.BackColorWhenLoadedChanged += ControlOnBackColorWhenLoadedChanged;
         Control.BorderColorChanged += ControlOnBorderColorChanged;
@@ -39,8 +47,68 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
         Control.PixelGridLineColorChanged += ControlOnPixelGridLineColorChanged;
     }
 
+    private void ControlOnFontSizeStepLevelChanged(object? sender, EventArgs e) {
+        SafeRelease(ref _pScalingFontTextFormat);
+    }
+
+    private void ControlOnResize(object? sender, EventArgs e) {
+        SafeRelease(ref _pScalingFontTextFormat);
+    }
+
+    private IDWriteTextFormat* ScalingFontTextFormat {
+        get {
+            if (_pScalingFontTextFormat is null)
+                fixed (char* pName = Control.Font.Name.AsSpan())
+                fixed (char* pEmpty = "\0".AsSpan())
+                fixed (IDWriteTextFormat** ppFontTextFormat = &_pScalingFontTextFormat)
+                    ThrowH(DWriteFactory->CreateTextFormat(
+                        pName,
+                        null,
+                        Control.Font.Bold ? FontWeight.Bold : FontWeight.Normal,
+                        Control.Font.Italic ? FontStyle.Italic : FontStyle.Normal,
+                        FontStretch.Normal,
+                        Control.EffectiveFontSizeInPoints * 4 / 3,
+                        pEmpty,
+                        ppFontTextFormat));
+            return _pScalingFontTextFormat;
+        }
+    }
+
+    public RectangleF? AutoDescriptionRectangle {
+        get {
+            if (_autoDescriptionRectangle is not null)
+                return _autoDescriptionRectangle.Value;
+            var padding = Control.Padding;
+            var margin = Control.Margin;
+            var rc = new RectangleF(
+                padding.Left + margin.Left,
+                padding.Top + margin.Top,
+                Control.ClientSize.Width - padding.Horizontal - margin.Horizontal,
+                Control.ClientSize.Height - padding.Vertical - margin.Vertical);
+
+            var textLayout = LayoutText(
+                out var metrics,
+                Control.AutoDescription,
+                rc,
+                WordWrapping.EmergencyBreak,
+                TextAlignment.Leading,
+                ParagraphAlignment.Near,
+                ScalingFontTextFormat);
+            try {
+                rc.Width = metrics.Width;
+                rc.Height = metrics.Height;
+                return _autoDescriptionRectangle = rc;
+            } finally {
+                textLayout->Release();
+            }
+        }
+        set => _autoDescriptionRectangle = value;
+    }
+
     protected override void Dispose(bool disposing) {
         if (disposing) {
+            Control.Resize -= ControlOnResize;
+            Control.FontSizeStepLevelChanged -= ControlOnFontSizeStepLevelChanged;
             Control.ForeColorWhenLoadedChanged -= ControlOnForeColorWhenLoadedChanged;
             Control.BackColorWhenLoadedChanged -= ControlOnBackColorWhenLoadedChanged;
             Control.BorderColorChanged -= ControlOnBorderColorChanged;
@@ -56,6 +124,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
         SafeRelease(ref _pTransparencyCellColor1Brush);
         SafeRelease(ref _pTransparencyCellColor2Brush);
         SafeRelease(ref _pPixelGridLineColorBrush);
+        SafeRelease(ref _pScalingFontTextFormat);
 
         base.Dispose(disposing);
     }
@@ -90,37 +159,44 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
     private ID2D1Brush* PixelGridLineColorBrush =>
         GetOrCreateSolidColorBrush(ref _pPixelGridLineColorBrush, Control.PixelGridLineColor);
 
-    public void UpdateBitmapSource(Task<IBitmapSource>? previous, Task<IBitmapSource>? current) {
+    public bool UpdateBitmapSource(Task<IBitmapSource>? previous, Task<IBitmapSource>? current) {
         LastException = null;
 
         if (previous == current)
             previous = null;
 
+        var changed = false;
         if (SourcePrevious?.SourceTask == current) {
             if (SourceCurrent?.SourceTask == previous) {
                 // swap
                 (SourceCurrent, SourcePrevious) = (SourcePrevious, SourceCurrent);
-                return;
+                return true;
             }
 
             // move from prev to current
             SourceCurrent?.Dispose();
             (SourceCurrent, SourcePrevious) = (SourcePrevious, null);
+            changed = true;
         } else if (SourceCurrent?.SourceTask == previous) {
             // move from curr to prev
             SourcePrevious?.Dispose();
             (SourcePrevious, SourceCurrent) = (SourceCurrent, null);
+            changed = true;
         }
 
         if (previous != SourcePrevious?.SourceTask) {
             SourcePrevious?.Dispose();
             SourcePrevious = previous is null ? null : new(this, previous);
+            changed = true;
         }
 
         if (current != SourceCurrent?.SourceTask) {
             SourceCurrent?.Dispose();
             SourceCurrent = current is null ? null : new(this, current);
+            changed = true;
         }
+
+        return changed;
     }
 
     public bool IsAnyVisibleSliceReadyForDrawing(Task<IBitmapSource>? bitmapSourceTask) =>
@@ -174,121 +250,141 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
             if (sourceSet.SourceTask.IsCompletedSuccessfully) {
                 var source = sourceSet.SourceTask.Result;
 
-                // 1. Draw transparency grids
-                foreach (var sliceCell in source.Layout) {
-                    var cellRect = source.Layout.RectOf(sliceCell, imageRect);
-                    if (Control.ShouldDrawTransparencyGrid(
-                            cellRect,
-                            Control.ClientRectangle,
-                            out var multiplier,
-                            out var minX,
-                            out var minY,
-                            out var dx,
-                            out var dy)) {
-                        var yLim = Math.Min(cellRect.Bottom, clientSize.Height);
-                        var xLim = Math.Min(cellRect.Right, clientSize.Width);
-                        TransparencyCellColor1Brush->SetOpacity(1f);
-                        TransparencyCellColor2Brush->SetOpacity(1f);
-                        for (var y = minY;; y++) {
-                            box.Min.Y = y * multiplier + dy;
-                            box.Max.Y = box.Min.Y + Math.Min(multiplier, yLim - box.Min.Y);
-                            if (box.Min.Y >= box.Max.Y)
-                                break;
+                var bitmapLoaded = ArrayPool<LoadState>.Shared.Rent(source.Layout.Count);
+                try {
+                    foreach (var sliceCell in source.Layout)
+                        bitmapLoaded[sliceCell.CellIndex] = sourceSet.TryGetBitmapAt(sliceCell, out _, out _);
 
-                            for (var x = minX;; x++) {
-                                box.Min.X = x * multiplier + dx;
-                                box.Max.X = box.Min.X + Math.Min(multiplier, xLim - box.Min.X);
-                                if (box.Min.X >= box.Max.X)
+                    // 1. Draw transparency grids
+                    foreach (var sliceCell in source.Layout) {
+                        if (bitmapLoaded[sliceCell.CellIndex] != LoadState.Loaded)
+                            continue;
+
+                        var cellRect = source.Layout.RectOf(sliceCell, imageRect);
+                        if (Control.ShouldDrawTransparencyGrid(
+                                cellRect,
+                                Control.ClientRectangle,
+                                out var multiplier,
+                                out var minX,
+                                out var minY,
+                                out var dx,
+                                out var dy)) {
+                            var yLim = Math.Min(cellRect.Bottom, clientSize.Height);
+                            var xLim = Math.Min(cellRect.Right, clientSize.Width);
+                            TransparencyCellColor1Brush->SetOpacity(1f);
+                            TransparencyCellColor2Brush->SetOpacity(1f);
+                            for (var y = minY;; y++) {
+                                box.Min.Y = y * multiplier + dy;
+                                box.Max.Y = box.Min.Y + Math.Min(multiplier, yLim - box.Min.Y);
+                                if (box.Min.Y >= box.Max.Y)
                                     break;
 
-                                pRenderTarget->FillRectangle(
-                                    &box,
-                                    (x + y) % 2 == 0
-                                        ? TransparencyCellColor1Brush
-                                        : TransparencyCellColor2Brush);
+                                for (var x = minX;; x++) {
+                                    box.Min.X = x * multiplier + dx;
+                                    box.Max.X = box.Min.X + Math.Min(multiplier, xLim - box.Min.X);
+                                    if (box.Min.X >= box.Max.X)
+                                        break;
+
+                                    pRenderTarget->FillRectangle(
+                                        &box,
+                                        (x + y) % 2 == 0
+                                            ? TransparencyCellColor1Brush
+                                            : TransparencyCellColor2Brush);
+                                }
                             }
                         }
                     }
-                }
 
-                // 2. Draw cell borders
-                if (Control.ContentBorderWidth > 0) {
-                    ContentBorderColorBrush->SetOpacity(1f);
-                    foreach (var sliceCell in source.Layout) {
-                        box = RectangleF.Inflate(
-                            source.Layout.RectOf(sliceCell, imageRect),
-                            Control.ContentBorderWidth / 2f,
-                            Control.ContentBorderWidth / 2f).ToSilkFloat();
-                        pRenderTarget->DrawRectangle(&box, ContentBorderColorBrush, Control.ContentBorderWidth,
-                            null);
-                    }
-                }
+                    // 2. Draw cell borders
+                    if (Control.ContentBorderWidth > 0) {
+                        ContentBorderColorBrush->SetOpacity(1f);
+                        foreach (var sliceCell in source.Layout) {
+                            if (bitmapLoaded[sliceCell.CellIndex] != LoadState.Loaded)
+                                continue;
 
-                // 3. Draw bitmaps
-                foreach (var sliceCell in source.Layout) {
-                    box = source.Layout.RectOf(sliceCell, imageRect).ToSilkFloat();
-                    var loadState2 = sourceSet.TryGetBitmapAt(sliceCell, out var pBitmap, out var exception);
-
-                    switch (loadState2) {
-                        case LoadState.Loaded: {
-                            pRenderTarget->DrawBitmap(
-                                pBitmap,
-                                &box,
-                                1f, // opacity
-                                Control.NearestNeighborMinimumZoom <= Control.EffectiveZoom
-                                    ? BitmapInterpolationMode.NearestNeighbor
-                                    : BitmapInterpolationMode.Linear,
+                            box = RectangleF.Inflate(
+                                source.Layout.RectOf(sliceCell, imageRect),
+                                Control.ContentBorderWidth / 2f,
+                                Control.ContentBorderWidth / 2f).ToSilkFloat();
+                            pRenderTarget->DrawRectangle(&box, ContentBorderColorBrush, Control.ContentBorderWidth,
                                 null);
-                            break;
-                        }
-                        case LoadState.Loading:
-                        case LoadState.Error:
-                        case LoadState.Empty:
-                        default: {
-                            // TODO: show loading/error
-                            break;
                         }
                     }
-                }
 
-                // 4. Draw pixel grids
-                if (Control.PixelGridMinimumZoom <= Control.EffectiveZoom) {
-                    var p1 = new Vector2D<float>();
-                    var p2 = new Vector2D<float>();
-
+                    // 3. Draw bitmaps
                     foreach (var sliceCell in source.Layout) {
-                        var cellRectUnscaled = source.Layout.RectOf(sliceCell);
-                        var cellRect = source.Layout.RectOf(sliceCell, imageRect);
+                        box = source.Layout.RectOf(sliceCell, imageRect).ToSilkFloat();
 
-                        // 0 <= cellTop + j * cellHeight / sliceHeight < clientHeight
-                        // -cellTop <= j * cellHeight / sliceHeight < clientHeight - cellTop
-                        // -cellTop * sliceHeight / cellHeight <= j < (clientHeight - cellTop) * sliceHeight / cellHeight
-                        // 0 <= j < cellRectUnscaled + 1
-
-                        p1.X = cellRect.Left + 0.5f;
-                        p2.X = cellRect.Right - 0.5f;
-                        var rangeMin = Math.Max(0, (int) Math.Floor(1f *
-                            -cellRect.Top * cellRectUnscaled.Height / cellRect.Height));
-                        var rangeMax = Math.Min(cellRectUnscaled.Height + 1, (int) Math.Ceiling(1f *
-                            (clientSize.Height - cellRect.Top) * cellRectUnscaled.Height / cellRect.Height));
-                        for (var j = rangeMin; j < rangeMax; j++) {
-                            var y = cellRect.Top + j * cellRect.Height / cellRectUnscaled.Height;
-                            p1.Y = p2.Y = y + 0.5f;
-                            pRenderTarget->DrawLine(p1, p2, PixelGridLineColorBrush, 1f, null);
+                        if (bitmapLoaded[sliceCell.CellIndex] == LoadState.Loaded) {
+                            bitmapLoaded[sliceCell.CellIndex] =
+                                sourceSet.TryGetBitmapAt(sliceCell, out var pBitmap, out _);
+                            if (bitmapLoaded[sliceCell.CellIndex] == LoadState.Loaded) {
+                                pRenderTarget->DrawBitmap(
+                                    pBitmap,
+                                    &box,
+                                    1f, // opacity
+                                    Control.NearestNeighborMinimumZoom <= Control.EffectiveZoom
+                                        ? BitmapInterpolationMode.NearestNeighbor
+                                        : BitmapInterpolationMode.Linear,
+                                    null);
+                            }
                         }
 
-                        p1.Y = cellRect.Top + 0.5f;
-                        p2.Y = cellRect.Bottom - 0.5f;
-                        rangeMin = Math.Max(0, (int) Math.Floor(1f *
-                            -cellRect.Left * cellRectUnscaled.Width / cellRect.Width));
-                        rangeMax = Math.Min(cellRectUnscaled.Width + 1, (int) Math.Ceiling(1f *
-                            (clientSize.Width - cellRect.Left) * cellRectUnscaled.Width / cellRect.Width));
-                        for (var j = rangeMin; j < rangeMax; j++) {
-                            var x = cellRect.Left + j * cellRect.Width / cellRectUnscaled.Width;
-                            p1.X = p2.X = x + 0.5f;
-                            pRenderTarget->DrawLine(p1, p2, PixelGridLineColorBrush, 1f, null);
+                        switch (bitmapLoaded[sliceCell.CellIndex]) {
+                            case LoadState.Loading:
+                            case LoadState.Error:
+                            case LoadState.Empty:
+                            default: {
+                                // TODO: show loading/error
+                                break;
+                            }
                         }
                     }
+
+                    // 4. Draw pixel grids
+                    if (Control.PixelGridMinimumZoom <= Control.EffectiveZoom) {
+                        var p1 = new Vector2D<float>();
+                        var p2 = new Vector2D<float>();
+
+                        foreach (var sliceCell in source.Layout) {
+                            if (bitmapLoaded[sliceCell.CellIndex] != LoadState.Loaded)
+                                continue;
+
+                            var cellRectUnscaled = source.Layout.RectOf(sliceCell);
+                            var cellRect = source.Layout.RectOf(sliceCell, imageRect);
+
+                            // 0 <= cellTop + j * cellHeight / sliceHeight < clientHeight
+                            // -cellTop <= j * cellHeight / sliceHeight < clientHeight - cellTop
+                            // -cellTop * sliceHeight / cellHeight <= j < (clientHeight - cellTop) * sliceHeight / cellHeight
+                            // 0 <= j < cellRectUnscaled + 1
+
+                            p1.X = cellRect.Left + 0.5f;
+                            p2.X = cellRect.Right - 0.5f;
+                            var rangeMin = Math.Max(0, (int) Math.Floor(1f *
+                                -cellRect.Top * cellRectUnscaled.Height / cellRect.Height));
+                            var rangeMax = Math.Min(cellRectUnscaled.Height + 1, (int) Math.Ceiling(1f *
+                                (clientSize.Height - cellRect.Top) * cellRectUnscaled.Height / cellRect.Height));
+                            for (var j = rangeMin; j < rangeMax; j++) {
+                                var y = cellRect.Top + j * cellRect.Height / cellRectUnscaled.Height;
+                                p1.Y = p2.Y = y + 0.5f;
+                                pRenderTarget->DrawLine(p1, p2, PixelGridLineColorBrush, 1f, null);
+                            }
+
+                            p1.Y = cellRect.Top + 0.5f;
+                            p2.Y = cellRect.Bottom - 0.5f;
+                            rangeMin = Math.Max(0, (int) Math.Floor(1f *
+                                -cellRect.Left * cellRectUnscaled.Width / cellRect.Width));
+                            rangeMax = Math.Min(cellRectUnscaled.Width + 1, (int) Math.Ceiling(1f *
+                                (clientSize.Width - cellRect.Left) * cellRectUnscaled.Width / cellRect.Width));
+                            for (var j = rangeMin; j < rangeMax; j++) {
+                                var x = cellRect.Left + j * cellRect.Width / cellRectUnscaled.Width;
+                                p1.X = p2.X = x + 0.5f;
+                                pRenderTarget->DrawLine(p1, p2, PixelGridLineColorBrush, 1f, null);
+                            }
+                        }
+                    }
+                } finally {
+                    ArrayPool<LoadState>.Shared.Return(bitmapLoaded);
                 }
 
                 DrawText(
@@ -297,6 +393,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
                     wordWrapping: WordWrapping.EmergencyBreak,
                     textAlignment: TextAlignment.Leading,
                     paragraphAlignment: ParagraphAlignment.Near,
+                    textFormat: ScalingFontTextFormat,
                     textBrush: ForeColorWhenLoadedBrush,
                     shadowBrush: BackColorWhenLoadedBrush,
                     opacity: Control.AutoDescriptionOpacity,
@@ -320,12 +417,13 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
             WordWrapping.EmergencyBreak,
             TextAlignment.Center,
             ParagraphAlignment.Center,
-            FontTextFormat);
+            ScalingFontTextFormat);
+        var fontSizeScale = Control.EffectiveFontSizeScale;
         box = new(
-            metrics.Left - 32,
-            metrics.Top - 32,
-            metrics.Left + metrics.Width + 32,
-            metrics.Top + metrics.Height + 32);
+            metrics.Left - 32 * fontSizeScale,
+            metrics.Top - 32 * fontSizeScale,
+            metrics.Left + metrics.Width + 32 * fontSizeScale,
+            metrics.Top + metrics.Height + 32 * fontSizeScale);
 
         try {
             BackColorBrush->SetOpacity(overlayBackOpacity);
@@ -418,11 +516,13 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
 
         public bool IsAnyVisibleSliceReadyForDrawing() =>
             SourceTask.IsCompletedSuccessfully &&
-            SourceTask.Result.Layout.Any(SourceTask.Result.HasWicBitmapSource);
+            SourceTask.Result.Layout.Any(
+                x => _pBitmaps?[x.ImageIndex][x.Mipmap][x.Slice]?.IsCompletedSuccessfully is true);
 
         public bool IsEveryVisibleSliceReadyForDrawing() =>
             SourceTask.IsCompletedSuccessfully &&
-            SourceTask.Result.Layout.All(SourceTask.Result.HasWicBitmapSource);
+            SourceTask.Result.Layout.All(
+                x => _pBitmaps?[x.ImageIndex][x.Mipmap][x.Slice]?.IsCompletedSuccessfully is true);
 
         private LoadState TryGetBitmapWrapperTaskAt(
             GridLayoutCell cell,
@@ -446,14 +546,18 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<TexFileViewerContr
             }
 
             if (task.IsCompleted && _pBitmaps is { } pBitmaps) {
-                wrapperTask = pBitmaps[cell.ImageIndex][cell.Mipmap][cell.Slice] ??= new(Task.Run(
-                    () => {
-                        var ptr = new ComPtr<ID2D1Bitmap>();
-                        // do NOT merge into constructor, or it will do AddRef, which we do not want.
-                        _renderer.GetOrCreateFromWicBitmap(ref ptr.Handle, task.Result);
-                        return ptr;
-                    },
-                    _cancellationTokenSource.Token));
+                wrapperTask = pBitmaps[cell.ImageIndex][cell.Mipmap][cell.Slice];
+                if (wrapperTask is null) {
+                    wrapperTask = pBitmaps[cell.ImageIndex][cell.Mipmap][cell.Slice] = new(Task.Run(
+                        () => {
+                            var ptr = new ComPtr<ID2D1Bitmap>();
+                            // do NOT merge into constructor, or it will do AddRef, which we do not want.
+                            _renderer.GetOrCreateFromWicBitmap(ref ptr.Handle, task.Result);
+                            return ptr;
+                        },
+                        _cancellationTokenSource.Token));
+                    wrapperTask.Task.ContinueWith(_ => _renderer.Control.Invalidate());
+                }
 
                 if (wrapperTask.IsCompletedSuccessfully)
                     return LoadState.Loaded;

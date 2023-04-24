@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.BitmapSource;
@@ -10,11 +11,13 @@ internal interface ITexRenderer : IDisposable {
     
     Exception? LastException { get; }
 
+    RectangleF? AutoDescriptionRectangle { get; set; }
+
     public void UiThreadInitialize();
 
     bool Draw(PaintEventArgs e);
 
-    void UpdateBitmapSource(Task<IBitmapSource>? previous, Task<IBitmapSource>? current);
+    bool UpdateBitmapSource(Task<IBitmapSource>? previous, Task<IBitmapSource>? current);
     
     bool IsAnyVisibleSliceReadyForDrawing(Task<IBitmapSource>? bitmapSourceTask);
     

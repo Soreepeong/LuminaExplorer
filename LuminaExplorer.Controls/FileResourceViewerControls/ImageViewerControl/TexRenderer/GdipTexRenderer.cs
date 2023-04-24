@@ -14,15 +14,21 @@ namespace LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl.
 internal sealed class GdipTexRenderer : ITexRenderer {
     private readonly BufferedGraphicsContext _bufferedGraphicsContext = new();
     private readonly Task<IBitmapSource>?[] _sources = new Task<IBitmapSource>?[2];
+    
+    private RectangleF? _autoDescriptionRectangle;
 
     public GdipTexRenderer(TexFileViewerControl control) {
         Control = control;
+        Control.Resize += ControlOnResize;
+        Control.FontSizeStepLevelChanged += ControlOnFontSizeStepLevelChanged;
     }
 
     public void UiThreadInitialize() { }
 
     public void Dispose() {
         UpdateBitmapSource(null, null);
+        Control.Resize -= ControlOnResize;
+        Control.FontSizeStepLevelChanged -= ControlOnFontSizeStepLevelChanged;
         _bufferedGraphicsContext.Dispose();
     }
 
@@ -41,6 +47,45 @@ internal sealed class GdipTexRenderer : ITexRenderer {
     private TexFileViewerControl Control { get; }
 
     public Exception? LastException { get; private set; }
+
+    public RectangleF? AutoDescriptionRectangle {
+        get {
+            if (_autoDescriptionRectangle is not null)
+                return _autoDescriptionRectangle.Value;
+            var padding = Control.Padding;
+            var margin = Control.Margin;
+            var rc = new Rectangle(
+                padding.Left + margin.Left,
+                padding.Top + margin.Top,
+                Control.ClientSize.Width - padding.Horizontal - margin.Horizontal,
+                Control.ClientSize.Height - padding.Vertical - margin.Vertical);
+
+            using var stringFormat = new StringFormat {
+                Alignment = StringAlignment.Near,
+                LineAlignment = StringAlignment.Near,
+                Trimming = StringTrimming.None,
+            };
+
+            using var g = Control.CreateGraphics();
+            var controlFont = Control.Font;
+            using var font = new Font(
+                controlFont.FontFamily,
+                Control.EffectiveFontSizeInPoints,
+                controlFont.Style, 
+                controlFont.Unit,
+                controlFont.GdiCharSet,
+                controlFont.GdiVerticalFont);
+            var measured = g.MeasureString(
+                Control.AutoDescription,
+                font,
+                new SizeF(rc.Width, rc.Height),
+                stringFormat);
+            rc.Width = (int) Math.Ceiling(measured.Width);
+            rc.Height = (int) Math.Ceiling(measured.Height);
+            return _autoDescriptionRectangle = rc;
+        }
+        set => _autoDescriptionRectangle = value;
+    }
 
     private LoadState TryGetActiveSource(out IBitmapSource source, out Exception? exception) {
         source = null!;
@@ -66,15 +111,18 @@ internal sealed class GdipTexRenderer : ITexRenderer {
         return exception is not null ? LoadState.Error : LoadState.Empty;
     }
 
-    public void UpdateBitmapSource(Task<IBitmapSource>? previous, Task<IBitmapSource>? current) {
+    public bool UpdateBitmapSource(Task<IBitmapSource>? previous, Task<IBitmapSource>? current) {
+        var changed = false;
         LastException = null;
 
         if (previous == current)
             previous = null;
 
+        changed |= SourceTaskPrevious != previous;
         SourceTaskPrevious = previous;
 
         if (SourceTaskCurrent != current) {
+            changed = true;
             SourceTaskCurrent?.ContinueWith(r => {
                 if (r.IsCompletedSuccessfully) {
                     r.Result.LayoutChanged -= BitmapSourceCurrentOnLayoutChanged;
@@ -87,6 +135,8 @@ internal sealed class GdipTexRenderer : ITexRenderer {
                     r.Result.LayoutChanged += BitmapSourceCurrentOnLayoutChanged;
             });
         }
+
+        return changed;
     }
 
     private void BitmapSourceCurrentOnLayoutChanged() {
@@ -319,5 +369,13 @@ internal sealed class GdipTexRenderer : ITexRenderer {
             textBrush,
             rectangle,
             stringFormat);
+    }
+
+    private void ControlOnFontSizeStepLevelChanged(object? sender, EventArgs e) {
+        _autoDescriptionRectangle = null;
+    }
+
+    private void ControlOnResize(object? sender, EventArgs e) {
+        _autoDescriptionRectangle = null;
     }
 }

@@ -53,11 +53,9 @@ public partial class TextureViewer : Form {
         TexViewer.Margin = new(); // required line
         TexViewer.PreviewKeyDown += TexViewerOnPreviewKeyDown;
         TexViewer.MouseDown += TexViewerOnMouseDown;
+        TexViewer.NavigateToNextFile += TexViewerOnNavigateToNextFile;
+        TexViewer.NavigateToPrevFile +=TexViewerOnNavigateToPrevFile;
     }
-
-    public TimeSpan OverlayShortDuration = TimeSpan.FromSeconds(0.5);
-
-    public TimeSpan OverlayLongDuration = TimeSpan.FromSeconds(1);
 
     public bool IsFullScreen {
         get => _isFullScreen;
@@ -112,19 +110,22 @@ public partial class TextureViewer : Form {
         }
     }
 
+    private void TexViewerOnNavigateToPrevFile(object? sender, EventArgs eventArgs) {
+        if (_navigationTask.IsCompleted)
+            _navigationTask = Task.Run(
+                () => FindAndSelectFirstTexFile(_indexInPlaylist - 1, -1, _closeToken.Token),
+                _closeToken.Token);
+    }
+
+    private void TexViewerOnNavigateToNextFile(object? sender, EventArgs eventArgs) {
+        if (_navigationTask.IsCompleted)
+            _navigationTask = Task.Run(
+                () => FindAndSelectFirstTexFile(_indexInPlaylist + 1, 1, _closeToken.Token),
+                _closeToken.Token);
+    }
+
     private void TexViewerOnPreviewKeyDown(object? sender, PreviewKeyDownEventArgs e) {
         switch (e.KeyCode) {
-            case Keys.D9:
-            case Keys.D1: // TODO: set default zoom to fit in window
-                break;
-            case Keys.D8: // TODO: set default zoom to fit width
-                break;
-            case Keys.D7: // TODO: set default zoom to fit height
-                break;
-            case Keys.Z: // TODO: above + stretch to fit; if already was then disable stretch to fit
-                break;
-            case Keys.D0: // TODO: set default zoom to 100%
-                break;
             case Keys.Tab:
                 TogglePropertyGrid();
                 e.IsInputKey = true;
@@ -132,13 +133,12 @@ public partial class TextureViewer : Form {
             case Keys.Enter:
                 IsFullScreen = !IsFullScreen;
                 if (IsFullScreen)
-                    TexViewer.ShowOverlayString("Press Enter key again to exit full screen mode.",
-                        OverlayShortDuration);
+                    TexViewer.ShowOverlayStringShort("Press Enter key again to exit full screen mode.");
                 break;
             case Keys.Escape:
                 if (IsFullScreen) {
                     IsFullScreen = false;
-                    TexViewer.ShowOverlayString("Press Esc key again to close.", OverlayShortDuration);
+                    TexViewer.ShowOverlayStringShort("Press Esc key again to close.");
                 } else if (PropertyPanel.Visible)
                     TogglePropertyGrid();
                 else
@@ -240,7 +240,7 @@ public partial class TextureViewer : Form {
                 await TexViewer.RunOnUiThread(() => {
                     SelectFile(index, null);
                     if (cycle)
-                        TexViewer.ShowOverlayString(null, OverlayShortDuration);
+                        TexViewer.ClearOverlayString();
                 });
             }
 
@@ -274,14 +274,14 @@ public partial class TextureViewer : Form {
             await TexViewer.RunOnUiThread(() => {
                 SelectFile(index, texFile);
                 if (cycle)
-                    TexViewer.ShowOverlayString(null, OverlayShortDuration);
+                    TexViewer.ClearOverlayString();
             });
             return true;
         }
 
         if (_playlist.Count == 0) {
             await TexViewer.RunOnUiThread(() =>
-                TexViewer.ShowOverlayString("No vaild texture file could be found.", OverlayLongDuration));
+                TexViewer.ShowOverlayStringLong("No vaild texture file could be found."));
             return false;
         }
 
@@ -291,11 +291,9 @@ public partial class TextureViewer : Form {
         if (index < 0) {
             if (await FindAndSelectFirstTexFile(_playlist.Count - 1, -1, cancellationToken, false)) {
                 await TexViewer.RunOnUiThread(() =>
-                    TexViewer.ShowOverlayString(
-                        _folder is null
+                    TexViewer.ShowOverlayStringLong(_folder is null
                             ? "This is the last file in this search."
-                            : "This is the last file in this folder.",
-                        OverlayLongDuration));
+                            : "This is the last file in this folder."));
                 return true;
             }
 
@@ -303,11 +301,9 @@ public partial class TextureViewer : Form {
         } else {
             if (await FindAndSelectFirstTexFile(0, 1, cancellationToken, false)) {
                 await TexViewer.RunOnUiThread(() =>
-                    TexViewer.ShowOverlayString(
-                        _folder is null
+                    TexViewer.ShowOverlayStringLong(_folder is null
                             ? "This is the first file in this search."
-                            : "This is the first file in this folder.",
-                        OverlayLongDuration));
+                            : "This is the first file in this folder."));
                 return true;
             }
 

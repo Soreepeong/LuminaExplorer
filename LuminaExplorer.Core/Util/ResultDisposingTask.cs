@@ -31,12 +31,16 @@ public sealed class ResultDisposingTask<T> : IDisposable, IAsyncDisposable {
     }
 
     public ValueTask DisposeAsync() => new(Task.ContinueWith(result => {
-        if (result is {IsCompletedSuccessfully: true, Result: IAsyncDisposable asyncDisposable})
-            return asyncDisposable.DisposeAsync();
-        
-        if (result.Result is IDisposable disposable)
-            disposable.Dispose();
-        
+        if (result.IsCompletedSuccessfully) {
+            switch (result.Result) {
+                case IAsyncDisposable asyncDisposable:
+                    return asyncDisposable.DisposeAsync();
+                case IDisposable disposable:
+                    disposable.Dispose();
+                    break;
+            }
+        }
+
         return ValueTask.CompletedTask;
     }));
 }
