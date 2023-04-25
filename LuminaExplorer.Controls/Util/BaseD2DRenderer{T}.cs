@@ -1,31 +1,24 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Threading;
 using System.Windows.Forms;
-using Silk.NET.Core.Native;
-using Silk.NET.Direct2D;
-using Silk.NET.Direct3D11;
-using Silk.NET.DirectWrite;
-using Silk.NET.DXGI;
-using AlphaMode = Silk.NET.Direct2D.AlphaMode;
-using FontStyle = Silk.NET.DirectWrite.FontStyle;
-using IDWriteTextFormat = Silk.NET.DirectWrite.IDWriteTextFormat;
-using IDWriteTextLayout = Silk.NET.DirectWrite.IDWriteTextLayout;
+using DirectN;
+using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Controls.Util;
 
-public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
+public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
     private readonly object _renderTargetObtainLock = new();
     private Thread _mainThread = null!;
 
-    private IDXGISwapChain* _pDxgiSwapChain;
-    private ID3D11DeviceContext* _pD3dContext;
-    private IDXGISurface* _pDxgiSurface;
-    private ID2D1RenderTarget* _pRenderTarget;
-
-    private ID2D1Brush* _pForeColorBrush;
-    private ID2D1Brush* _pBackColorBrush;
-    private IDWriteTextFormat* _pFontTextFormat;
+    private IComObject<IDXGISwapChain>? _dxgiSwapChain;
+    private IComObject<ID3D11DeviceContext>? _d3dContext;
+    private IComObject<IDXGISurface>? _dxgiSurface;
+    private IComObject<ID2D1RenderTarget>? _renderTarget;
+    private IComObject<ID2D1Brush>? _foreColorBrush;
+    private IComObject<ID2D1Brush>? _backColorBrush;
+    private IComObject<IDWriteTextFormat>? _fontTextFormat;
 
     private nint _controlHandle;
 
@@ -59,12 +52,12 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
             Control.FontChanged -= ControlOnFontChanged;
         }
 
-        SafeRelease(ref _pForeColorBrush);
-        SafeRelease(ref _pBackColorBrush);
-        SafeRelease(ref _pDxgiSwapChain);
-        SafeRelease(ref _pD3dContext);
-        SafeRelease(ref _pRenderTarget);
-        SafeRelease(ref _pDxgiSurface);
+        SafeDispose.One(ref _foreColorBrush);
+        SafeDispose.One(ref _backColorBrush);
+        SafeDispose.One(ref _dxgiSwapChain);
+        SafeDispose.One(ref _d3dContext);
+        SafeDispose.One(ref _renderTarget);
+        SafeDispose.One(ref _dxgiSurface);
 
         base.Dispose(disposing);
     }
@@ -73,74 +66,72 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
 
     public Exception? LastException { get; protected set; }
 
-    protected ID2D1Brush* ForeColorBrush => GetOrCreateSolidColorBrush(ref _pForeColorBrush, Control.ForeColor);
+    protected IComObject<ID2D1Brush> ForeColorBrush =>
+        GetOrCreateSolidColorBrush(ref _foreColorBrush, Control.ForeColor);
 
-    protected ID2D1Brush* BackColorBrush => GetOrCreateSolidColorBrush(ref _pBackColorBrush, Control.BackColor);
+    protected IComObject<ID2D1Brush> BackColorBrush =>
+        GetOrCreateSolidColorBrush(ref _backColorBrush, Control.BackColor);
 
-    protected IDWriteTextFormat* FontTextFormat => GetOrCreateFromFont(ref _pFontTextFormat, Control.Font);
+    protected IComObject<IDWriteTextFormat> FontTextFormat => GetOrCreateFromFont(ref _fontTextFormat, Control.Font);
 
-    protected ID2D1RenderTarget* RenderTarget {
+    protected IComObject<ID2D1RenderTarget> RenderTarget {
         get {
-            if (_pRenderTarget is not null)
-                return _pRenderTarget;
+            if (_renderTarget is not null)
+                return _renderTarget;
 
             lock (_renderTargetObtainLock) {
-                if (_pRenderTarget is not null)
-                    return _pRenderTarget;
+                if (_renderTarget is not null)
+                    return _renderTarget;
 
-                SafeRelease(ref _pDxgiSurface);
+                SafeDispose.One(ref _dxgiSurface);
 
                 (Exception? exc, object? unused) result = new();
 
                 void DoObtain() {
                     try {
-                        if (_pDxgiSwapChain is null) {
-                            var desc = new SwapChainDesc {
+                        if (_dxgiSwapChain is null) {
+                            var desc = new DXGI_SWAP_CHAIN_DESC {
                                 BufferDesc = new() {
                                     Width = 0,
                                     Height = 0,
-                                    Format = Format.FormatB8G8R8A8Unorm,
-                                    RefreshRate = new(1, 60),
-                                    Scaling = ModeScaling.Centered,
+                                    Format = DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM,
+                                    RefreshRate = new() {Numerator = 1, Denominator = 60},
                                 },
                                 SampleDesc = new() {
                                     Count = 1,
                                     Quality = 0,
                                 },
                                 BufferCount = 1,
-                                BufferUsage = DXGI.UsageRenderTargetOutput,
+                                BufferUsage = 1 << 5, // DXGI_USAGE_RENDER_TARGET_OUTPUT
                                 OutputWindow = _controlHandle,
                                 Windowed = true,
                             };
 
-                            SafeRelease(ref _pDxgiSwapChain);
-                            SafeRelease(ref _pD3dContext);
-                            fixed (IDXGISwapChain** ppSwapChain = &_pDxgiSwapChain)
-                                ThrowH(DxgiFactory->CreateSwapChain(
-                                    (IUnknown*) SharedD3D11Device,
-                                    &desc,
-                                    ppSwapChain));
+                            SafeDispose.One(ref _dxgiSwapChain);
+                            SafeDispose.One(ref _d3dContext);
+                            DxgiFactory.Object.CreateSwapChain(SharedD3D11Device.Object, ref desc, out var swapChain)
+                                .ThrowOnError();
+                            _dxgiSwapChain = new ComObject<IDXGISwapChain>(swapChain);
                         }
 
-                        ThrowH(_pDxgiSwapChain->ResizeBuffers(0, 0, 0, Format.FormatUnknown, 0));
+                        _dxgiSwapChain.Object.ResizeBuffers(0, 0, 0, DXGI_FORMAT.DXGI_FORMAT_UNKNOWN, 0)
+                            .ThrowOnError();
 
-                        fixed (void* ppNewSurface = &_pDxgiSurface)
-                        fixed (Guid* g = &IDXGISurface.Guid)
-                            ThrowH(_pDxgiSwapChain->GetBuffer(0, g, (void**) ppNewSurface));
+                        _dxgiSurface = _dxgiSwapChain.Object.GetBuffer<IDXGISurface>(0);
 
-                        var rtp = new RenderTargetProperties {
-                            Type = RenderTargetType.Default,
-                            PixelFormat = new() {
-                                AlphaMode = AlphaMode.Premultiplied,
-                                Format = Format.FormatUnknown,
+                        var rtp = new D2D1_RENDER_TARGET_PROPERTIES {
+                            type = D2D1_RENDER_TARGET_TYPE.D2D1_RENDER_TARGET_TYPE_DEFAULT,
+                            pixelFormat = new() {
+                                alphaMode = D2D1_ALPHA_MODE.D2D1_ALPHA_MODE_PREMULTIPLIED,
+                                format = DXGI_FORMAT.DXGI_FORMAT_UNKNOWN,
                             },
-                            DpiX = Control.DeviceDpi,
-                            DpiY = Control.DeviceDpi,
+                            dpiX = Control.DeviceDpi,
+                            dpiY = Control.DeviceDpi,
                         };
 
-                        fixed (ID2D1RenderTarget** pRenderTarget = &_pRenderTarget)
-                            ThrowH(D2DFactory->CreateDxgiSurfaceRenderTarget(
-                                _pDxgiSurface, &rtp, pRenderTarget));
+                        D2DFactory.Object.CreateDxgiSurfaceRenderTarget(_dxgiSurface.Object, ref rtp, out var rt)
+                            .ThrowOnError();
+                        _renderTarget = new ComObject<ID2D1RenderTarget>(rt);
                     } catch (Exception e) {
                         result.exc = e;
                         throw;
@@ -157,20 +148,22 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
                 if (result.exc is not null)
                     throw LastException = result.exc;
 
-                return _pRenderTarget;
+                Debug.Assert(_renderTarget is not null);
+
+                return _renderTarget;
             }
         }
     }
 
-    private void ControlOnForeColorChanged(object? sender, EventArgs e) => SafeRelease(ref _pForeColorBrush);
+    private void ControlOnForeColorChanged(object? sender, EventArgs e) => SafeDispose.One(ref _foreColorBrush);
 
-    private void ControlOnBackColorChanged(object? sender, EventArgs e) => SafeRelease(ref _pBackColorBrush);
+    private void ControlOnBackColorChanged(object? sender, EventArgs e) => SafeDispose.One(ref _backColorBrush);
 
-    private void ControlOnFontChanged(object? sender, EventArgs e) => SafeRelease(ref _pFontTextFormat);
+    private void ControlOnFontChanged(object? sender, EventArgs e) => SafeDispose.One(ref _fontTextFormat);
 
     private void ControlOnResize(object? sender, EventArgs e) {
-        SafeRelease(ref _pRenderTarget);
-        SafeRelease(ref _pDxgiSurface);
+        SafeDispose.One(ref _renderTarget);
+        SafeDispose.One(ref _dxgiSurface);
     }
 
     protected abstract void DrawInternal();
@@ -179,7 +172,7 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
         try {
             if (Control.Width != 0 && Control.Height != 0) {
                 var pRenderTarget = RenderTarget;
-                pRenderTarget->BeginDraw();
+                pRenderTarget.BeginDraw();
                 var errorPending = false;
                 try {
                     DrawInternal();
@@ -187,12 +180,12 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
                     errorPending = true;
                     throw;
                 } finally {
-                    var hr = pRenderTarget->EndDraw(null, null);
+                    var hr = pRenderTarget.Object.EndDraw(0, 0);
                     if (!errorPending)
-                        ThrowH(hr);
+                        hr.ThrowOnError();
                 }
 
-                _pDxgiSwapChain->Present(0, 0);
+                _dxgiSwapChain.Present(0, 0);
             }
 
             return true;
@@ -202,168 +195,131 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
         }
     }
 
-    protected IDWriteTextLayout* LayoutText(
-        out TextMetrics metrics,
+    protected IComObject<IDWriteTextLayout> LayoutText(
+        out DWRITE_TEXT_METRICS metrics,
         string? @string,
         RectangleF rectangle,
-        WordWrapping? wordWrapping = null,
-        TextAlignment? textAlignment = null,
-        ParagraphAlignment? paragraphAlignment = null,
-        IDWriteTextFormat* textFormat = null) {
-        // ReSharper disable once ConvertIfStatementToNullCoalescingAssignment
-        if (textFormat is null)
-            textFormat = FontTextFormat;
+        DWRITE_WORD_WRAPPING? wordWrapping = null,
+        DWRITE_TEXT_ALIGNMENT? textAlignment = null,
+        DWRITE_PARAGRAPH_ALIGNMENT? paragraphAlignment = null,
+        IComObject<IDWriteTextFormat>? textFormat = null) {
+        var stringLength = (uint) (@string?.Length ?? 0);
+        @string = string.IsNullOrEmpty(@string) ? "\0" : @string;
+
+        textFormat ??= FontTextFormat;
 
         if (wordWrapping is not null)
-            textFormat->SetWordWrapping(wordWrapping.Value);
+            textFormat.Object.SetWordWrapping(wordWrapping.Value);
 
         if (textAlignment is not null)
-            textFormat->SetTextAlignment(textAlignment.Value);
+            textFormat.Object.SetTextAlignment(textAlignment.Value);
 
         if (paragraphAlignment is not null)
-            textFormat->SetParagraphAlignment(paragraphAlignment.Value);
+            textFormat.Object.SetParagraphAlignment(paragraphAlignment.Value);
 
-        IDWriteTextLayout* layout = null;
-        fixed (char* c = (string.IsNullOrEmpty(@string) ? "\0" : @string).AsSpan())
-            ThrowH(DWriteFactory->CreateTextLayout(
-                c,
-                (uint) (string.IsNullOrEmpty(@string) ? 0 : @string.Length),
-                textFormat,
-                1f * rectangle.Width,
-                1f * rectangle.Height,
-                &layout));
+        DWriteFactory.Object.CreateTextLayout(
+            @string,
+            stringLength,
+            textFormat.Object,
+            1f * rectangle.Width,
+            1f * rectangle.Height,
+            out var layoutPtr).ThrowOnError();
+        var layout = new ComObject<IDWriteTextLayout>(layoutPtr);
         try {
-            fixed (TextMetrics* ptm = &metrics) {
-                // ThrowH(layout->GetMetrics(ptm));
-                ThrowH(((delegate* unmanaged[Stdcall]<IDWriteTextLayout*, TextMetrics*, int>) layout->LpVtbl[60])(
-                    layout, ptm));
-            }
+            layout.Object.GetMetrics(out metrics);
 
             var layoutCopy = layout;
             layout = null;
             return layoutCopy;
         } finally {
-            SafeRelease(ref layout);
+            SafeDispose.One(ref layout);
         }
     }
 
     protected void DrawText(string? @string,
         Rectangle rectangle,
-        WordWrapping? wordWrapping = null,
-        TextAlignment? textAlignment = null,
-        ParagraphAlignment? paragraphAlignment = null,
-        IDWriteTextFormat* textFormat = null,
-        ID2D1Brush* textBrush = null,
-        ID2D1Brush* shadowBrush = null,
+        DWRITE_WORD_WRAPPING? wordWrapping = null,
+        DWRITE_TEXT_ALIGNMENT? textAlignment = null,
+        DWRITE_PARAGRAPH_ALIGNMENT? paragraphAlignment = null,
+        IComObject<IDWriteTextFormat>? textFormat = null,
+        IComObject<ID2D1Brush>? textBrush = null,
+        IComObject<ID2D1Brush>? shadowBrush = null,
         float opacity = 1f,
         int borderWidth = 0) {
         if (opacity <= 0 || string.IsNullOrWhiteSpace(@string))
             return;
 
-        // ReSharper disable once ConvertIfStatementToNullCoalescingAssignment
-        if (textFormat is null)
-            textFormat = FontTextFormat;
+        textFormat ??= FontTextFormat;
 
-        // ReSharper disable once ConvertIfStatementToNullCoalescingAssignment
-        if (textBrush is null)
-            textBrush = ForeColorBrush;
+        textBrush ??= ForeColorBrush;
+        textBrush.Object.SetOpacity(opacity);
 
-        // ReSharper disable once ConvertIfStatementToNullCoalescingAssignment
-        if (shadowBrush is null)
-            shadowBrush = BackColorBrush;
+        if (borderWidth > 0) {
+            shadowBrush ??= BackColorBrush;
+            shadowBrush.Object.SetOpacity(opacity);
+        }
 
         if (wordWrapping is not null)
-            textFormat->SetWordWrapping(wordWrapping.Value);
+            textFormat.Object.SetWordWrapping(wordWrapping.Value);
 
         if (textAlignment is not null)
-            textFormat->SetTextAlignment(textAlignment.Value);
+            textFormat.Object.SetTextAlignment(textAlignment.Value);
 
         if (paragraphAlignment is not null)
-            textFormat->SetParagraphAlignment(paragraphAlignment.Value);
+            textFormat.Object.SetParagraphAlignment(paragraphAlignment.Value);
 
-        shadowBrush->SetOpacity(opacity);
-        textBrush->SetOpacity(opacity);
+        var renderTarget = RenderTarget;
 
-        var pRenderTarget = RenderTarget;
-
-        var box = rectangle.ToSilkFloat();
-        fixed (char* pString = @string.AsSpan()) {
-            for (var i = -borderWidth; i <= borderWidth; i++) {
-                for (var j = -borderWidth; j <= borderWidth; j++) {
-                    if (i == 0 && j == 0)
-                        continue;
-                    box = (rectangle with {X = rectangle.X + i, Y = rectangle.Y + j}).ToSilkFloat();
-                    pRenderTarget->DrawTextA(
-                        pString,
-                        (uint) @string.Length,
-                        (Silk.NET.Direct2D.IDWriteTextFormat*) textFormat,
-                        &box,
-                        shadowBrush,
-                        DrawTextOptions.None,
-                        DwriteMeasuringMode.GdiNatural);
-                }
+        for (var i = -borderWidth; i <= borderWidth; i++) {
+            for (var j = -borderWidth; j <= borderWidth; j++) {
+                if (i == 0 && j == 0)
+                    continue;
+                renderTarget.DrawText(
+                    @string,
+                    textFormat,
+                    (rectangle with {X = rectangle.X + i, Y = rectangle.Y + j}).ToSilkFloat(),
+                    textBrush,
+                    D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE,
+                    DWRITE_MEASURING_MODE.DWRITE_MEASURING_MODE_GDI_NATURAL);
             }
-
-            box = rectangle.ToSilkFloat();
-            pRenderTarget->DrawTextA(
-                pString,
-                (uint) @string.Length,
-                (Silk.NET.Direct2D.IDWriteTextFormat*) textFormat,
-                &box,
-                textBrush,
-                DrawTextOptions.None,
-                DwriteMeasuringMode.GdiNatural);
         }
+
+        renderTarget.DrawText(
+            @string,
+            textFormat,
+            rectangle.ToSilkFloat(),
+            textBrush,
+            D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE,
+            DWRITE_MEASURING_MODE.DWRITE_MEASURING_MODE_GDI_NATURAL);
     }
 
-    protected ID2D1Brush* CreateSolidColorBrush(Color color) {
-        ID2D1Brush* pBrush = null;
-        ThrowH(RenderTarget->CreateSolidColorBrush(
-            new D3Dcolorvalue(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f),
-            null,
-            (ID2D1SolidColorBrush**) &pBrush));
-        return pBrush;
+    protected IComObject<ID2D1Brush> CreateSolidColorBrush(Color color) =>
+        RenderTarget.Object.CreateSolidColorBrush<ID2D1SolidColorBrush>(
+            new(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f));
+
+    protected IComObject<ID2D1Brush> GetOrCreateSolidColorBrush(ref IComObject<ID2D1Brush>? pBrush, Color color) => 
+        pBrush ??= CreateSolidColorBrush(color);
+
+    protected IComObject<ID2D1Bitmap> CreateFromWicBitmap(IComObject<IWICBitmapSource> wicBitmapSource) {
+        RenderTarget.Object.CreateBitmapFromWicBitmap(wicBitmapSource.Object, 0, out var o).ThrowOnError();
+        return new ComObject<ID2D1Bitmap>(o);
     }
 
-    protected ID2D1Brush* GetOrCreateSolidColorBrush(ref ID2D1Brush* pBrush, Color color) {
-        if (pBrush is null)
-            pBrush = CreateSolidColorBrush(color);
-        return pBrush;
-    }
+    protected IComObject<ID2D1Bitmap> GetOrCreateFromWicBitmap(
+        ref IComObject<ID2D1Bitmap>? pBitmap,
+        IComObject<IWICBitmapSource> wicBitmapSource) =>
+        pBitmap ??= CreateFromWicBitmap(wicBitmapSource);
 
-    protected ID2D1Bitmap* CreateFromWicBitmap(WicNet.WicBitmapSource? wicBitmapSource) {
-        ID2D1Bitmap* pBitmap = null;
-        if (wicBitmapSource is null)
-            pBitmap = null;
-        else
-            ThrowH(RenderTarget->CreateBitmapFromWicBitmap(
-                (IWICBitmapSource*) wicBitmapSource.ComObject.GetInterfacePointer<DirectN.IWICBitmapSource>(),
-                null,
-                &pBitmap));
-
-        return pBitmap;
-    }
-
-    protected ID2D1Bitmap* GetOrCreateFromWicBitmap(ref ID2D1Bitmap* pBitmap, WicNet.WicBitmapSource? wicBitmapSource) {
-        if (pBitmap is null)
-            pBitmap = CreateFromWicBitmap(wicBitmapSource);
-        return pBitmap;
-    }
-
-    protected IDWriteTextFormat* GetOrCreateFromFont(ref IDWriteTextFormat* textFormat, Font font) {
-        if (textFormat is null)
-            fixed (char* pName = font.Name.AsSpan())
-            fixed (char* pEmpty = "\0".AsSpan())
-            fixed (IDWriteTextFormat** ppFontTextFormat = &textFormat)
-                ThrowH(DWriteFactory->CreateTextFormat(
-                    pName,
-                    null,
-                    font.Bold ? FontWeight.Bold : FontWeight.Normal,
-                    font.Italic ? FontStyle.Italic : FontStyle.Normal,
-                    FontStretch.Normal,
-                    font.SizeInPoints * 4 / 3,
-                    pEmpty,
-                    ppFontTextFormat));
-        return textFormat;
-    }
+    protected IComObject<IDWriteTextFormat> GetOrCreateFromFont(
+        ref IComObject<IDWriteTextFormat>? textFormat,
+        Font font) => textFormat ??= DWriteFactory.CreateTextFormat(
+            familyName: font.FontFamily.Name,
+            size: font.SizeInPoints * 4 / 3,
+            weight: font.Bold
+                ? DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_BOLD
+                : DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL,
+            style: font.Italic
+                ? DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_ITALIC
+                : DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_NORMAL,
+            localeName: "");
 }

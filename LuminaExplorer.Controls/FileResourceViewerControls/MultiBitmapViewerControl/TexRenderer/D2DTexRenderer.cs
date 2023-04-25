@@ -1,35 +1,29 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using DirectN;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
-using Silk.NET.Core.Native;
-using Silk.NET.Direct2D;
-using Silk.NET.DirectWrite;
-using Silk.NET.Maths;
-using FontStyle = Silk.NET.DirectWrite.FontStyle;
-using IDWriteTextFormat = Silk.NET.DirectWrite.IDWriteTextFormat;
-using Rectangle = System.Drawing.Rectangle;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.TexRenderer;
 
-internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerControl>, ITexRenderer {
+internal sealed class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerControl>, ITexRenderer {
     private readonly TaskScheduler _taskScheduler;
 
-    private ID2D1Brush* _pForeColorWhenLoadedBrush;
-    private ID2D1Brush* _pBackColorWhenLoadedBrush;
-    private ID2D1Brush* _pBorderColorBrush;
-    private ID2D1Brush* _pTransparencyCellColor1Brush;
-    private ID2D1Brush* _pTransparencyCellColor2Brush;
-    private ID2D1Brush* _pPixelGridLineColorBrush;
-    private IDWriteTextFormat* _pScalingFontTextFormat;
+    private IComObject<ID2D1Brush>? _foreColorWhenLoadedBrush;
+    private IComObject<ID2D1Brush>? _backColorWhenLoadedBrush;
+    private IComObject<ID2D1Brush>? _borderColorBrush;
+    private IComObject<ID2D1Brush>? _transparencyCellColor1Brush;
+    private IComObject<ID2D1Brush>? _transparencyCellColor2Brush;
+    private IComObject<ID2D1Brush>? _pixelGridLineColorBrush;
+    private IComObject<IDWriteTextFormat>? _scalingFontTextFormat;
 
     private RectangleF? _autoDescriptionRectangle;
 
@@ -47,32 +41,17 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         Control.PixelGridLineColorChanged += ControlOnPixelGridLineColorChanged;
     }
 
-    private void ControlOnFontSizeStepLevelChanged(object? sender, EventArgs e) {
-        SafeRelease(ref _pScalingFontTextFormat);
-    }
-
-    private void ControlOnResize(object? sender, EventArgs e) {
-        SafeRelease(ref _pScalingFontTextFormat);
-    }
-
-    private IDWriteTextFormat* ScalingFontTextFormat {
-        get {
-            if (_pScalingFontTextFormat is null)
-                fixed (char* pName = Control.Font.Name.AsSpan())
-                fixed (char* pEmpty = "\0".AsSpan())
-                fixed (IDWriteTextFormat** ppFontTextFormat = &_pScalingFontTextFormat)
-                    ThrowH(DWriteFactory->CreateTextFormat(
-                        pName,
-                        null,
-                        Control.Font.Bold ? FontWeight.Bold : FontWeight.Normal,
-                        Control.Font.Italic ? FontStyle.Italic : FontStyle.Normal,
-                        FontStretch.Normal,
-                        Control.EffectiveFontSizeInPoints * 4 / 3,
-                        pEmpty,
-                        ppFontTextFormat));
-            return _pScalingFontTextFormat;
-        }
-    }
+    private IComObject<IDWriteTextFormat> ScalingFontTextFormat =>
+        _scalingFontTextFormat ??= DWriteFactory.CreateTextFormat(
+            familyName: Control.Font.FontFamily.Name,
+            size: Control.EffectiveFontSizeInPoints * 4 / 3,
+            weight: Control.Font.Bold
+                ? DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_BOLD
+                : DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL,
+            style: Control.Font.Italic
+                ? DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_ITALIC
+                : DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_NORMAL,
+            localeName: "");
 
     public RectangleF? AutoDescriptionRectangle {
         get {
@@ -86,21 +65,17 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                 Control.ClientSize.Width - padding.Horizontal - margin.Horizontal,
                 Control.ClientSize.Height - padding.Vertical - margin.Vertical);
 
-            var textLayout = LayoutText(
+            using var textLayout = LayoutText(
                 out var metrics,
                 Control.AutoDescription,
                 rc,
-                WordWrapping.EmergencyBreak,
-                TextAlignment.Leading,
-                ParagraphAlignment.Near,
+                DWRITE_WORD_WRAPPING.DWRITE_WORD_WRAPPING_EMERGENCY_BREAK,
+                DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_LEADING,
+                DWRITE_PARAGRAPH_ALIGNMENT.DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
                 ScalingFontTextFormat);
-            try {
-                rc.Width = metrics.Width;
-                rc.Height = metrics.Height;
-                return _autoDescriptionRectangle = rc;
-            } finally {
-                textLayout->Release();
-            }
+            rc.Width = metrics.width;
+            rc.Height = metrics.height;
+            return _autoDescriptionRectangle = rc;
         }
         set => _autoDescriptionRectangle = value;
     }
@@ -118,13 +93,13 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         }
 
         UpdateBitmapSource(null, null);
-        SafeRelease(ref _pForeColorWhenLoadedBrush);
-        SafeRelease(ref _pBackColorWhenLoadedBrush);
-        SafeRelease(ref _pBorderColorBrush);
-        SafeRelease(ref _pTransparencyCellColor1Brush);
-        SafeRelease(ref _pTransparencyCellColor2Brush);
-        SafeRelease(ref _pPixelGridLineColorBrush);
-        SafeRelease(ref _pScalingFontTextFormat);
+        SafeDispose.One(ref _foreColorWhenLoadedBrush);
+        SafeDispose.One(ref _backColorWhenLoadedBrush);
+        SafeDispose.One(ref _borderColorBrush);
+        SafeDispose.One(ref _transparencyCellColor1Brush);
+        SafeDispose.One(ref _transparencyCellColor2Brush);
+        SafeDispose.One(ref _pixelGridLineColorBrush);
+        SafeDispose.One(ref _scalingFontTextFormat);
 
         base.Dispose(disposing);
     }
@@ -141,23 +116,23 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
     public event Action<Task<IBitmapSource>>? AnyBitmapSourceSliceAvailableForDrawing;
 
-    private ID2D1Brush* BackColorWhenLoadedBrush =>
-        GetOrCreateSolidColorBrush(ref _pBackColorWhenLoadedBrush, Control.BackColorWhenLoaded);
+    private IComObject<ID2D1Brush> BackColorWhenLoadedBrush =>
+        GetOrCreateSolidColorBrush(ref _backColorWhenLoadedBrush, Control.BackColorWhenLoaded);
 
-    private ID2D1Brush* ForeColorWhenLoadedBrush =>
-        GetOrCreateSolidColorBrush(ref _pForeColorWhenLoadedBrush, Control.ForeColorWhenLoaded);
+    private IComObject<ID2D1Brush> ForeColorWhenLoadedBrush =>
+        GetOrCreateSolidColorBrush(ref _foreColorWhenLoadedBrush, Control.ForeColorWhenLoaded);
 
-    private ID2D1Brush* ContentBorderColorBrush =>
-        GetOrCreateSolidColorBrush(ref _pBorderColorBrush, Control.ContentBorderColor);
+    private IComObject<ID2D1Brush> ContentBorderColorBrush =>
+        GetOrCreateSolidColorBrush(ref _borderColorBrush, Control.ContentBorderColor);
 
-    private ID2D1Brush* TransparencyCellColor1Brush =>
-        GetOrCreateSolidColorBrush(ref _pTransparencyCellColor1Brush, Control.TransparencyCellColor1);
+    private IComObject<ID2D1Brush> TransparencyCellColor1Brush =>
+        GetOrCreateSolidColorBrush(ref _transparencyCellColor1Brush, Control.TransparencyCellColor1);
 
-    private ID2D1Brush* TransparencyCellColor2Brush =>
-        GetOrCreateSolidColorBrush(ref _pTransparencyCellColor2Brush, Control.TransparencyCellColor2);
+    private IComObject<ID2D1Brush> TransparencyCellColor2Brush =>
+        GetOrCreateSolidColorBrush(ref _transparencyCellColor2Brush, Control.TransparencyCellColor2);
 
-    private ID2D1Brush* PixelGridLineColorBrush =>
-        GetOrCreateSolidColorBrush(ref _pPixelGridLineColorBrush, Control.PixelGridLineColor);
+    private IComObject<ID2D1Brush> PixelGridLineColorBrush =>
+        GetOrCreateSolidColorBrush(ref _pixelGridLineColorBrush, Control.PixelGridLineColor);
 
     public bool UpdateBitmapSource(Task<IBitmapSource>? previous, Task<IBitmapSource>? current) {
         LastException = null;
@@ -210,7 +185,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             (bitmapSourceTask == SourcePrevious?.SourceTask && SourcePrevious.IsEveryVisibleSliceReadyForDrawing()));
 
     protected override void DrawInternal() {
-        var pRenderTarget = RenderTarget;
+        var renderTarget = RenderTarget;
 
         var imageRect = Rectangle.Truncate(Control.ImageRect);
         var clientSize = Control.ClientSize;
@@ -229,13 +204,13 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             overlayString = null;
 
         if (SourceCurrent?.IsAnyVisibleSliceReadyForDrawing() is true)
-            pRenderTarget->Clear(Control.BackColorWhenLoaded.ToD3Dcolorvalue());
+            renderTarget.Object.Clear(Control.BackColorWhenLoaded.ToD3Dcolorvalue());
         else if (SourceCurrent?.SourceTask.IsFaulted is true)
-            pRenderTarget->Clear(Control.BackColor.ToD3Dcolorvalue());
+            renderTarget.Object.Clear(Control.BackColor.ToD3Dcolorvalue());
         else if (SourcePrevious?.IsAnyVisibleSliceReadyForDrawing() is true)
-            pRenderTarget->Clear(Control.BackColorWhenLoaded.ToD3Dcolorvalue());
+            renderTarget.Object.Clear(Control.BackColorWhenLoaded.ToD3Dcolorvalue());
         else
-            pRenderTarget->Clear(Control.BackColor.ToD3Dcolorvalue());
+            renderTarget.Object.Clear(Control.BackColor.ToD3Dcolorvalue());
 
         var currentSourceFullyAvailable = SourceCurrent?.IsEveryVisibleSliceReadyForDrawing() is true;
         var isLoading = false;
@@ -253,7 +228,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                 var bitmapLoaded = ArrayPool<LoadState>.Shared.Rent(source.Layout.Count);
                 try {
                     foreach (var sliceCell in source.Layout)
-                        bitmapLoaded[sliceCell.CellIndex] = sourceSet.TryGetBitmapAt(sliceCell, out _, out _);
+                        sourceSet.TryGetBitmapAt(sliceCell, out bitmapLoaded[sliceCell.CellIndex], out _, out _);
 
                     // 1. Draw transparency grids
                     foreach (var sliceCell in source.Layout) {
@@ -271,25 +246,25 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                                 out var dy)) {
                             var yLim = Math.Min(cellRect.Bottom, clientSize.Height);
                             var xLim = Math.Min(cellRect.Right, clientSize.Width);
-                            TransparencyCellColor1Brush->SetOpacity(1f);
-                            TransparencyCellColor2Brush->SetOpacity(1f);
+                            TransparencyCellColor1Brush.Object.SetOpacity(1f);
+                            TransparencyCellColor2Brush.Object.SetOpacity(1f);
                             for (var y = minY;; y++) {
-                                box.Min.Y = y * multiplier + dy;
-                                box.Max.Y = box.Min.Y + Math.Min(multiplier, yLim - box.Min.Y);
-                                if (box.Min.Y >= box.Max.Y)
+                                box.top = y * multiplier + dy;
+                                box.bottom = box.top + Math.Min(multiplier, yLim - box.top);
+                                if (box.top >= box.bottom)
                                     break;
 
                                 for (var x = minX;; x++) {
-                                    box.Min.X = x * multiplier + dx;
-                                    box.Max.X = box.Min.X + Math.Min(multiplier, xLim - box.Min.X);
-                                    if (box.Min.X >= box.Max.X)
+                                    box.left = x * multiplier + dx;
+                                    box.right = box.left + Math.Min(multiplier, xLim - box.left);
+                                    if (box.left >= box.right)
                                         break;
 
-                                    pRenderTarget->FillRectangle(
-                                        &box,
+                                    renderTarget.Object.FillRectangle(
+                                        ref box,
                                         (x + y) % 2 == 0
-                                            ? TransparencyCellColor1Brush
-                                            : TransparencyCellColor2Brush);
+                                            ? TransparencyCellColor1Brush.Object
+                                            : TransparencyCellColor2Brush.Object);
                                 }
                             }
                         }
@@ -297,7 +272,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
                     // 2. Draw cell borders
                     if (Control.ContentBorderWidth > 0) {
-                        ContentBorderColorBrush->SetOpacity(1f);
+                        ContentBorderColorBrush.Object.SetOpacity(1f);
                         foreach (var sliceCell in source.Layout) {
                             if (bitmapLoaded[sliceCell.CellIndex] != LoadState.Loaded)
                                 continue;
@@ -306,7 +281,10 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                                 source.Layout.RectOf(sliceCell, imageRect),
                                 Control.ContentBorderWidth / 2f,
                                 Control.ContentBorderWidth / 2f).ToSilkFloat();
-                            pRenderTarget->DrawRectangle(&box, ContentBorderColorBrush, Control.ContentBorderWidth,
+                            renderTarget.Object.DrawRectangle(
+                                ref box,
+                                ContentBorderColorBrush.Object,
+                                Control.ContentBorderWidth,
                                 null);
                         }
                     }
@@ -316,17 +294,18 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                         box = source.Layout.RectOf(sliceCell, imageRect).ToSilkFloat();
 
                         if (bitmapLoaded[sliceCell.CellIndex] == LoadState.Loaded) {
-                            bitmapLoaded[sliceCell.CellIndex] =
-                                sourceSet.TryGetBitmapAt(sliceCell, out var pBitmap, out _);
-                            if (bitmapLoaded[sliceCell.CellIndex] == LoadState.Loaded) {
-                                pRenderTarget->DrawBitmap(
-                                    pBitmap,
-                                    &box,
-                                    1f, // opacity
-                                    Control.NearestNeighborMinimumZoom <= Control.EffectiveZoom
-                                        ? BitmapInterpolationMode.NearestNeighbor
-                                        : BitmapInterpolationMode.Linear,
-                                    null);
+                            if (sourceSet.TryGetBitmapAt(
+                                sliceCell,
+                                out bitmapLoaded[sliceCell.CellIndex],
+                                out var bitmap,
+                                out _)) {
+                                renderTarget.Object.DrawBitmap(
+                                    bitmap.Object,
+                                    opacity: 1f,
+                                    interpolationMode: Control.NearestNeighborMinimumZoom <= Control.EffectiveZoom
+                                        ? D2D1_BITMAP_INTERPOLATION_MODE.D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR
+                                        : D2D1_BITMAP_INTERPOLATION_MODE.D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                                    destinationRectangle: box);
                             }
                         }
 
@@ -343,8 +322,8 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
                     // 4. Draw pixel grids
                     if (Control.PixelGridMinimumZoom <= Control.EffectiveZoom) {
-                        var p1 = new Vector2D<float>();
-                        var p2 = new Vector2D<float>();
+                        var p1 = new D2D_POINT_2F();
+                        var p2 = new D2D_POINT_2F();
 
                         foreach (var sliceCell in source.Layout) {
                             if (bitmapLoaded[sliceCell.CellIndex] != LoadState.Loaded)
@@ -358,28 +337,28 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                             // -cellTop * sliceHeight / cellHeight <= j < (clientHeight - cellTop) * sliceHeight / cellHeight
                             // 0 <= j < cellRectUnscaled + 1
 
-                            p1.X = cellRect.Left + 0.5f;
-                            p2.X = cellRect.Right - 0.5f;
+                            p1.x = cellRect.Left + 0.5f;
+                            p2.x = cellRect.Right - 0.5f;
                             var rangeMin = Math.Max(0, (int) Math.Floor(1f *
                                 -cellRect.Top * cellRectUnscaled.Height / cellRect.Height));
                             var rangeMax = Math.Min(cellRectUnscaled.Height + 1, (int) Math.Ceiling(1f *
                                 (clientSize.Height - cellRect.Top) * cellRectUnscaled.Height / cellRect.Height));
                             for (var j = rangeMin; j < rangeMax; j++) {
                                 var y = cellRect.Top + j * cellRect.Height / cellRectUnscaled.Height;
-                                p1.Y = p2.Y = y + 0.5f;
-                                pRenderTarget->DrawLine(p1, p2, PixelGridLineColorBrush, 1f, null);
+                                p1.y = p2.y = y + 0.5f;
+                                renderTarget.Object.DrawLine(p1, p2, PixelGridLineColorBrush.Object, 1f, null);
                             }
 
-                            p1.Y = cellRect.Top + 0.5f;
-                            p2.Y = cellRect.Bottom - 0.5f;
+                            p1.y = cellRect.Top + 0.5f;
+                            p2.y = cellRect.Bottom - 0.5f;
                             rangeMin = Math.Max(0, (int) Math.Floor(1f *
                                 -cellRect.Left * cellRectUnscaled.Width / cellRect.Width));
                             rangeMax = Math.Min(cellRectUnscaled.Width + 1, (int) Math.Ceiling(1f *
                                 (clientSize.Width - cellRect.Left) * cellRectUnscaled.Width / cellRect.Width));
                             for (var j = rangeMin; j < rangeMax; j++) {
                                 var x = cellRect.Left + j * cellRect.Width / cellRectUnscaled.Width;
-                                p1.X = p2.X = x + 0.5f;
-                                pRenderTarget->DrawLine(p1, p2, PixelGridLineColorBrush, 1f, null);
+                                p1.x = p2.x = x + 0.5f;
+                                renderTarget.Object.DrawLine(p1, p2, PixelGridLineColorBrush.Object, 1f, null);
                             }
                         }
                     }
@@ -390,9 +369,9 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                 DrawText(
                     Control.AutoDescription,
                     overlayRect,
-                    wordWrapping: WordWrapping.EmergencyBreak,
-                    textAlignment: TextAlignment.Leading,
-                    paragraphAlignment: ParagraphAlignment.Near,
+                    wordWrapping: DWRITE_WORD_WRAPPING.DWRITE_WORD_WRAPPING_EMERGENCY_BREAK,
+                    textAlignment: DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_LEADING,
+                    paragraphAlignment: DWRITE_PARAGRAPH_ALIGNMENT.DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
                     textFormat: ScalingFontTextFormat,
                     textBrush: ForeColorWhenLoadedBrush,
                     shadowBrush: BackColorWhenLoadedBrush,
@@ -414,69 +393,77 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             out var metrics,
             overlayString,
             Control.ClientRectangle,
-            WordWrapping.EmergencyBreak,
-            TextAlignment.Center,
-            ParagraphAlignment.Center,
+            wordWrapping: DWRITE_WORD_WRAPPING.DWRITE_WORD_WRAPPING_EMERGENCY_BREAK,
+            DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_CENTER,
+            DWRITE_PARAGRAPH_ALIGNMENT.DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
             ScalingFontTextFormat);
         var fontSizeScale = Control.EffectiveFontSizeScale;
         box = new(
-            metrics.Left - 32 * fontSizeScale,
-            metrics.Top - 32 * fontSizeScale,
-            metrics.Left + metrics.Width + 32 * fontSizeScale,
-            metrics.Top + metrics.Height + 32 * fontSizeScale);
+            metrics.left - 32 * fontSizeScale,
+            metrics.top - 32 * fontSizeScale,
+            metrics.left + metrics.width + 32 * fontSizeScale,
+            metrics.top + metrics.height + 32 * fontSizeScale);
 
         try {
-            BackColorBrush->SetOpacity(overlayBackOpacity);
-            ForeColorBrush->SetOpacity(overlayForeOpacity);
+            BackColorBrush.Object.SetOpacity(overlayBackOpacity);
+            ForeColorBrush.Object.SetOpacity(overlayForeOpacity);
 
-            pRenderTarget->FillRectangle(&box, BackColorBrush);
+            renderTarget.Object.FillRectangle(ref box, BackColorBrush.Object);
 
             for (var i = -2; i <= 2; i++) {
                 for (var j = -2; j <= 2; j++) {
                     if (i == 0 && j == 0)
                         continue;
 
-                    pRenderTarget->DrawTextLayout(
+                    renderTarget.Object.DrawTextLayout(
                         new(i, j),
-                        (Silk.NET.Direct2D.IDWriteTextLayout*) textLayout,
-                        BackColorBrush,
-                        DrawTextOptions.None);
+                        textLayout.Object,
+                        BackColorBrush.Object,
+                        D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
                 }
             }
 
-            pRenderTarget->DrawTextLayout(
+            renderTarget.Object.DrawTextLayout(
                 new(),
-                (Silk.NET.Direct2D.IDWriteTextLayout*) textLayout,
-                ForeColorBrush,
-                DrawTextOptions.None);
+                textLayout.Object,
+                ForeColorBrush.Object,
+                D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
         } finally {
-            SafeRelease(ref textLayout);
+            SafeDispose.One(ref textLayout);
         }
     }
 
+    private void ControlOnFontSizeStepLevelChanged(object? sender, EventArgs e) {
+        SafeDispose.One(ref _scalingFontTextFormat);
+    }
+
+    private void ControlOnResize(object? sender, EventArgs e) {
+        SafeDispose.One(ref _scalingFontTextFormat);
+    }
+
     private void ControlOnForeColorWhenLoadedChanged(object? sender, EventArgs e) =>
-        SafeRelease(ref _pForeColorWhenLoadedBrush);
+        SafeDispose.One(ref _foreColorWhenLoadedBrush);
 
     private void ControlOnBackColorWhenLoadedChanged(object? sender, EventArgs e)
-        => SafeRelease(ref _pBackColorWhenLoadedBrush);
+        => SafeDispose.One(ref _backColorWhenLoadedBrush);
 
-    private void ControlOnBorderColorChanged(object? sender, EventArgs e) => SafeRelease(ref _pBorderColorBrush);
+    private void ControlOnBorderColorChanged(object? sender, EventArgs e) => SafeDispose.One(ref _borderColorBrush);
 
     private void ControlOnTransparencyCellColor1Changed(object? sender, EventArgs e) =>
-        SafeRelease(ref _pTransparencyCellColor1Brush);
+        SafeDispose.One(ref _transparencyCellColor1Brush);
 
     private void ControlOnTransparencyCellColor2Changed(object? sender, EventArgs e) =>
-        SafeRelease(ref _pTransparencyCellColor2Brush);
+        SafeDispose.One(ref _transparencyCellColor2Brush);
 
     private void ControlOnPixelGridLineColorChanged(object? sender, EventArgs e) =>
-        SafeRelease(ref _pPixelGridLineColorBrush);
+        SafeDispose.One(ref _pixelGridLineColorBrush);
 
     private sealed class SourceSet : IDisposable, IAsyncDisposable {
         private readonly D2DTexRenderer _renderer;
         private readonly CancellationTokenSource _cancellationTokenSource = new();
         public readonly Task<IBitmapSource> SourceTask;
 
-        private TaskWrappingIUnknown<ID2D1Bitmap>?[ /* Image */][ /* Mip */][ /* Slice */]? _pBitmaps;
+        private ResultDisposingTask<IComObject<ID2D1Bitmap>>?[ /* Image */][ /* Mip */][ /* Slice */]? _bitmaps;
 
         public SourceSet(D2DTexRenderer renderer, Task<IBitmapSource> sourceTask) {
             _renderer = renderer;
@@ -486,13 +473,13 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                     return;
 
                 var source = r.Result;
-                _ = SafeDispose.EnumerableAsync(ref _pBitmaps);
+                _ = SafeDispose.EnumerableAsync(ref _bitmaps);
 
-                _pBitmaps = new TaskWrappingIUnknown<ID2D1Bitmap>[source.ImageCount][][];
-                for (var i = 0; i < _pBitmaps.Length; i++) {
-                    var a1 = _pBitmaps[i] = new TaskWrappingIUnknown<ID2D1Bitmap>[source.NumberOfMipmaps(i)][];
+                _bitmaps = new ResultDisposingTask<IComObject<ID2D1Bitmap>>[source.ImageCount][][];
+                for (var i = 0; i < _bitmaps.Length; i++) {
+                    var a1 = _bitmaps[i] = new ResultDisposingTask<IComObject<ID2D1Bitmap>>[source.NumberOfMipmaps(i)][];
                     for (var j = 0; j < a1.Length; j++)
-                        a1[j] = new TaskWrappingIUnknown<ID2D1Bitmap>[source.DepthOfMipmap(i, j)];
+                        a1[j] = new ResultDisposingTask<IComObject<ID2D1Bitmap>>[source.DepthOfMipmap(i, j)];
                 }
 
                 r.Result.LayoutChanged += SourceTaskOnLayoutChanged;
@@ -502,7 +489,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
         public void Dispose() {
             _cancellationTokenSource.Cancel();
-            _ = SafeDispose.EnumerableAsync(ref _pBitmaps);
+            _ = SafeDispose.EnumerableAsync(ref _bitmaps);
             SourceTask.ContinueWith(r => {
                 if (r.IsCompletedSuccessfully)
                     r.Result.LayoutChanged -= SourceTaskOnLayoutChanged;
@@ -517,16 +504,16 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         public bool IsAnyVisibleSliceReadyForDrawing() =>
             SourceTask.IsCompletedSuccessfully &&
             SourceTask.Result.Layout.Any(
-                x => _pBitmaps?[x.ImageIndex][x.Mipmap][x.Slice]?.IsCompletedSuccessfully is true);
+                x => _bitmaps?[x.ImageIndex][x.Mipmap][x.Slice]?.IsCompletedSuccessfully is true);
 
         public bool IsEveryVisibleSliceReadyForDrawing() =>
             SourceTask.IsCompletedSuccessfully &&
             SourceTask.Result.Layout.All(
-                x => _pBitmaps?[x.ImageIndex][x.Mipmap][x.Slice]?.IsCompletedSuccessfully is true);
+                x => _bitmaps?[x.ImageIndex][x.Mipmap][x.Slice]?.IsCompletedSuccessfully is true);
 
         private LoadState TryGetBitmapWrapperTaskAt(
             GridLayoutCell cell,
-            out TaskWrappingIUnknown<ID2D1Bitmap>? wrapperTask,
+            out ResultDisposingTask<IComObject<ID2D1Bitmap>>? wrapperTask,
             out Exception? exception) {
             wrapperTask = null;
             exception = null;
@@ -545,16 +532,11 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                 return LoadState.Error;
             }
 
-            if (task.IsCompleted && _pBitmaps is { } pBitmaps) {
+            if (task.IsCompleted && _bitmaps is { } pBitmaps) {
                 wrapperTask = pBitmaps[cell.ImageIndex][cell.Mipmap][cell.Slice];
                 if (wrapperTask is null) {
                     wrapperTask = pBitmaps[cell.ImageIndex][cell.Mipmap][cell.Slice] = new(Task.Run(
-                        () => {
-                            var ptr = new ComPtr<ID2D1Bitmap>();
-                            // do NOT merge into constructor, or it will do AddRef, which we do not want.
-                            _renderer.GetOrCreateFromWicBitmap(ref ptr.Handle, task.Result);
-                            return ptr;
-                        },
+                        () => _renderer.CreateFromWicBitmap(task.Result),
                         _cancellationTokenSource.Token));
                     wrapperTask.Task.ContinueWith(_ => _renderer.Control.Invalidate());
                 }
@@ -573,13 +555,14 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             return exception is null ? LoadState.Loading : LoadState.Error;
         }
 
-        public LoadState TryGetBitmapAt(
+        public bool TryGetBitmapAt(
             GridLayoutCell cell,
-            out ID2D1Bitmap* pBitmap,
+            out LoadState state,
+            [MaybeNullWhen(false)] out IComObject<ID2D1Bitmap> pBitmap,
             out Exception? exception) {
-            var state = TryGetBitmapWrapperTaskAt(cell, out var task, out exception);
+            state = TryGetBitmapWrapperTaskAt(cell, out var task, out exception);
             pBitmap = state == LoadState.Loaded ? task!.Result : null;
-            return state;
+            return pBitmap is not null;
         }
 
         private void SourceTaskOnLayoutChanged() {
@@ -614,32 +597,5 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                 TaskCreationOptions.None,
                 _renderer._taskScheduler);
         }
-    }
-
-    private sealed class TaskWrappingIUnknown<T> : IDisposable, IAsyncDisposable
-        where T : unmanaged, IComVtbl<T> {
-        public readonly Task<ComPtr<T>> Task;
-
-        public TaskWrappingIUnknown(Task<ComPtr<T>> task) {
-            Task = task;
-        }
-
-        public bool IsCompletedSuccessfully => Task.IsCompletedSuccessfully;
-        public bool IsCompleted => Task.IsCompleted;
-        public bool IsCanceled => Task.IsCanceled;
-        public bool IsFaulted => Task.IsFaulted;
-        public TaskStatus Status => Task.Status;
-        public T* Result => Task.Result.Handle;
-
-        // ReSharper disable once UnusedMember.Local
-        public ConfiguredTaskAwaitable<ComPtr<T>> ConfigureAwait(bool continueOnCapturedContext) =>
-            Task.ConfigureAwait(continueOnCapturedContext);
-
-        public void Dispose() => Task.ContinueWith(result => result.Result.Release());
-
-        public ValueTask DisposeAsync() => new(Task.ContinueWith(result => {
-            result.Result.Release();
-            return ValueTask.CompletedTask;
-        }));
     }
 }

@@ -15,7 +15,6 @@ using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerContro
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.Util.DdsStructs;
-using WicNet;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 
@@ -23,7 +22,7 @@ public sealed class TexBitmapSource : IBitmapSource {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly bool _isCube;
     private TexFile _texFile;
-    private ResultDisposingTask<WicBitmapSource>?[ /* Mip */][ /* Slice */] _wicBitmaps;
+    private ResultDisposingTask<IComObject<IWICBitmapSource>>?[ /* Mip */][ /* Slice */] _wicBitmaps;
     private ResultDisposingTask<Bitmap>?[ /* Mip */][ /* Slice */] _bitmaps;
 
     private Size _sliceSpacing;
@@ -35,11 +34,11 @@ public sealed class TexBitmapSource : IBitmapSource {
             throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
 
         _texFile = texFile;
-        _wicBitmaps = new ResultDisposingTask<WicBitmapSource>[_texFile.Header.MipLevels][];
+        _wicBitmaps = new ResultDisposingTask<IComObject<IWICBitmapSource>>[_texFile.Header.MipLevels][];
         _bitmaps = new ResultDisposingTask<Bitmap>[_texFile.Header.MipLevels][];
         for (var i = 0; i < _texFile.Header.MipLevels; i++) {
             var mipDepth = texFile.TextureBuffer.DepthOfMipmap(i);
-            _wicBitmaps[i] = new ResultDisposingTask<WicBitmapSource>?[mipDepth];
+            _wicBitmaps[i] = new ResultDisposingTask<IComObject<IWICBitmapSource>>?[mipDepth];
             _bitmaps[i] = new ResultDisposingTask<Bitmap>?[mipDepth];
         }
 
@@ -127,14 +126,14 @@ public sealed class TexBitmapSource : IBitmapSource {
         Mipmap = mipmap;
     }
 
-    public Task<WicBitmapSource> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice) {
+    public Task<IComObject<IWICBitmapSource>> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice) {
         if (_disposed)
             throw new ObjectDisposedException(nameof(TexBitmapSource));
         if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         return (_wicBitmaps[mipmap][slice] ??= new(Task.Run(
             () => {
-                WicBitmapSource? wb = null;
+                IComObject<IWICBitmapSource>? wb = null;
                 try {
                     wb = _texFile.ToWicBitmap(mipmap, slice);
                     _cancellationTokenSource.Token.ThrowIfCancellationRequested();

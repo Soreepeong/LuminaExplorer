@@ -7,14 +7,14 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using DirectN;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 using LuminaExplorer.Core.Util;
-using WicNet;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 
 public static class BitmapSourceExtensions {
-    public static Task<WicBitmapSource> GetWicBitmapSourceAsync(this IBitmapSource source, GridLayoutCell cell) =>
+    public static Task<IComObject<IWICBitmapSource>> GetWicBitmapSourceAsync(this IBitmapSource source, GridLayoutCell cell) =>
         source.GetWicBitmapSourceAsync(cell.ImageIndex, cell.Mipmap, cell.Slice);
 
     public static bool HasWicBitmapSource(this IBitmapSource source, GridLayoutCell cell) =>
@@ -192,9 +192,9 @@ public static class BitmapSourceExtensions {
 
     [StructLayout(LayoutKind.Sequential)]
     public struct CieXyzTriple {
-        public DirectN.CIEXYZ ciexyzRed;
-        public DirectN.CIEXYZ ciexyzGreen;
-        public DirectN.CIEXYZ ciexyzBlue;
+        public tagCIEXYZ ciexyzRed;
+        public tagCIEXYZ ciexyzGreen;
+        public tagCIEXYZ ciexyzBlue;
     }
 
     [StructLayout(LayoutKind.Sequential)]

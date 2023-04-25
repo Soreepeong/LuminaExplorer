@@ -7,19 +7,24 @@ using DirectN;
 using Lumina.Data.Files;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.Util.DdsStructs;
-using WicNet;
 
 namespace LuminaExplorer.Controls.Util;
 
 public static class WicNetExtensions {
-    public static WicBitmapSource ToWicBitmap(this TexFile texFile, int mipIndex, int slice) {
+    private static readonly Lazy<IComObject<IWICImagingFactory>> WicFactoryLazy = new(() =>
+        new ComObject<IWICImagingFactory>((IWICImagingFactory)new WicImagingFactory()));
+
+    public static IComObject<IWICImagingFactory> WicFactory => WicFactoryLazy.Value;
+
+    public static IComObject<IWICBitmapSource> ToWicBitmap(this TexFile texFile, int mipIndex, int slice) {
         if (texFile.Header.Format is
             TexFile.TextureFormat.BC1 or
             TexFile.TextureFormat.BC2 or
             TexFile.TextureFormat.BC3) {
-            using var decoder = WICImagingFactory.CreateDecoderFromStream(
+            
+            using var decoder = WicFactory.Object.CreateDecoderFromStream(
                 new DdsFile(Path.GetFileName(texFile.FilePath.Path), texFile).CreateStream(),
-                WicImagingComponent.CLSID_WICDdsDecoder);
+                WICConstants.CLSID_WICDdsDecoder);
             using var ddsDecoder = decoder.AsComObject<IWICDdsDecoder>();
 
             ddsDecoder.Object.GetFrame(0, (uint) mipIndex, (uint) slice, out var pFrame).ThrowOnError();
@@ -57,7 +62,7 @@ public static class WicNetExtensions {
     }
 
     public static bool TryToGdipBitmap(
-        this WicBitmapSource wicBitmap,
+        this IComObject<IWICBitmapSource> wicBitmap,
         [MaybeNullWhen(false)] out Bitmap b,
         [MaybeNullWhen(true)] out Exception exception) {
         b = null!;

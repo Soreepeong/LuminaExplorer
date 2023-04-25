@@ -3,9 +3,9 @@ using System.Drawing;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using DirectN;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 using LuminaExplorer.Core.Util.DdsStructs;
-using WicNet;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 
@@ -33,7 +33,7 @@ public interface IBitmapSource : IDisposable, IAsyncDisposable {
 
     public void UpdateSelection(int imageIndex, int mipmap);
 
-    public Task<WicBitmapSource> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice);
+    public Task<IComObject<IWICBitmapSource>> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice);
 
     public bool HasWicBitmapSource(int imageIndex, int mipmap, int slice);
 

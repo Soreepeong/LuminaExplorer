@@ -1,17 +1,17 @@
 ﻿using System.Drawing;
-using Silk.NET.Maths;
+using DirectN;
 
 namespace LuminaExplorer.Controls.Util;
 
 public static class SilkExtensions {
-    public static Box2D<float> ToSilkFloat(this System.Drawing.Rectangle rectangle) =>
+    public static D2D_RECT_F ToSilkFloat(this Rectangle rectangle) =>
         new(
             rectangle.Left,
             rectangle.Top,
             rectangle.Right,
             rectangle.Bottom);
 
-    public static Box2D<float> ToSilkFloat(this RectangleF rectangle) =>
+    public static D2D_RECT_F ToSilkFloat(this RectangleF rectangle) =>
         new(
             rectangle.Left,
             rectangle.Top,

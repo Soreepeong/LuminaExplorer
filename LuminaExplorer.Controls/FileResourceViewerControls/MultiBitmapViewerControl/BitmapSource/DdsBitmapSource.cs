@@ -9,7 +9,6 @@ using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerContro
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.Util.DdsStructs;
-using WicNet;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 
@@ -17,7 +16,7 @@ public sealed class DdsBitmapSource : IBitmapSource {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly bool _isCube;
     private DdsFile _ddsFile;
-    private ResultDisposingTask<WicBitmapSource>?[ /* Image */][ /* Mip */][ /* Slice */] _wicBitmaps;
+    private ResultDisposingTask<IComObject<IWICBitmapSource>>?[ /* Image */][ /* Mip */][ /* Slice */] _wicBitmaps;
     private ResultDisposingTask<Bitmap>?[ /* Image */][ /* Mip */][ /* Slice */] _bitmaps;
 
     private Size _sliceSpacing;
@@ -37,14 +36,14 @@ public sealed class DdsBitmapSource : IBitmapSource {
         if (mipmap < 0 || mipmap >= numMips)
             throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
 
-        _wicBitmaps = new ResultDisposingTask<WicBitmapSource>[ImageCount][][];
+        _wicBitmaps = new ResultDisposingTask<IComObject<IWICBitmapSource>>[ImageCount][][];
         _bitmaps = new ResultDisposingTask<Bitmap>[ImageCount][][];
         for (var image = 0; image < ImageCount; image++) {
-            var imageWicBitmaps = _wicBitmaps[image] = new ResultDisposingTask<WicBitmapSource>?[numMips][];
+            var imageWicBitmaps = _wicBitmaps[image] = new ResultDisposingTask<IComObject<IWICBitmapSource>>?[numMips][];
             var imageBitmaps = _bitmaps[image] = new ResultDisposingTask<Bitmap>?[numMips][];
             for (var mip = 0; mip < numMips; mip++) {
                 var mipDepth = Math.Max(1, baseDepth >> mip);
-                imageWicBitmaps[mip] = new ResultDisposingTask<WicBitmapSource>?[mipDepth];
+                imageWicBitmaps[mip] = new ResultDisposingTask<IComObject<IWICBitmapSource>>?[mipDepth];
                 imageBitmaps[mip] = new ResultDisposingTask<Bitmap>?[mipDepth];
             }
         }
@@ -145,7 +144,7 @@ public sealed class DdsBitmapSource : IBitmapSource {
         LayoutChanged?.Invoke();
     }
 
-    public Task<WicBitmapSource> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice) {
+    public Task<IComObject<IWICBitmapSource>> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice) {
         if (_disposed)
             throw new ObjectDisposedException(nameof(TexBitmapSource));
         if (imageIndex < 0 || imageIndex >= ImageCount)
@@ -154,7 +153,7 @@ public sealed class DdsBitmapSource : IBitmapSource {
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         return (_wicBitmaps[imageIndex][mipmap][slice] ??= new(Task.Run(
             () => {
-                WicBitmapSource? wb = null;
+                IComObject<IWICBitmapSource>? wb = null;
                 try {
                     wb = _ddsFile.ToWicBitmap(mipmap, slice);
                     _cancellationTokenSource.Token.ThrowIfCancellationRequested();

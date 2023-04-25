@@ -1,63 +1,36 @@
 using System;
 using System.Linq;
-using System.Reflection;
-using System.Runtime.InteropServices;
-using Silk.NET.Core.Contexts;
-using Silk.NET.Core.Native;
-using Silk.NET.Direct2D;
-using Silk.NET.Direct3D11;
-using Silk.NET.DirectWrite;
-using Silk.NET.DXGI;
-using IDWriteFactory = Silk.NET.DirectWrite.IDWriteFactory;
+using DirectN;
+using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Controls.Util;
 
-public abstract unsafe class BaseD2DRenderer : IDisposable {
+public abstract class BaseD2DRenderer : IDisposable {
     private static Exception? _apiInitializationException;
 
-    private static DXGI? _dxgiApi;
-    private static D3D11? _d3d11Api;
-    private static D2D? _d2dApi;
-    private static DWrite? _dwriteApi;
+    private static IComObject<ID2D1Factory>? _pD2D1Factory;
+    private static IComObject<IDWriteFactory>? _pDWriteFactory;
+    private static IComObject<IDXGIFactory1>? _pDxgiFactory;
 
-    private static ID2D1Factory* _pD2D1Factory;
-    private static IDWriteFactory* _pDWriteFactory;
-    private static IDXGIFactory* _pDxgiFactory;
-
-    private static ID3D11Device* _pSharedD3D11Device;
+    private static IComObject<ID3D11Device>? _pSharedD3D11Device;
 
     protected static void TryInitializeApis() {
         if (_apiInitializationException is not null)
             throw _apiInitializationException;
 
         try {
-            _d2dApi = D2D.GetApi();
-            _d3d11Api = D3D11.GetApi(new NullNativeWindowSource());
-            _dxgiApi = DXGI.GetApi(new NullNativeWindowSource());
-            _dwriteApi = DWrite.GetApi();
+            _pDxgiFactory = DXGIFunctions.CreateDXGIFactory1<IDXGIFactory1>();
+            _pD2D1Factory = D2D1Functions.D2D1CreateFactory<ID2D1Factory>(
+                D2D1_FACTORY_TYPE.D2D1_FACTORY_TYPE_SINGLE_THREADED);
+            _pDWriteFactory = DWriteFunctions.DWriteCreateFactory<IDWriteFactory>(
+                DWRITE_FACTORY_TYPE.DWRITE_FACTORY_TYPE_ISOLATED);
 
-            fixed (void* ppFactory = &_pDxgiFactory)
-            fixed (Guid* g = &IDXGIFactory.Guid)
-                ThrowH(Dxgi.CreateDXGIFactory(g, (void**) ppFactory));
-
-            fixed (void* ppFactory = &_pD2D1Factory)
-            fixed (Guid* g = &ID2D1Factory.Guid) {
-                var fo = new FactoryOptions();
-                ThrowH(D2D.D2D1CreateFactory(
-                    Silk.NET.Direct2D.FactoryType.SingleThreaded, g, &fo, (void**) ppFactory));
-            }
-
-            fixed (void* ppFactory = &_pDWriteFactory)
-            fixed (Guid* g = &IDWriteFactory.Guid) {
-                ThrowH(_dwriteApi.DWriteCreateFactory(
-                    Silk.NET.DirectWrite.FactoryType.Isolated, g, (IUnknown**) ppFactory));
-            }
-
+            using var anyAdapter = CreateAnyAvailableDxgiAdapter();
             Direct3DDeviceBuilder
                 .DisposeOnException()
-                .WithAdapterTakeOwnership(GetAnyAvailableDxgiAdapter())
-                .WithFlagAdd(CreateDeviceFlag.Debug)
-                .WithFlagAdd(CreateDeviceFlag.BgraSupport)
+                .WithAdapter(anyAdapter)
+                .WithFlagAdd(D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_DEBUG)
+                .WithFlagAdd(D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_BGRA_SUPPORT)
                 .Create()
                 .TakeDevice(out _pSharedD3D11Device)
                 .Dispose();
@@ -78,133 +51,41 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
         Dispose(false);
     }
 
-    protected static DXGI Dxgi => _dxgiApi ?? throw InitializationException;
-    protected static D3D11 D3D11 => _d3d11Api ?? throw InitializationException;
-    protected static D2D D2D => _d2dApi ?? throw InitializationException;
-    protected static DWrite DWrite => _dwriteApi ?? throw InitializationException;
+    protected static IComObject<IDXGIFactory1> DxgiFactory => _pDxgiFactory ?? throw InitializationException;
 
-    protected static IDXGIFactory* DxgiFactory => _pD2D1Factory is not null
-        ? _pDxgiFactory
-        : throw InitializationException;
+    protected static IComObject<ID2D1Factory> D2DFactory => _pD2D1Factory ?? throw InitializationException;
 
-    protected static ID2D1Factory* D2DFactory => _pD2D1Factory is not null
-        ? _pD2D1Factory
-        : throw InitializationException;
+    protected static IComObject<IDWriteFactory> DWriteFactory => _pDWriteFactory ?? throw InitializationException;
 
-    protected static IDWriteFactory* DWriteFactory => _pDWriteFactory is not null
-        ? _pDWriteFactory
-        : throw InitializationException;
-
-    protected static ID3D11Device* SharedD3D11Device => _pSharedD3D11Device is not null
-        ? _pSharedD3D11Device
-        : throw InitializationException;
+    protected static IComObject<ID3D11Device> SharedD3D11Device => _pSharedD3D11Device ?? throw InitializationException;
 
     private static Exception InitializationException => _apiInitializationException ?? new Exception("Uninitialized");
 
-    protected static IDXGIAdapter* GetAnyAvailableDxgiAdapter() {
-        IDXGIAdapter* pAdapter = null;
-        IDXGIFactory1* pFactory1 = null;
-        IDXGIAdapter1* pAdapter1 = null;
-        IDXGIFactory4* pFactory4 = null;
-        try {
-            if (DxgiFactory->EnumAdapters(0u, &pAdapter) >= 0)
-                return pAdapter;
+    protected static IComObject<IDXGIAdapter> CreateAnyAvailableDxgiAdapter() {
+        if (DxgiFactory.EnumAdapters1<IDXGIAdapter1>().FirstOrDefault() is { } a)
+            return a;
 
-            fixed (Guid* g = &IDXGIFactory1.Guid)
-                ThrowH(Dxgi.CreateDXGIFactory(g, (void**) &pFactory1));
-
-            ThrowH(pFactory1->EnumAdapters1(0u, &pAdapter1));
-
-            fixed (Guid* g = &IDXGIAdapter1.Guid)
-                if (pAdapter1->QueryInterface(g, (void**) &pAdapter) >= 0)
-                    return pAdapter;
-
-            fixed (Guid* g = &IDXGIFactory4.Guid)
-                ThrowH(DxgiFactory->QueryInterface(g, (void**) &pFactory4));
-
-            fixed (Guid* g = &IDXGIAdapter.Guid)
-                ThrowH(pFactory4->EnumWarpAdapter(g, (void**) &pAdapter));
-
-            return pAdapter;
-        } finally {
-            SafeRelease(ref pFactory4);
-            SafeRelease(ref pAdapter1);
-            SafeRelease(ref pFactory1);
-        }
-    }
-
-    protected static void ThrowH(int hresult) => Marshal.ThrowExceptionForHR(hresult);
-
-    protected static void SafeRelease<T>(ref T* u) where T : unmanaged {
-        if (u is not null)
-            ((IUnknown*) u)->Release();
-        u = null;
-    }
-
-    protected static void SafeReleaseArray<T>(ref T*[]?[]?[]? array) where T : unmanaged {
-        if (array is null)
-            return;
-        for (var i = 0; i < array.Length; i++)
-            SafeReleaseArray(ref array[i]);
-        array = null;
-    }
-
-    protected static void SafeReleaseArray<T>(ref T*[]?[]? array) where T : unmanaged {
-        if (array is null)
-            return;
-        for (var i = 0; i < array.Length; i++)
-            SafeReleaseArray(ref array[i]);
-        array = null;
-    }
-
-    protected static void SafeReleaseArray<T>(ref T*[]? array) where T : unmanaged {
-        if (array is null)
-            return;
-        for (var i = 0; i < array.Length; i++)
-            SafeRelease(ref array[i]);
-        array = null;
-    }
-
-    protected static void SafeReleaseArray<T>(ref ComPtr<T>[]?[]?[]? array) where T : unmanaged , IComVtbl<T>{
-        if (array is null)
-            return;
-        for (var i = 0; i < array.Length; i++)
-            SafeReleaseArray(ref array[i]);
-        array = null;
-    }
-
-    protected static void SafeReleaseArray<T>(ref ComPtr<T>[]?[]? array) where T : unmanaged , IComVtbl<T>{
-        if (array is null)
-            return;
-        for (var i = 0; i < array.Length; i++)
-            SafeReleaseArray(ref array[i]);
-        array = null;
-    }
-
-    protected static void SafeReleaseArray<T>(ref ComPtr<T>[]? array) where T : unmanaged, IComVtbl<T> {
-        if (array is null)
-            return;
-        for (var i = 0; i < array.Length; i++)
-            array[i].Release();
-        array = null;
+        using var pFactory4 = new ComObject<IDXGIFactory4>(DxgiFactory.As<IDXGIFactory4>());
+        pFactory4.Object.EnumWarpAdapter(typeof(IDXGIAdapter1).GUID, out var adapter).ThrowOnError();
+        return new ComObject<IDXGIAdapter1>((IDXGIAdapter1) adapter);
     }
 
     protected sealed class Direct3DDeviceBuilder : IDisposable {
         private readonly bool _disposeOnException;
 
-        private D3DFeatureLevel _minimumFeatureLevel = D3DFeatureLevel.Level91;
-        private D3DDriverType _driverType;
-        private CreateDeviceFlag _flags;
+        private D3D_FEATURE_LEVEL _minimumFeatureLevel = D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_9_1;
+        private D3D_DRIVER_TYPE _driverType = D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_UNKNOWN;
+        private D3D11_CREATE_DEVICE_FLAG _flags;
 
-        // in, refcounted
-        private IDXGIAdapter* _pAdapter;
+        // in, no ownership
+        private IComObject<IDXGIAdapter>? _pAdapter;
 
         // out
-        private D3DFeatureLevel _obtainedFeatureLevel = 0;
+        private D3D_FEATURE_LEVEL _obtainedFeatureLevel = 0;
 
         // out, refcounted
-        private ID3D11Device* _pDevice;
-        private ID3D11DeviceContext* _pContext;
+        private IComObject<ID3D11Device>? _pDevice;
+        private IComObject<ID3D11DeviceContext>? _pContext;
 
         private Direct3DDeviceBuilder(bool disposeOnException) {
             _disposeOnException = disposeOnException;
@@ -216,21 +97,20 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
         public void Dispose() => Clear();
 
         public Direct3DDeviceBuilder Clear() {
-            SafeRelease(ref _pAdapter);
-            SafeRelease(ref _pDevice);
-            SafeRelease(ref _pContext);
+            SafeDispose.One(ref _pDevice);
+            SafeDispose.One(ref _pContext);
             _obtainedFeatureLevel = 0;
             return this;
         }
 
-        public Direct3DDeviceBuilder WithMinimumFeatureLevel(D3DFeatureLevel minimumFeatureLevel) {
+        public Direct3DDeviceBuilder WithMinimumFeatureLevel(D3D_FEATURE_LEVEL minimumFeatureLevel) {
             _minimumFeatureLevel = minimumFeatureLevel;
             return this;
         }
 
-        public Direct3DDeviceBuilder WithDriverType(D3DDriverType driverType) {
+        public Direct3DDeviceBuilder WithDriverType(D3D_DRIVER_TYPE driverType) {
             try {
-                SafeRelease(ref _pAdapter);
+                _pAdapter = null;
                 _driverType = driverType;
                 return this;
             } catch (Exception) {
@@ -240,44 +120,23 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
             }
         }
 
-        public Direct3DDeviceBuilder WithAdapterTakeOwnership(IDXGIAdapter* pAdapter) {
-            try {
-                SafeRelease(ref _pAdapter);
-                _driverType = D3DDriverType.Unknown;
-                _pAdapter = pAdapter;
-                return this;
-            } catch (Exception) {
-                if (_disposeOnException)
-                    Dispose();
-                throw;
-            }
+        public Direct3DDeviceBuilder WithAdapter(IComObject<IDXGIAdapter> pAdapter) {
+            _pAdapter = pAdapter;
+            _driverType = D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_UNKNOWN;
+            return this;
         }
 
-        public Direct3DDeviceBuilder WithAdapterCopy(IDXGIAdapter* pAdapter) {
-            try {
-                SafeRelease(ref _pAdapter);
-                _driverType = D3DDriverType.Unknown;
-                _pAdapter = pAdapter;
-                _pAdapter->AddRef();
-                return this;
-            } catch (Exception) {
-                if (_disposeOnException)
-                    Dispose();
-                throw;
-            }
-        }
-
-        public Direct3DDeviceBuilder WithFlagReplace(CreateDeviceFlag flags) {
+        public Direct3DDeviceBuilder WithFlagReplace(D3D11_CREATE_DEVICE_FLAG flags) {
             _flags = flags;
             return this;
         }
 
-        public Direct3DDeviceBuilder WithFlagAdd(CreateDeviceFlag flags) {
+        public Direct3DDeviceBuilder WithFlagAdd(D3D11_CREATE_DEVICE_FLAG flags) {
             _flags |= flags;
             return this;
         }
 
-        public Direct3DDeviceBuilder WithFlagRemove(CreateDeviceFlag flags) {
+        public Direct3DDeviceBuilder WithFlagRemove(D3D11_CREATE_DEVICE_FLAG flags) {
             _flags &= ~flags;
             return this;
         }
@@ -285,32 +144,30 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
         public Direct3DDeviceBuilder Create() {
             try {
                 var levels = new[] {
-                    D3DFeatureLevel.Level111,
-                    D3DFeatureLevel.Level110,
-                    D3DFeatureLevel.Level101,
-                    D3DFeatureLevel.Level100,
-                    D3DFeatureLevel.Level93,
-                    D3DFeatureLevel.Level92,
-                    D3DFeatureLevel.Level91,
+                    D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_11_1,
+                    D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_11_0,
+                    D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_10_1,
+                    D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_10_0,
+                    D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_9_3,
+                    D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_9_2,
+                    D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_9_1,
                 }.TakeWhile(x => x >= _minimumFeatureLevel).ToArray();
 
-                SafeRelease(ref _pDevice);
-                SafeRelease(ref _pContext);
-                fixed (ID3D11Device** ppD3dDevice = &_pDevice)
-                fixed (D3DFeatureLevel* pFeatureLevel = &_obtainedFeatureLevel)
-                fixed (ID3D11DeviceContext** ppD3dContext = &_pContext)
-                fixed (D3DFeatureLevel* pLevels = levels)
-                    ThrowH(D3D11.CreateDevice(
-                        _pAdapter,
-                        _driverType,
-                        nint.Zero,
-                        (uint) _flags,
-                        pLevels,
-                        (uint) levels.Length,
-                        D3D11.SdkVersion,
-                        ppD3dDevice,
-                        pFeatureLevel,
-                        ppD3dContext));
+                SafeDispose.One(ref _pDevice);
+                SafeDispose.One(ref _pContext);
+                D3D11Functions.D3D11CreateDevice(
+                    _pAdapter?.Object,
+                    _driverType,
+                    nint.Zero,
+                    (uint) _flags,
+                    levels,
+                    (uint) levels.Length,
+                    D3D11Constants.D3D11_SDK_VERSION,
+                    out var device,
+                    out _obtainedFeatureLevel,
+                    out var context).ThrowOnError();
+                _pDevice = new ComObject<ID3D11Device>(device);
+                _pContext = new ComObject<ID3D11DeviceContext>(context);
                 return this;
             } catch (Exception) {
                 if (_disposeOnException)
@@ -319,12 +176,10 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
             }
         }
 
-        public Direct3DDeviceBuilder TakeDevice(out ID3D11Device* pDevice) {
+        public Direct3DDeviceBuilder TakeDevice(out IComObject<ID3D11Device> pDevice) {
             try {
-                if (_pDevice is null)
-                    throw new NullReferenceException();
-                pDevice = _pDevice;
-                pDevice->AddRef();
+                pDevice = _pDevice ?? throw new NullReferenceException();
+                _pDevice = null;
                 return this;
             } catch (Exception) {
                 if (_disposeOnException)
@@ -333,20 +188,10 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
             }
         }
 
-        public Direct3DDeviceBuilder TakeDevice<T>(out T* pDevice, Guid typeGuid = default) where T : unmanaged {
+        public Direct3DDeviceBuilder TakeContext(out IComObject<ID3D11DeviceContext> pContext) {
             try {
-                if (_pDevice is null)
-                    throw new NullReferenceException();
-                if (typeGuid == default) {
-                    if (typeof(T).GetField("Guid", BindingFlags.Public | BindingFlags.Static) is not { } fieldInfo)
-                        throw new ArgumentException($@"{typeof(T).Name} has no static field named Guid.", nameof(T));
-                    if (fieldInfo.GetValue(null) is not Guid guid || guid == default)
-                        throw new ArgumentException($@"{typeof(T).Name} has Guid field that is empty.", nameof(T));
-                    typeGuid = guid;
-                }
-
-                fixed (void* ppDevice = &pDevice)
-                    ThrowH(_pDevice->QueryInterface(&typeGuid, (void**) ppDevice));
+                pContext = _pContext ?? throw new NullReferenceException();
+                _pContext = null;
                 return this;
             } catch (Exception) {
                 if (_disposeOnException)
@@ -355,47 +200,12 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
             }
         }
 
-        public Direct3DDeviceBuilder TakeContext(out ID3D11DeviceContext* pContext) {
-            try {
-                if (_pDevice is null)
-                    throw new NullReferenceException();
-                pContext = _pContext;
-                pContext->AddRef();
-                return this;
-            } catch (Exception) {
-                if (_disposeOnException)
-                    Dispose();
-                throw;
-            }
-        }
-
-        public Direct3DDeviceBuilder TakeContext<T>(out T* pContext, Guid typeGuid = default) where T : unmanaged {
-            try {
-                if (_pContext is null)
-                    throw new NullReferenceException();
-                if (typeGuid == default) {
-                    if (typeof(T).GetField("Guid", BindingFlags.Public | BindingFlags.Static) is not { } fieldInfo)
-                        throw new ArgumentException($@"{typeof(T).Name} has no static field named Guid.", nameof(T));
-                    if (fieldInfo.GetValue(null) is not Guid guid || guid == default)
-                        throw new ArgumentException($@"{typeof(T).Name} has Guid field that is empty.", nameof(T));
-                    typeGuid = guid;
-                }
-
-                fixed (void* ppContext = &pContext)
-                    ThrowH(_pContext->QueryInterface(&typeGuid, (void**) ppContext));
-                return this;
-            } catch (Exception) {
-                if (_disposeOnException)
-                    Dispose();
-                throw;
-            }
-        }
-
-        public Direct3DDeviceBuilder TakeDeviceLevel(out D3DFeatureLevel featureLevel) {
+        public Direct3DDeviceBuilder TakeDeviceLevel(out D3D_FEATURE_LEVEL featureLevel) {
             try {
                 if (_obtainedFeatureLevel == 0)
                     throw new NullReferenceException();
                 featureLevel = _obtainedFeatureLevel;
+                _obtainedFeatureLevel = 0;
                 return this;
             } catch (Exception) {
                 if (_disposeOnException)
@@ -403,9 +213,5 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
                 throw;
             }
         }
-    }
-
-    private class NullNativeWindowSource : INativeWindowSource {
-        public INativeWindow? Native => null;
     }
 }
