@@ -8,8 +8,8 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.Util;
-using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.ObjectRepresentationWrapper;
+using LuminaExplorer.Core.VirtualFileSystem;
 
 namespace LuminaExplorer.App.Window.FileViewers;
 
@@ -25,10 +25,10 @@ public partial class TextureViewer : Form {
 
     private readonly CancellationTokenSource _closeToken = new();
 
-    private readonly List<Tuple<VirtualFile, bool>> _playlist = new();
-    private VirtualFolder? _folder;
+    private readonly List<Tuple<IVirtualFile, bool>> _playlist = new();
+    private IVirtualFolder? _folder;
     private int _indexInPlaylist;
-    private VirtualSqPackTree? _tree;
+    private IVirtualFileSystem? _tree;
 
     private bool _isFullScreen;
     private FormBorderStyle _nonFullScreenBorderStyle;
@@ -95,7 +95,7 @@ public partial class TextureViewer : Form {
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData) {
         switch (keyData) {
             case Keys.S | Keys.Control: {
-                if (TexViewer.CurrentBitmapSource is { } source && TexViewer.FileName is { } fileName) {
+                if (TexViewer.CurrentBitmapSource is { } source && TexViewer.BitmapSource?.FileName is { } fileName) {
                     using var sfd = new SaveFileDialog();
                     sfd.OverwritePrompt = true;
                     sfd.ClientGuid = TextureViewerSaveToGuid;
@@ -279,8 +279,8 @@ public partial class TextureViewer : Form {
         }
     }
 
-    public void SetFile(VirtualSqPackTree tree, VirtualFile file, TexFile texFile, VirtualFolder? folder,
-        IEnumerable<VirtualFile> playlist) {
+    public void SetFile(IVirtualFileSystem tree, IVirtualFile file, TexFile texFile, IVirtualFolder? folder,
+        IEnumerable<IVirtualFile> playlist) {
         _tree = tree;
         _folder = folder;
         _playlist.Clear();
@@ -392,7 +392,7 @@ public partial class TextureViewer : Form {
         _texFileLoadCancelTokenSource = null;
 
         if (texFile is not null) {
-            TexViewer.SetFile(tree, file, texFile);
+            TexViewer.SetFile(texFile);
             PropertyPanelGrid.SelectedObject = new WrapperTypeConverter().ConvertFrom(texFile);
             return;
         }
@@ -405,7 +405,7 @@ public partial class TextureViewer : Form {
                 r => {
                     if (!r.IsCompletedSuccessfully || index != _indexInPlaylist)
                         return;
-                    TexViewer.SetFile(tree, file, r.Result);
+                    TexViewer.SetFile(r.Result);
                     PropertyPanelGrid.SelectedObject = new WrapperTypeConverter().ConvertFrom(r.Result);
                 },
                 _texFileLoadCancelTokenSource.Token,

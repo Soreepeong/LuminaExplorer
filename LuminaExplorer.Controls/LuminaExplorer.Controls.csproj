@@ -12,7 +12,7 @@
     <Compile Update="CoreVirtualObjectListView.cs">
       <SubType>Component</SubType>
     </Compile>
-    <Compile Update="FileResourceViewerControls\ImageViewerControl\TexFileViewerControl.cs">
+    <Compile Update="FileResourceViewerControls\ImageViewerControl\MultiBitmapViewerControl.cs">
       <SubType>Component</SubType>
     </Compile>
     <Compile Update="FileResourceViewerControls\ImageViewerControl\TexRenderer\GdipTexRenderer.cs">

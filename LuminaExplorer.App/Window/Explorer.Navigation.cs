@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using LuminaExplorer.Core.LazySqPackTree;
+using LuminaExplorer.Core.VirtualFileSystem;
 
 namespace LuminaExplorer.App.Window;
 
@@ -13,11 +13,11 @@ public partial class Explorer {
         private readonly Explorer _explorer;
         private readonly ComboBox _txtPath;
 
-        private readonly List<VirtualFolder> _navigationHistory = new();
+        private readonly List<IVirtualFolder> _navigationHistory = new();
         private int _navigationHistoryPosition = -1;
-        private VirtualFolder? _currentFolder;
+        private IVirtualFolder? _currentFolder;
 
-        private VirtualSqPackTree? _tree;
+        private IVirtualFileSystem? _tree;
         private AppConfig _appConfig;
 
         public NavigationHandler(Explorer explorer) {
@@ -52,7 +52,7 @@ public partial class Explorer {
             Tree = null;
         }
 
-        public VirtualSqPackTree? Tree {
+        public IVirtualFileSystem? Tree {
             get => _tree;
             set {
                 if (_tree == value)
@@ -78,10 +78,10 @@ public partial class Explorer {
             set => _appConfig = value;
         }
 
-        public VirtualFolder? CurrentFolder => _currentFolder;
+        public IVirtualFolder? CurrentFolder => _currentFolder;
 
-        private void SqPackTree_FolderChanged_Navigation(VirtualFolder changedFolder,
-            VirtualFolder[]? previousPathFromRoot) {
+        private void SqPackTree_FolderChanged_Navigation(IVirtualFolder changedFolder,
+            IVirtualFolder[]? previousPathFromRoot) {
             _explorer.btnNavUp.Enabled = _currentFolder?.Parent is not null;
         }
 
@@ -239,7 +239,7 @@ public partial class Explorer {
                 fileListHandler.CurrentFolder = _currentFolder;
         }
 
-        public void NavigateTo(VirtualFolder folder, bool addToHistory) {
+        public void NavigateTo(IVirtualFolder folder, bool addToHistory) {
             if (_tree is not { } tree)
                 return;
 
@@ -277,12 +277,12 @@ public partial class Explorer {
             };
         }
 
-        public async Task<VirtualFolder> NavigateTo(params string[] pathComponents) {
+        public async Task<IVirtualFolder> NavigateTo(params string[] pathComponents) {
             if (_tree is null)
                 throw new InvalidOperationException();
 
             var folder = _tree.RootFolder;
-            foreach (var part in VirtualSqPackTree.NormalizePath(pathComponents).Split("/")) {
+            foreach (var part in _tree.NormalizePath(pathComponents).Split("/")) {
                 var folders = _tree.GetFolders(await _tree.AsFoldersResolved(folder));
                 var candidate = folders.FirstOrDefault(x =>
                     string.Compare(x.Name, part, StringComparison.InvariantCultureIgnoreCase) == 0);

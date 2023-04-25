@@ -9,7 +9,7 @@ using Lumina.Data;
 using Lumina.Data.Files;
 using Lumina.Data.Parsing.Tex.Buffers;
 using Lumina.Data.Structs;
-using LuminaExplorer.Core.LazySqPackTree.VirtualFileStream;
+using LuminaExplorer.Core.VirtualFileSystem.Sqpack.SqpackFileStream;
 
 namespace LuminaExplorer.Core.Util;
 
@@ -211,8 +211,8 @@ public static class BinaryReaderExtensions {
         var s = new LuminaBinaryReader(stream, platformId).WithSeek(0);
 
         var header = stream switch {
-            BufferedStream {UnderlyingStream: TextureVirtualFileStream utvfs} => utvfs.TexHeader,
-            TextureVirtualFileStream tvfs => tvfs.TexHeader,
+            BufferedStream {UnderlyingStream: TextureSqpackFileStream utvfs} => utvfs.TexHeader,
+            TextureSqpackFileStream tvfs => tvfs.TexHeader,
             _ => s.ReadStructure<TexFile.TexHeader>(),
         };
 

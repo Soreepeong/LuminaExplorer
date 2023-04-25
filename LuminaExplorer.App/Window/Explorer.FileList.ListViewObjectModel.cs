@@ -15,26 +15,27 @@ using BrightIdeasSoftware;
 using JetBrains.Annotations;
 using Lumina.Data.Structs;
 using LuminaExplorer.App.Utils;
-using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.Util;
+using LuminaExplorer.Core.VirtualFileSystem;
+using LuminaExplorer.Core.VirtualFileSystem.Sqpack;
 
 namespace LuminaExplorer.App.Window;
 
 public partial class Explorer {
     private class
         ExplorerListViewDataSource : AbstractVirtualListDataSource, IDisposable, IReadOnlyList<VirtualObject> {
-        private readonly VirtualSqPackTree _tree;
+        private readonly IVirtualFileSystem _tree;
 
         private VirtualObjectImageLoader _previewCache;
         private int _previewSize;
 
-        private VirtualFolder? _currentFolder;
-        private Task<VirtualFolder>? _fileNameResolver;
+        private IVirtualFolder? _currentFolder;
+        private Task<IVirtualFolder>? _fileNameResolver;
         private List<VirtualObject> _objects = new();
         private CancellationTokenSource _sorterCancel = new();
         private Task _sortTask = Task.CompletedTask;
 
-        public ExplorerListViewDataSource(VirtualObjectListView volv, VirtualSqPackTree tree, int numPreviewerThreads)
+        public ExplorerListViewDataSource(VirtualObjectListView volv, IVirtualFileSystem tree, int numPreviewerThreads)
             : base(volv) {
             _tree = tree;
             _previewCache = new(numPreviewerThreads);
@@ -83,7 +84,7 @@ public partial class Explorer {
             set => _previewCache.InterpolationMode = value;
         }
 
-        public VirtualFolder? CurrentFolder {
+        public IVirtualFolder? CurrentFolder {
             get => _currentFolder;
             set {
                 if (_currentFolder == value)
@@ -109,7 +110,7 @@ public partial class Explorer {
 
                             listView.SetObjects(_tree.GetFolders(_currentFolder)
                                 .Select(x => new VirtualObject(_tree, x))
-                                .Concat(_currentFolder.Files.Select(x => new VirtualObject(_tree, x))));
+                                .Concat(_tree.GetFiles(_currentFolder).Select(x => new VirtualObject(_tree, x))));
                         }, default,
                         TaskContinuationOptions.DenyChildAttach,
                         TaskScheduler.FromCurrentSynchronizationContext());
@@ -172,12 +173,12 @@ public partial class Explorer {
                             a.CompareByFolderOrFile(b) ??
                             (a.IsFolder
                                 ? a.CompareByName(b)
-                                : a.Lookup.OccupiedSpaceUnits.CompareTo(b.Lookup.OccupiedSpaceUnits))),
+                                : a.Lookup.OccupiedBytes.CompareTo(b.Lookup.OccupiedBytes))),
                         nameof(VirtualObject.ReservedSize) => (a, b) => orderMultiplier * (
                             a.CompareByFolderOrFile(b) ??
                             (a.IsFolder
                                 ? a.CompareByName(b)
-                                : a.Lookup.ReservedSpaceUnits.CompareTo(b.Lookup.ReservedSpaceUnits))),
+                                : a.Lookup.ReservedBytes.CompareTo(b.Lookup.ReservedBytes))),
                         _ => throw new FailFastException($"Invalid column AspectName {column.AspectName}"),
                     })
                     .WithTaskScheduler(TaskScheduler.Default)
@@ -266,24 +267,24 @@ public partial class Explorer {
         public bool TryGetThumbnail(VirtualObject virtualObject, [MaybeNullWhen(false)] out Bitmap bitmap) =>
             _previewCache.TryGetBitmap(virtualObject, out bitmap);
 
-        private void PreviewImageLoaded(VirtualObject arg1, VirtualFile arg2, Bitmap arg3) =>
+        private void PreviewImageLoaded(VirtualObject arg1, IVirtualFile arg2, Bitmap arg3) =>
             listView.BeginInvoke(() => listView.RefreshObject(arg1));
     }
 
     // ReSharper disable once ClassWithVirtualMembersNeverInherited.Local
     private sealed class VirtualObject : IDisposable, INotifyPropertyChanged {
-        private readonly VirtualFile? _file;
-        private readonly VirtualFolder? _folder;
+        private readonly IVirtualFile? _file;
+        private readonly IVirtualFolder? _folder;
         private readonly Lazy<uint> _hash2;
 
         private string _name;
-        private Lazy<VirtualFileLookup>? _lookup;
+        private Lazy<IVirtualFileLookup>? _lookup;
         private Lazy<string> _fullPath;
 
         public readonly PlatformId PlatformId;
 
-        public VirtualObject(VirtualSqPackTree tree, VirtualFile file) {
-            PlatformId = tree.PlatformId;
+        public VirtualObject(IVirtualFileSystem tree, IVirtualFile file) {
+            PlatformId = tree is SqpackFileSystem sqfs ? sqfs.PlatformId : PlatformId.Win32;
             _file = file;
             _name = file.Name;
             _fullPath = new(() => tree.GetFullPath(file));
@@ -291,8 +292,8 @@ public partial class Explorer {
             _hash2 = new(() => tree.GetFullPathHash(File));
         }
 
-        public VirtualObject(VirtualSqPackTree tree, VirtualFolder folder) {
-            PlatformId = tree.PlatformId;
+        public VirtualObject(IVirtualFileSystem tree, IVirtualFolder folder) {
+            PlatformId = tree is SqpackFileSystem sqfs ? sqfs.PlatformId : PlatformId.Win32;
             _folder = folder;
             _name = folder.Name.Trim('/');
             _fullPath = new(() => tree.GetFullPath(folder));
@@ -317,18 +318,18 @@ public partial class Explorer {
 
         public bool IsFolder => _lookup is null;
 
-        public VirtualFile File => _file ?? throw new InvalidOperationException();
+        public IVirtualFile File => _file ?? throw new InvalidOperationException();
 
-        public VirtualFolder Folder => !IsFolder || _folder is null ? throw new InvalidOperationException() : _folder;
+        public IVirtualFolder Folder => !IsFolder || _folder is null ? throw new InvalidOperationException() : _folder;
 
-        public VirtualFileLookup Lookup => _lookup?.Value ?? throw new InvalidOperationException();
+        public IVirtualFileLookup Lookup => _lookup?.Value ?? throw new InvalidOperationException();
 
-        public bool TryGetLookup([MaybeNullWhen(false)] out VirtualFileLookup lookup) {
+        public bool TryGetLookup([MaybeNullWhen(false)] out IVirtualFileLookup lookup) {
             lookup = _lookup?.Value;
             return lookup is not null;
         }
 
-        public uint Hash1Value => IsFolder ? Folder.FolderHash : File.FileHash;
+        public uint Hash1Value => IsFolder ? Folder.PathHash : File.NameHash;
 
         public uint Hash2Value => _hash2.Value;
 

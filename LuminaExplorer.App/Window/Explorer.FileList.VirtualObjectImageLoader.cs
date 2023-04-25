@@ -9,8 +9,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Lumina.Data.Files;
 using Lumina.Data.Structs;
-using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.Util;
+using LuminaExplorer.Core.VirtualFileSystem;
 
 namespace LuminaExplorer.App.Window;
 
@@ -22,8 +22,8 @@ public partial class Explorer {
         private readonly CancellationTokenSource _disposing = new();
         private readonly SemaphoreSlim _requestSemaphore = new(0, 1);
 
-        private readonly LruCache<VirtualFile, PendingItem> _previews = new(128, true);
-        private readonly Deque<Tuple<VirtualObject, VirtualFile>> _requestsOrdered = new();
+        private readonly LruCache<IVirtualFile, PendingItem> _previews = new(128, true);
+        private readonly Deque<Tuple<VirtualObject, IVirtualFile>> _requestsOrdered = new();
         private readonly HashSet<VirtualObject> _requests = new();
 
         private float _cropThresholdAspectRatioRatio = 2;
@@ -58,7 +58,7 @@ public partial class Explorer {
                 _previews.Dispose();
         }
 
-        public event Action<VirtualObject, VirtualFile, Bitmap>? ImageLoaded;
+        public event Action<VirtualObject, IVirtualFile, Bitmap>? ImageLoaded;
 
         public int Width {
             get => _width;
@@ -166,14 +166,14 @@ public partial class Explorer {
             while (!_disposing.IsCancellationRequested) {
                 int configurationGenerationOnTaking;
                 VirtualObject virtualObject;
-                VirtualFile virtualFile;
+                IVirtualFile vfile;
                 while (true) {
                     lock (_syncRoot) {
                         if (!_requestsOrdered.IsEmpty) {
-                            (virtualObject, virtualFile) = _requestsOrdered.RemoveBack();
+                            (virtualObject, vfile) = _requestsOrdered.RemoveBack();
                             configurationGenerationOnTaking = _configurationGeneration;
 
-                            if (!_previews.TryGet(virtualFile, out var previousItem))
+                            if (!_previews.TryGet(vfile, out var previousItem))
                                 break;
 
                             if (previousItem.Bitmap is null || previousItem.ShouldReload)
@@ -192,16 +192,16 @@ public partial class Explorer {
 
                 var item = new PendingItem();
                 Bitmap? targetBitmap = null;
-                VirtualFileLookup? lookup = null;
+                IVirtualFileLookup? lookup = null;
                 try {
-                    if (!virtualObject.TryGetLookup(out lookup) || lookup.File != virtualFile)
+                    if (!virtualObject.TryGetLookup(out lookup) || lookup.File != vfile)
                         continue;
 
                     var canBeTexture = false;
                     canBeTexture |= lookup.Type == FileType.Texture;
-                    canBeTexture |= virtualFile.Name.EndsWith(".atex", StringComparison.InvariantCultureIgnoreCase);
+                    canBeTexture |= vfile.Name.EndsWith(".atex", StringComparison.InvariantCultureIgnoreCase);
                     // may be an .atex file
-                    canBeTexture |= !virtualFile.NameResolved && lookup is {Type: FileType.Standard, Size: > 256};
+                    canBeTexture |= !vfile.NameResolved && lookup is {Type: FileType.Standard, Size: > 256};
 
                     if (!canBeTexture)
                         continue;
@@ -283,17 +283,17 @@ public partial class Explorer {
                                 if (item.TaskStatus == TaskStatus.Created)
                                     item.CompletionSource.SetResult(null);
                                 else
-                                    _previews.Add(virtualFile, item);
+                                    _previews.Add(vfile, item);
                                 if (item.Bitmap is { } b)
-                                    ImageLoaded?.Invoke(virtualObject, virtualFile, b);
+                                    ImageLoaded?.Invoke(virtualObject, vfile, b);
 
                             } else {
                                 item.Bitmap?.Dispose();
 
                                 // if the object still points to a same file, queue the task again.
-                                if (virtualObject.File == virtualFile) {
+                                if (virtualObject.File == vfile) {
                                     _requests.Add(virtualObject);
-                                    _requestsOrdered.Add(Tuple.Create(virtualObject, virtualFile));
+                                    _requestsOrdered.Add(Tuple.Create(virtualObject, vfile));
                                 }
                             }
                         } else {

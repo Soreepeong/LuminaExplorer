@@ -5,8 +5,8 @@ using System.Threading.Tasks;
 using Lumina.Data;
 using Lumina.Data.Files;
 using LuminaExplorer.App.Utils;
-using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.ObjectRepresentationWrapper;
+using LuminaExplorer.Core.VirtualFileSystem;
 
 namespace LuminaExplorer.App.Window;
 
@@ -14,7 +14,7 @@ public partial class Explorer {
     private sealed class PreviewHandler : IDisposable {
         private readonly Explorer _explorer;
 
-        private VirtualFile? _previewingFile;
+        private IVirtualFile? _previewingFile;
         private FileResource? _previewingFileResource;
         private CancellationTokenSource? _previewCancellationTokenSource;
 
@@ -37,7 +37,7 @@ public partial class Explorer {
             _explorer.texPreview.ClearFile();
         }
 
-        public bool TryGetAvailableFileResource(VirtualFile file,
+        public bool TryGetAvailableFileResource(IVirtualFile file,
             [MaybeNullWhen(false)] out FileResource fileResource) {
             fileResource = null!;
             if (file != _previewingFile || _previewingFileResource is null)
@@ -47,7 +47,7 @@ public partial class Explorer {
             return true;
         }
 
-        public void PreviewFile(VirtualFile file) {
+        public void PreviewFile(IVirtualFile file) {
             if (_previewingFile == file)
                 return;
 
@@ -75,7 +75,7 @@ public partial class Explorer {
                         _explorer.ppgPreview.SelectedObject = new WrapperTypeConverter().ConvertFrom(fr.Result);
                         _explorer.hbxPreview.ByteProvider = new FileResourceByteProvider(fr.Result);
                         if (fr.Result is TexFile tf)
-                            _explorer.texPreview.SetFile(tree2, file, tf);
+                            _explorer.texPreview.SetFile(tf);
                         else {
                             _explorer.texPreview.LoadingFileNameWhenEmpty = null;
                             _explorer.texPreview.ClearFile();

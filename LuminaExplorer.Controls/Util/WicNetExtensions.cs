@@ -2,10 +2,11 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.IO;
 using DirectN;
 using Lumina.Data.Files;
 using LuminaExplorer.Core.Util;
-using LuminaExplorer.Core.Util.TexToDds;
+using LuminaExplorer.Core.Util.DdsStructs;
 using WicNet;
 
 namespace LuminaExplorer.Controls.Util;
@@ -17,7 +18,7 @@ public static class WicNetExtensions {
             TexFile.TextureFormat.BC2 or
             TexFile.TextureFormat.BC3) {
             using var decoder = WICImagingFactory.CreateDecoderFromStream(
-                new DdsFile(texFile).CreateStream(),
+                new DdsFile(Path.GetFileName(texFile.FilePath.Path), texFile).CreateStream(),
                 WicImagingComponent.CLSID_WICDdsDecoder);
             using var ddsDecoder = decoder.AsComObject<IWICDdsDecoder>();
 
@@ -35,7 +36,7 @@ public static class WicNetExtensions {
         var bpp = 1 << (
             (int) (format & TexFile.TextureFormat.BppMask) >>
             (int) TexFile.TextureFormat.BppShift);
-        
+
         return new(WICImagingFactory.CreateBitmapFromMemory(
             texBuf.Width,
             texBuf.Height,
@@ -55,7 +56,10 @@ public static class WicNetExtensions {
             texBuf.RawData).Object);
     }
 
-    public static bool TryToGdipBitmap(this WicBitmapSource wicBitmap, [MaybeNullWhen(false)] out Bitmap b) {
+    public static bool TryToGdipBitmap(
+        this WicBitmapSource wicBitmap,
+        [MaybeNullWhen(false)] out Bitmap b,
+        [MaybeNullWhen(true)] out Exception exception) {
         b = null!;
         try {
             b = new(wicBitmap.Width, wicBitmap.Height, PixelFormat.Format32bppArgb);
@@ -66,10 +70,12 @@ public static class WicNetExtensions {
             wicBitmap.CopyPixels(bd.Height * bd.Stride, bd.Scan0, bd.Stride);
             // WICPixelFormat says it's "BGRA"; Imaging.PixelFormat says it's "ARGB"
             b.UnlockBits(bd);
+            exception = null;
             return true;
-        } catch (Exception) {
+        } catch (Exception e) {
             SafeDispose.One(ref b);
             b = null;
+            exception = e;
             return false;
         }
     }

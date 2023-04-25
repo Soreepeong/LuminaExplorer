@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Windows.Forms;
-using LuminaExplorer.Core.LazySqPackTree;
+using LuminaExplorer.Core.VirtualFileSystem;
 
 namespace LuminaExplorer.App.Window;
 
@@ -31,7 +31,7 @@ public partial class Explorer {
             _explorer.txtSearch.KeyUp -= txtSearch_KeyUp;
         }
         
-        public VirtualSqPackTree? Tree { get; set; }
+        public IVirtualFileSystem? Tree { get; set; }
 
         public AppConfig AppConfig { get; set; }
 
@@ -79,7 +79,7 @@ public partial class Explorer {
                     pendingObjects1.Add(vo);
             }
 
-            void ReportProgress(VirtualSqPackTree.SearchProgress progress) {
+            void ReportProgress(IVirtualFileSystem.SearchProgress progress) {
                 cancelSource.Token.ThrowIfCancellationRequested();
 
                 Debug.Print("{0:0.00}% {1:##.###} / {2:##.###}: {3}",

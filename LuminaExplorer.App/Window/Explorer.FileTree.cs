@@ -5,7 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using LuminaExplorer.App.Utils;
-using LuminaExplorer.Core.LazySqPackTree;
+using LuminaExplorer.Core.VirtualFileSystem;
 
 namespace LuminaExplorer.App.Window;
 
@@ -14,7 +14,7 @@ public partial class Explorer {
         private readonly Explorer _explorer;
         private readonly TreeView _treeView;
 
-        private VirtualSqPackTree? _tree;
+        private IVirtualFileSystem? _tree;
 
         public FileTreeHandler(Explorer explorer) {
             _explorer = explorer;
@@ -33,7 +33,7 @@ public partial class Explorer {
                 _treeView.Nodes[0].Expand();
                 _treeView.SelectedNode = _treeView.Nodes[0];
 
-                _tree.FolderChanged += VirtualFolderChanged;
+                _tree.FolderChanged += IVirtualFolderChanged;
             }
         }
 
@@ -44,14 +44,14 @@ public partial class Explorer {
             _treeView.AfterSelect -= AfterSelect;
         }
 
-        public VirtualSqPackTree? Tree {
+        public IVirtualFileSystem? Tree {
             get => _tree;
             set {
                 if (_tree == value)
                     return;
 
                 if (_tree is not null) {
-                    _tree.FolderChanged -= VirtualFolderChanged;
+                    _tree.FolderChanged -= IVirtualFolderChanged;
                     _treeView.Nodes.Clear();
                 }
 
@@ -62,13 +62,13 @@ public partial class Explorer {
                     _treeView.Nodes[0].Expand();
                     _treeView.SelectedNode = _treeView.Nodes[0];
 
-                    _tree.FolderChanged += VirtualFolderChanged;
+                    _tree.FolderChanged += IVirtualFolderChanged;
                 }
             }
         }
 
-        private void VirtualFolderChanged(VirtualFolder changedFolder,
-            VirtualFolder[]? previousPathFromRoot) {
+        private void IVirtualFolderChanged(IVirtualFolder changedFolder,
+            IVirtualFolder[]? previousPathFromRoot) {
             if (_tree is not { } tree)
                 return;
 
@@ -130,7 +130,7 @@ public partial class Explorer {
                 if (name == "./")
                     continue;
 
-                if (name == VirtualFolder.UpFolderKey) {
+                if (name == IVirtualFolder.UpFolderKey) {
                     node = node.Parent as FolderTreeNode ?? node;
                     continue;
                 }
@@ -194,16 +194,16 @@ public partial class Explorer {
         }
 
         public class FolderTreeNode : TreeNode {
-            public readonly VirtualFolder Folder;
+            public readonly IVirtualFolder Folder;
 
             private bool _populateTriggered;
 
-            public FolderTreeNode(VirtualSqPackTree tree) : this(tree.RootFolder, @"(root)", true) { }
+            public FolderTreeNode(IVirtualFileSystem tree) : this(tree.RootFolder, @"(root)", true) { }
 
-            public FolderTreeNode(VirtualSqPackTree tree, VirtualFolder folder)
-                : this(folder, folder.Name.Trim('/'), !tree.WillFolderNeverHaveSubfolders(folder)) { }
+            public FolderTreeNode(IVirtualFileSystem tree, IVirtualFolder folder)
+                : this(folder, folder.Name.Trim('/'), !tree.HasNoSubfolder(folder)) { }
 
-            private FolderTreeNode(VirtualFolder folder, string displayName, bool mayHaveChildren) {
+            private FolderTreeNode(IVirtualFolder folder, string displayName, bool mayHaveChildren) {
                 Text = displayName;
                 Folder = folder;
                 SelectedImageIndex = ImageIndex = 0;
@@ -211,7 +211,7 @@ public partial class Explorer {
                     Nodes.Add(new TreeNode(@"Expanding..."));
             }
 
-            public bool TryFindChildNode(VirtualFolder folder, [MaybeNullWhen(false)] out FolderTreeNode childNode) {
+            public bool TryFindChildNode(IVirtualFolder folder, [MaybeNullWhen(false)] out FolderTreeNode childNode) {
                 foreach (var node in Nodes) {
                     if (node is not FolderTreeNode n)
                         continue;

@@ -11,8 +11,8 @@ using Lumina.Data;
 using Lumina.Data.Files;
 using LuminaExplorer.App.Utils;
 using LuminaExplorer.App.Window.FileViewers;
-using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.Util;
+using LuminaExplorer.Core.VirtualFileSystem;
 
 namespace LuminaExplorer.App.Window;
 
@@ -27,7 +27,7 @@ public partial class Explorer {
         private readonly Icon? _fileIconLarge;
 
         private ExplorerListViewDataSource? _source;
-        private VirtualSqPackTree? _tree;
+        private IVirtualFileSystem? _tree;
         private AppConfig _appConfig;
 
         public FileListHandler(Explorer explorer) {
@@ -75,23 +75,23 @@ public partial class Explorer {
             _explorer.Resize += WindowResized;
 
             if (_tree is not null) {
-                _tree.FolderChanged += VirtualFolderChanged;
-                _tree.FileChanged += VirtualFileChanged;
+                _tree.FolderChanged += IVirtualFolderChanged;
+                _tree.FileChanged += IVirtualFileChanged;
             }
 
             _cboView.SelectedIndex = _appConfig.ListViewMode;
             _cboView.SelectedIndexChanged += cboView_SelectedIndexChanged;
         }
 
-        public VirtualSqPackTree? Tree {
+        public IVirtualFileSystem? Tree {
             get => _tree;
             set {
                 if (_tree == value)
                     return;
 
                 if (_tree is not null) {
-                    _tree.FolderChanged -= VirtualFolderChanged;
-                    _tree.FileChanged -= VirtualFileChanged;
+                    _tree.FolderChanged -= IVirtualFolderChanged;
+                    _tree.FileChanged -= IVirtualFileChanged;
                     SafeDispose.One(ref _source);
                     // cannot set to null, so replace it with an empty data source.
                     _listView.VirtualListDataSource = new AbstractVirtualListDataSource(_listView);
@@ -100,8 +100,8 @@ public partial class Explorer {
                 _tree = value;
 
                 if (_tree is not null) {
-                    _tree.FolderChanged += VirtualFolderChanged;
-                    _tree.FileChanged += VirtualFileChanged;
+                    _tree.FolderChanged += IVirtualFolderChanged;
+                    _tree.FileChanged += IVirtualFileChanged;
                     _listView.VirtualListDataSource = _source =
                         new(_listView, _tree, _appConfig.PreviewThumbnailerThreads) {
                             SortThreads = _appConfig.SortThreads,
@@ -147,7 +147,7 @@ public partial class Explorer {
             }
         }
 
-        public VirtualFolder? CurrentFolder {
+        public IVirtualFolder? CurrentFolder {
             get => _source?.CurrentFolder;
             set {
                 if (_source is not null)
@@ -191,7 +191,7 @@ public partial class Explorer {
 
         public void AddObjects(ICollection objects) => _listView.AddObjects(objects);
 
-        private void VirtualFileChanged(VirtualFile changedFile) {
+        private void IVirtualFileChanged(IVirtualFile changedFile) {
             if (_tree is not { } tree || _source is not { } source)
                 return;
 
@@ -204,8 +204,8 @@ public partial class Explorer {
             }
         }
 
-        private void VirtualFolderChanged(VirtualFolder changedFolder,
-            VirtualFolder[]? previousPathFromRoot) {
+        private void IVirtualFolderChanged(IVirtualFolder changedFolder,
+            IVirtualFolder[]? previousPathFromRoot) {
             if (_tree is not { } tree || _source is not { } source)
                 return;
 
@@ -321,7 +321,7 @@ public partial class Explorer {
 
         private void WindowResized(object? sender, EventArgs e) => RecalculateNumberOfPreviewsToCache();
 
-        public void ExecuteItems(List<VirtualFile> files, List<VirtualFolder> folders) {
+        public void ExecuteItems(List<IVirtualFile> files, List<IVirtualFolder> folders) {
             if (_listView.VirtualListDataSource is not ExplorerListViewDataSource source)
                 return;
 
@@ -368,8 +368,8 @@ public partial class Explorer {
         }
 
         // ReSharper disable once UnusedMember.Local
-        public List<VirtualFolder> GetSelectedFolders() {
-            var folders = new List<VirtualFolder>();
+        public List<IVirtualFolder> GetSelectedFolders() {
+            var folders = new List<IVirtualFolder>();
             if (_listView.VirtualListDataSource is not ExplorerListViewDataSource source)
                 return folders;
 
@@ -382,8 +382,8 @@ public partial class Explorer {
             return folders;
         }
 
-        public List<VirtualFile> GetSelectedFiles() {
-            var folders = new List<VirtualFile>();
+        public List<IVirtualFile> GetSelectedFiles() {
+            var folders = new List<IVirtualFile>();
             if (_listView.VirtualListDataSource is not ExplorerListViewDataSource source)
                 return folders;
 

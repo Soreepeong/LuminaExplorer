@@ -1,6 +1,6 @@
 ﻿using System.Drawing;
 using System.Windows.Forms;
-using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl;
+using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
 
 namespace LuminaExplorer.App.Window.FileViewers {
     partial class TextureViewer {
@@ -27,7 +27,7 @@ namespace LuminaExplorer.App.Window.FileViewers {
         /// the contents of this method with the code editor.
         /// </summary>
         private void InitializeComponent() {
-            TexViewer = new TexFileViewerControl();
+            TexViewer = new MultiBitmapViewerControl();
             PropertyPanel = new Panel();
             PropertyPanelGrid = new PropertyGrid();
             PropertyPanel.SuspendLayout();
@@ -83,7 +83,7 @@ namespace LuminaExplorer.App.Window.FileViewers {
 
         #endregion
 
-        private TexFileViewerControl TexViewer;
+        private MultiBitmapViewerControl TexViewer;
         private Panel PropertyPanel;
         private PropertyGrid PropertyPanelGrid;
     }

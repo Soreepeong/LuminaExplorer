@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Forms;
-using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.Util;
+using LuminaExplorer.Core.VirtualFileSystem;
 
 namespace LuminaExplorer.App.Window;
 
@@ -11,10 +11,10 @@ public partial class Explorer : Form {
     private NavigationHandler? _navigationHandler;
     private FileTreeHandler? _fileTreeHandler;
     private SearchHandler? _searchHandler;
-    private VirtualSqPackTree? _tree;
+    private IVirtualFileSystem? _tree;
     private AppConfig _appConfig;
 
-    public Explorer(AppConfig? appConfig = default, VirtualSqPackTree? tree = default) {
+    public Explorer(AppConfig? appConfig = default, IVirtualFileSystem? tree = default) {
         InitializeComponent();
 
         _appConfig = appConfig ?? new();
@@ -45,7 +45,7 @@ public partial class Explorer : Form {
         }
     }
 
-    public VirtualSqPackTree? Tree {
+    public IVirtualFileSystem? Tree {
         get => _tree;
         set {
             if (_tree == value)

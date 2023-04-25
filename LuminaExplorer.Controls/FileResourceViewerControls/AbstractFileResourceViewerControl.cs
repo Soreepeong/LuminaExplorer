@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Lumina.Data;
 using LuminaExplorer.Controls.Util;
-using LuminaExplorer.Core.LazySqPackTree;
+using LuminaExplorer.Core.VirtualFileSystem;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
@@ -12,12 +12,6 @@ public abstract class AbstractFileResourceViewerControl : Control {
     protected readonly TaskScheduler UiTaskScheduler = TaskScheduler.FromCurrentSynchronizationContext();
 
     public readonly MouseActivityTracker MouseActivity;
-
-    public VirtualSqPackTree? Tree { get; private set; }
-
-    public VirtualFile? File { get; private set; }
-
-    public FileResource? FileResourceUntyped { get; private set; }
 
     protected AbstractFileResourceViewerControl() {
         MouseActivity = new(this);
@@ -28,20 +22,6 @@ public abstract class AbstractFileResourceViewerControl : Control {
             MouseActivity.Dispose();
 
         base.Dispose(disposing);
-    }
-
-    public virtual void SetFile(VirtualSqPackTree tree, VirtualFile file, FileResource fileResource) {
-        Tree = tree;
-        File = file;
-        FileResourceUntyped = fileResource;
-        Text = file.Name;
-    }
-
-    public virtual void ClearFile(bool keepContentsDisplayed = false) {
-        Tree = null;
-        File = null;
-        FileResourceUntyped = null;
-        Text = "";
     }
 
     public override Size GetPreferredSize(Size proposedSize) => new(320, 240);

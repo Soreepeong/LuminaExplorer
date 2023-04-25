@@ -1,6 +1,6 @@
 ﻿using System.Drawing;
 using System.Windows.Forms;
-using LuminaExplorer.Controls.FileResourceViewerControls.ImageViewerControl;
+using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
 
 namespace LuminaExplorer.App.Window;
 
@@ -50,7 +50,7 @@ partial class Explorer {
         toolStripContainer1 = new ToolStripContainer();
         tspActions = new ToolStrip();
         cboView = new ToolStripComboBox();
-        texPreview = new TexFileViewerControl();
+        texPreview = new MultiBitmapViewerControl();
         menuStrip1.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize) splMain).BeginInit();
         splMain.Panel1.SuspendLayout();
@@ -495,5 +495,5 @@ partial class Explorer {
     private PropertyGrid ppgPreview;
     private TabPage tabPreviewRawBytes;
     private Be.Windows.Forms.HexBox hbxPreview;
-    private TexFileViewerControl texPreview;
+    private MultiBitmapViewerControl texPreview;
 }

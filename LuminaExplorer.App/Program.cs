@@ -5,8 +5,8 @@ using System.Reflection;
 using System.Text.Json;
 using System.Windows.Forms;
 using LuminaExplorer.App.Window;
-using LuminaExplorer.Core.LazySqPackTree;
 using LuminaExplorer.Core.SqPackPath;
+using LuminaExplorer.Core.VirtualFileSystem.Sqpack;
 
 namespace LuminaExplorer.App;
 
@@ -45,7 +45,7 @@ static class Program {
 
         var hashdb = new HashDatabase(hashCacheFile);
 
-        using var vsptree = new VirtualSqPackTree(hashdb, gameData);
+        using var vsptree = new SqpackFileSystem(hashdb, gameData);
         using var mainExplorer = new Explorer(appConfig, vsptree);
         
         try {
