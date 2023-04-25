@@ -4,6 +4,8 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using Lumina.Data;
 using Lumina.Data.Files;
+using LuminaExplorer.Core.Util.DdsStructs.PixelFormats;
+using ValueType = LuminaExplorer.Core.Util.DdsStructs.PixelFormats.ValueType;
 
 namespace LuminaExplorer.Core.Util.DdsStructs;
 
@@ -49,7 +51,7 @@ public class DdsFile {
         TexFile.TextureFormat.B5G5R5A1
     ) { }
 
-    public DdsFile(string name,TexFile tex, params TexFile.TextureFormat[] formatsToConvertToB8G8R8A8) {
+    public DdsFile(string name, TexFile tex, params TexFile.TextureFormat[] formatsToConvertToB8G8R8A8) {
         Name = name;
         var texFormat = tex.Header.Format;
         var texBuf = tex.TextureBuffer;
@@ -117,7 +119,7 @@ public class DdsFile {
             case TexFile.TextureFormat.BC7:
                 // https://learn.microsoft.com/en-us/windows/win32/direct3d11/texture-block-compression-in-direct3d-11
                 LegacyHeader.Header.PixelFormat.Flags = DdsPixelFormatFlags.FourCc;
-                LegacyHeader.Header.PixelFormat.FourCC = texFormat switch {
+                LegacyHeader.Header.PixelFormat.FourCc = texFormat switch {
                     TexFile.TextureFormat.BC1 => DdsFourCc.Bc1,
                     TexFile.TextureFormat.BC2 => DdsFourCc.Bc2,
                     TexFile.TextureFormat.BC3 => DdsFourCc.Bc3,
@@ -180,13 +182,13 @@ public class DdsFile {
                 break;
             default:
                 LegacyHeader.Header.PixelFormat.Flags = DdsPixelFormatFlags.FourCc;
-                LegacyHeader.Header.PixelFormat.FourCC = DdsFourCc.Dx10;
+                LegacyHeader.Header.PixelFormat.FourCc = DdsFourCc.Dx10;
                 break;
         }
 
         UseDxt10Header =
             LegacyHeader.Header.PixelFormat.Flags.HasFlag(DdsPixelFormatFlags.FourCc) &&
-            LegacyHeader.Header.PixelFormat.FourCC == DdsFourCc.Dx10;
+            LegacyHeader.Header.PixelFormat.FourCc == DdsFourCc.Dx10;
 
         _stream = new(
             Unsafe.SizeOf<DdsHeaderLegacy>() +
@@ -201,7 +203,7 @@ public class DdsFile {
 
         if (UseDxt10Header) {
             Dxt10Header = new() {
-                DxgiFormat = dxgiFormat,
+                DxgiFormat = (DxgiFormat) dxgiFormat,
                 ArraySize = 1,
                 MiscFlags2 = DdsHeaderDxt10MiscFlags2.AlphaModeStraight,
             };
@@ -226,7 +228,7 @@ public class DdsFile {
 
         _stream.Write(texBuf.RawData);
     }
-    
+
     public string Name { get; }
 
     public int DataOffset =>
@@ -236,8 +238,72 @@ public class DdsFile {
     public Stream CreateStream() => new MemoryStream(_stream.GetBuffer(), false);
 
     public DdsHeader Header => LegacyHeader.Header;
-    
-    public DdsPixelFormat PixelFormat => LegacyHeader.Header.PixelFormat;
 
     public ReadOnlySpan<byte> Data => new(_stream.GetBuffer(), DataOffset, _stream.GetBuffer().Length - DataOffset);
+
+    // https://learn.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-resources-data-conversion
+    public IPixelFormat PixelFormat {
+        get {
+            var pf = Header.PixelFormat;
+
+            if (!pf.Flags.HasFlag(DdsPixelFormatFlags.FourCc)) {
+                var alpha = new AlphaChannelDefinition();
+
+                if (pf.Flags.HasFlag(DdsPixelFormatFlags.AlphaPixels))
+                    alpha = AlphaChannelDefinition.FromMask(ValueType.Unorm, AlphaType.Straight, pf.ABitMask);
+
+                if (pf.Flags.HasFlag(DdsPixelFormatFlags.Rgb)) {
+                    var xbitmask =
+                        unchecked((1u << pf.RgbBitCount) - 1u) & ~(pf.RBitMask | pf.GBitMask | pf.BBitMask) &
+                        (pf.Flags.HasFlag(DdsPixelFormatFlags.AlphaPixels) ? ~pf.ABitMask : ~0u);
+                    return new RgbaxPixelFormat(
+                        r: ColorChannelDefinition.FromMask(ValueType.Unorm, pf.RBitMask),
+                        g: ColorChannelDefinition.FromMask(ValueType.Unorm, pf.GBitMask),
+                        b: ColorChannelDefinition.FromMask(ValueType.Unorm, pf.BBitMask),
+                        a: alpha,
+                        x1: ColorChannelDefinition.FromMask(ValueType.Typeless, xbitmask));
+                }
+
+                if (pf.Flags.HasFlag(DdsPixelFormatFlags.Yuv)) {
+                    var xbitmask =
+                        unchecked((1u << pf.RgbBitCount) - 1u) & ~(pf.RBitMask | pf.GBitMask | pf.BBitMask) &
+                        (pf.Flags.HasFlag(DdsPixelFormatFlags.AlphaPixels) ? ~pf.ABitMask : ~0u);
+                    return new YuvPixelFormat(
+                        y: ColorChannelDefinition.FromMask(ValueType.Unorm, pf.RBitMask),
+                        u: ColorChannelDefinition.FromMask(ValueType.Unorm, pf.GBitMask),
+                        v: ColorChannelDefinition.FromMask(ValueType.Unorm, pf.BBitMask),
+                        a: alpha,
+                        x: ColorChannelDefinition.FromMask(ValueType.Typeless, xbitmask));
+                }
+
+                if (pf.Flags.HasFlag(DdsPixelFormatFlags.Luminance)) {
+                    var xbitmask =
+                        unchecked((1u << pf.RgbBitCount) - 1u) & ~pf.RBitMask &
+                        (pf.Flags.HasFlag(DdsPixelFormatFlags.AlphaPixels) ? ~pf.ABitMask : ~0u);
+                    return new LuminancePixelFormat(
+                        l: ColorChannelDefinition.FromMask(ValueType.Unorm, pf.RBitMask),
+                        a: alpha,
+                        x: ColorChannelDefinition.FromMask(ValueType.Typeless, xbitmask));
+                }
+
+                if (pf.Flags.HasFlag(DdsPixelFormatFlags.Alpha)) {
+                    var xbitmask = unchecked((1u << pf.RgbBitCount) - 1u) & ~pf.ABitMask;
+                    return new RgbaxPixelFormat(
+                        a: alpha,
+                        x1: ColorChannelDefinition.FromMask(ValueType.Typeless, xbitmask));
+                }
+
+                return new UnknownPixelFormat();
+            }
+
+            var ipf = PixelFormatResolver.GetPixelFormat(pf.FourCc);
+            if (!Equals(ipf, UnknownPixelFormat.Instance))
+                return ipf;
+
+            if (pf.FourCc != DdsFourCc.Dx10 || !UseDxt10Header)
+                return UnknownPixelFormat.Instance;
+
+            return PixelFormatResolver.GetPixelFormat(Dxt10Header.DxgiFormat);
+        }
+    }
 }

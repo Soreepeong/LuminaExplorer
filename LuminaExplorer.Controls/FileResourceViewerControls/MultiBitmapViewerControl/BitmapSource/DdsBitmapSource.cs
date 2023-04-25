@@ -39,7 +39,8 @@ public sealed class DdsBitmapSource : IBitmapSource {
         _wicBitmaps = new ResultDisposingTask<IComObject<IWICBitmapSource>>[ImageCount][][];
         _bitmaps = new ResultDisposingTask<Bitmap>[ImageCount][][];
         for (var image = 0; image < ImageCount; image++) {
-            var imageWicBitmaps = _wicBitmaps[image] = new ResultDisposingTask<IComObject<IWICBitmapSource>>?[numMips][];
+            var imageWicBitmaps =
+                _wicBitmaps[image] = new ResultDisposingTask<IComObject<IWICBitmapSource>>?[numMips][];
             var imageBitmaps = _bitmaps[image] = new ResultDisposingTask<Bitmap>?[numMips][];
             for (var mip = 0; mip < numMips; mip++) {
                 var mipDepth = Math.Max(1, baseDepth >> mip);
@@ -156,10 +157,6 @@ public sealed class DdsBitmapSource : IBitmapSource {
                 IComObject<IWICBitmapSource>? wb = null;
                 try {
                     wb = _ddsFile.ToWicBitmap(mipmap, slice);
-                    _cancellationTokenSource.Token.ThrowIfCancellationRequested();
-                    wb.ConvertTo(
-                        WicPixelFormat.GUID_WICPixelFormat32bppPBGRA,
-                        paletteTranslate: WICBitmapPaletteType.WICBitmapPaletteTypeMedianCut);
                     return wb;
                 } catch (Exception) {
                     wb?.Dispose();
@@ -230,7 +227,9 @@ public sealed class DdsBitmapSource : IBitmapSource {
         return _ddsFile.Header.Flags.HasFlag(DdsHeaderFlags.Depth) ? _ddsFile.Header.Depth : 1;
     }
 
-    public void WriteTexFile(Stream stream) => stream.Write(_ddsFile.Data);
+    public void WriteTexFile(Stream stream) {
+        throw new NotImplementedException();
+    }
 
     public void WriteDdsFile(Stream stream) {
         using var ms = _ddsFile.CreateStream();
@@ -238,8 +237,7 @@ public sealed class DdsBitmapSource : IBitmapSource {
     }
 
     public void DescribeImage(StringBuilder sb) {
-        sb.AppendLine("TODO");
-        // TODO
+        sb.AppendLine("TODO"); // TODO
     }
 
     private void Relayout() {

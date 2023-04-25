@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <PackageReference Include="DirectNCore" Version="1.13.1" />
+    <PackageReference Include="BCnEncoder.Net" Version="2.1.0" />
     <PackageReference Include="Lumina" Version="3.10.2" />
     <PackageReference Include="ObjectListView.Official" Version="2.9.2-alpha2" />
   </ItemGroup>

@@ -301,7 +301,19 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
         pBrush ??= CreateSolidColorBrush(color);
 
     protected IComObject<ID2D1Bitmap> CreateFromWicBitmap(IComObject<IWICBitmapSource> wicBitmapSource) {
-        RenderTarget.Object.CreateBitmapFromWicBitmap(wicBitmapSource.Object, 0, out var o).ThrowOnError();
+        ID2D1Bitmap o;
+        
+        if (wicBitmapSource.ConvertPixelFormatDifferent(
+                out var after,
+                WICConstants.GUID_WICPixelFormat32bppPBGRA,
+                false)) {
+            using (after) {
+                RenderTarget.Object.CreateBitmapFromWicBitmap(after.Object, 0, out o).ThrowOnError();
+                return new ComObject<ID2D1Bitmap>(o);
+            }
+        }
+
+        RenderTarget.Object.CreateBitmapFromWicBitmap(wicBitmapSource.Object, 0, out o).ThrowOnError();
         return new ComObject<ID2D1Bitmap>(o);
     }
 

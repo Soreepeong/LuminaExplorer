@@ -132,20 +132,7 @@ public sealed class TexBitmapSource : IBitmapSource {
         if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         return (_wicBitmaps[mipmap][slice] ??= new(Task.Run(
-            () => {
-                IComObject<IWICBitmapSource>? wb = null;
-                try {
-                    wb = _texFile.ToWicBitmap(mipmap, slice);
-                    _cancellationTokenSource.Token.ThrowIfCancellationRequested();
-                    wb.ConvertTo(
-                        WicPixelFormat.GUID_WICPixelFormat32bppPBGRA,
-                        paletteTranslate: WICBitmapPaletteType.WICBitmapPaletteTypeMedianCut);
-                    return wb;
-                } catch (Exception) {
-                    wb?.Dispose();
-                    throw;
-                }
-            },
+            () => _texFile.ToWicBitmapSource(mipmap, slice),
             _cancellationTokenSource.Token))).Task;
     }
 
