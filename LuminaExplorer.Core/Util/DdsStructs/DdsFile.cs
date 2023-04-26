@@ -13,27 +13,26 @@ public class DdsFile {
     public readonly DdsHeaderLegacy LegacyHeader;
     public readonly bool UseDxt10Header;
     public readonly DdsHeaderDxt10 Dxt10Header;
-    private readonly MemoryStream _stream;
+
+    private readonly byte[] _data;
 
     public DdsFile(string name, Stream stream, bool closeAfter = true) {
         Name = name;
         try {
             try {
-                _stream = new(new byte[stream.Length]);
+                _data = new byte[stream.Length];
+                stream.ReadExactly(_data);
+                stream.Dispose();
             } catch (NotSupportedException) {
-                _stream = new();
+                using var ms = new MemoryStream();
+                stream.CopyTo(ms);
+                _data = ms.ToArray();
             }
 
-            try {
-                stream.CopyTo(_stream);
-            } catch (Exception) {
-                _stream.Dispose();
-                throw;
-            }
-
-            var br = new LuminaBinaryReader(_stream);
+            var br = new LuminaBinaryReader(_data);
             LegacyHeader = br.ReadStructure<DdsHeaderLegacy>();
-            if (LegacyHeader.Header.PixelFormat.Flags.HasFlag(DdsPixelFormatFlags.FourCc)) {
+            if (LegacyHeader.Header.PixelFormat.Flags.HasFlag(DdsPixelFormatFlags.FourCc) &&
+                LegacyHeader.Header.PixelFormat.FourCc == DdsFourCc.Dx10) {
                 UseDxt10Header = true;
                 Dxt10Header = br.ReadStructure<DdsHeaderDxt10>();
             }
@@ -66,9 +65,9 @@ public class DdsFile {
             Header = new() {
                 Size = Unsafe.SizeOf<DdsHeader>(),
                 Flags = DdsHeaderFlags.Caps |
-                        DdsHeaderFlags.Height |
-                        DdsHeaderFlags.Width |
-                        DdsHeaderFlags.PixelFormat,
+                    DdsHeaderFlags.Height |
+                    DdsHeaderFlags.Width |
+                    DdsHeaderFlags.PixelFormat,
                 Height = tex.Header.Height,
                 Width = tex.Header.Width,
                 Caps = DdsCaps1.Texture,
@@ -190,15 +189,15 @@ public class DdsFile {
             LegacyHeader.Header.PixelFormat.Flags.HasFlag(DdsPixelFormatFlags.FourCc) &&
             LegacyHeader.Header.PixelFormat.FourCc == DdsFourCc.Dx10;
 
-        _stream = new(
+        _data = new byte[
             Unsafe.SizeOf<DdsHeaderLegacy>() +
             (UseDxt10Header ? Unsafe.SizeOf<DdsHeaderDxt10>() : 0) +
-            texBuf.RawData.Length
-        );
+            texBuf.RawData.Length];
+        using var stream = new MemoryStream(_data);
 
         unsafe {
             fixed (void* p = &LegacyHeader)
-                _stream.Write(new(p, Unsafe.SizeOf<DdsHeaderLegacy>()));
+                stream.Write(new(p, Unsafe.SizeOf<DdsHeaderLegacy>()));
         }
 
         if (UseDxt10Header) {
@@ -222,11 +221,11 @@ public class DdsFile {
 
             unsafe {
                 fixed (void* p = &Dxt10Header)
-                    _stream.Write(new(p, Unsafe.SizeOf<DdsHeaderDxt10>()));
+                    stream.Write(new(p, Unsafe.SizeOf<DdsHeaderDxt10>()));
             }
         }
 
-        _stream.Write(texBuf.RawData);
+        stream.Write(texBuf.RawData);
     }
 
     public string Name { get; }
@@ -235,11 +234,106 @@ public class DdsFile {
         Unsafe.SizeOf<DdsHeaderLegacy>() +
         (UseDxt10Header ? Unsafe.SizeOf<DdsHeaderDxt10>() : 0);
 
-    public Stream CreateStream() => new MemoryStream(_stream.GetBuffer(), false);
+    public Stream CreateStream() => new MemoryStream(_data, false);
 
     public DdsHeader Header => LegacyHeader.Header;
 
-    public ReadOnlySpan<byte> Data => new(_stream.GetBuffer(), DataOffset, _stream.GetBuffer().Length - DataOffset);
+    public ReadOnlySpan<byte> Data => new(_data, DataOffset, _data.Length - DataOffset);
+
+    public int NumImages => UseDxt10Header ? Dxt10Header.ArraySize : 1;
+
+    public int NumMipmaps => Header.Flags.HasFlag(DdsHeaderFlags.MipmapCount) ? Header.MipMapCount : 1;
+
+    public int Bpp => PixelFormat.Bpp;
+
+    public bool IsCubeMap => Header.Caps2.HasFlag(DdsCaps2.Cubemap);
+
+    public int Width(int mipmapIndex) =>
+        0 <= mipmapIndex && mipmapIndex < NumMipmaps
+            ? Header.Flags.HasFlag(DdsHeaderFlags.Width) ? Math.Max(1, Header.Width >> mipmapIndex) : 1
+            : throw new ArgumentOutOfRangeException(nameof(mipmapIndex), mipmapIndex, null);
+
+    public int Pitch(int mipmapIndex) {
+        var pf = PixelFormat;
+        if (pf is BcPixelFormat bcPixelFormat)
+            return Math.Max(1, (Width(mipmapIndex) + 3) / 4) * bcPixelFormat.BlockSize;
+
+        // For R8G8_B8G8, G8R8_G8B8, legacy UYVY-packed, and legacy YUY2-packed formats, compute the pitch as:
+        // ((width+1) >> 1) * 4
+
+        return (Width(mipmapIndex) * pf.Bpp + 7) / 8;
+    }
+
+    public int Height(int mipmapIndex) =>
+        0 <= mipmapIndex && mipmapIndex < NumMipmaps
+            ? Header.Flags.HasFlag(DdsHeaderFlags.Height) ? Math.Max(1, Header.Height >> mipmapIndex) : 1
+            : throw new ArgumentOutOfRangeException(nameof(mipmapIndex), mipmapIndex, null);
+
+    public int NumFaces => !IsCubeMap
+        ? 1
+        : (Header.Caps2.HasFlag(DdsCaps2.CubemapNegativeX) ? 1 : 0)
+        + (Header.Caps2.HasFlag(DdsCaps2.CubemapPositiveX) ? 1 : 0)
+        + (Header.Caps2.HasFlag(DdsCaps2.CubemapNegativeY) ? 1 : 0)
+        + (Header.Caps2.HasFlag(DdsCaps2.CubemapPositiveY) ? 1 : 0)
+        + (Header.Caps2.HasFlag(DdsCaps2.CubemapNegativeZ) ? 1 : 0)
+        + (Header.Caps2.HasFlag(DdsCaps2.CubemapPositiveZ) ? 1 : 0);
+
+    public int Depth(int mipmapIndex) => 0 <= mipmapIndex && mipmapIndex < NumMipmaps
+        ? Header.Flags.HasFlag(DdsHeaderFlags.Depth) ? Math.Max(1, Header.Depth >> mipmapIndex) : 1
+        : throw new ArgumentOutOfRangeException(nameof(mipmapIndex), mipmapIndex, null);
+
+    public int DepthOrNumFaces(int mipmapIndex) => IsCubeMap ? NumFaces : Depth(mipmapIndex);
+
+    public int SliceSize(int mipmapIndex) {
+        var pf = PixelFormat;
+        if (pf is BcPixelFormat bcPixelFormat) {
+            return Math.Max(1, (Width(mipmapIndex) + 3) / 4) *
+                Math.Max(1, (Width(mipmapIndex) + 3) / 4) *
+                bcPixelFormat.BlockSize;
+        }
+
+        // For R8G8_B8G8, G8R8_G8B8, legacy UYVY-packed, and legacy YUY2-packed formats, compute the pitch as:
+        // ((width+1) >> 1) * 4
+
+        return (Width(mipmapIndex) * pf.Bpp + 7) / 8 * Height(mipmapIndex);
+    }
+
+    // TODO: are mipmap sizes aligned?
+    public int MipmapSize(int mipmapIndex) => SliceSize(mipmapIndex) * Depth(mipmapIndex);
+
+    public int FaceSize => Enumerable.Range(0, NumMipmaps).Sum(MipmapSize);
+
+    public int ImageSize => FaceSize * NumFaces;
+
+    public ReadOnlySpan<byte> ImageData(int imageIndex) {
+        if (imageIndex < 0 || imageIndex >= NumImages)
+            throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+
+        var imageSize = ImageSize;
+        return Data.Slice(imageSize * imageIndex, imageSize);
+    }
+
+    public ReadOnlySpan<byte> FaceData(int imageIndex, int faceIndex) {
+        var slice = ImageData(imageIndex);
+        var faceSize = FaceSize;
+        return slice.Slice(faceSize * faceIndex, faceSize);
+    }
+
+    public ReadOnlySpan<byte> MipmapData(int imageIndex, int faceIndex, int mipmapIndex) {
+        var slice = FaceData(imageIndex, faceIndex);
+        var offset = Enumerable.Range(0, mipmapIndex).Sum(MipmapSize);
+        return slice.Slice(offset, MipmapSize(mipmapIndex));
+    }
+
+    public ReadOnlySpan<byte> SliceData(int imageIndex, int faceIndex, int mipmapIndex, int sliceIndex) {
+        var slice = MipmapData(imageIndex, faceIndex, mipmapIndex);
+        var sliceSize = SliceSize(mipmapIndex);
+        return slice.Slice(sliceSize * sliceIndex, sliceSize);
+    }
+
+    public ReadOnlySpan<byte> SliceOrFaceData(int imageIndex, int mipmapIndex, int sliceIndex) => IsCubeMap
+        ? SliceData(imageIndex, sliceIndex, mipmapIndex, 0)
+        : SliceData(imageIndex, 0, mipmapIndex, sliceIndex);
 
     // https://learn.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-resources-data-conversion
     public IPixelFormat PixelFormat {

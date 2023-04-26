@@ -94,8 +94,27 @@ public static class WicNetExtensions {
     }
 
     public static WicBitmapSource ToWicBitmapSource(this DdsFile ddsFile, int imageIndex, int mipIndex, int slice) {
-        // TODO
-        throw new NotImplementedException();
+        var bs = new WicBitmapSource(ddsFile.Width(mipIndex), ddsFile.Height(mipIndex),
+            WicPixelFormat.GUID_WICPixelFormat32bppBGRA);
+        try {
+            bs.WithLock(WICBitmapLockFlags.WICBitmapLockWrite, wbl => {
+                unsafe {
+                    var sliceData = ddsFile.SliceOrFaceData(imageIndex, mipIndex, slice);
+                    var outData = new Span<byte>((void*) wbl.DataPointer, (int)wbl.DataSize);
+                    ddsFile.PixelFormat.ToB8G8R8A8(
+                        outData,
+                        wbl.Stride,
+                        sliceData,
+                        ddsFile.Pitch(mipIndex),
+                        wbl.Width,
+                        wbl.Height);
+                }
+            });
+            return bs;
+        } catch (Exception) {
+            bs.Dispose();
+            throw;
+        }
     }
 
     public static bool TryToGdipBitmap(

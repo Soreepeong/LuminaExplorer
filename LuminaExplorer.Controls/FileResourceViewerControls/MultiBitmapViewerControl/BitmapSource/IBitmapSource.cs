@@ -31,6 +31,8 @@ public interface IBitmapSource : IDisposable, IAsyncDisposable {
     /// Layout of the current mipmap.
     /// </summary>
     public IGridLayout Layout { get; }
+    
+    public bool IsCubeMap { get; }
 
     public void UpdateSelection(int imageIndex, int mipmap);
 
@@ -48,7 +50,7 @@ public interface IBitmapSource : IDisposable, IAsyncDisposable {
 
     public int HeightOfMipmap(int imageIndex, int mipmap);
 
-    public int DepthOfMipmap(int imageIndex, int mipmap);
+    public int NumSlicesOfMipmap(int imageIndex, int mipmap);
 
     public void WriteTexFile(Stream stream);
 

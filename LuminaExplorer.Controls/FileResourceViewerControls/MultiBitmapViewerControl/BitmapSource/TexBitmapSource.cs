@@ -18,7 +18,6 @@ namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerCo
 
 public sealed class TexBitmapSource : IBitmapSource {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private readonly bool _isCube;
     private TexFile _texFile;
     private ResultDisposingTask<WicBitmapSource>?[ /* Mip */][ /* Slice */] _wicBitmaps;
     private ResultDisposingTask<Bitmap>?[ /* Mip */][ /* Slice */] _bitmaps;
@@ -35,12 +34,12 @@ public sealed class TexBitmapSource : IBitmapSource {
         _wicBitmaps = new ResultDisposingTask<WicBitmapSource>[_texFile.Header.MipLevels][];
         _bitmaps = new ResultDisposingTask<Bitmap>[_texFile.Header.MipLevels][];
         for (var i = 0; i < _texFile.Header.MipLevels; i++) {
-            var mipDepth = texFile.TextureBuffer.DepthOfMipmap(i);
-            _wicBitmaps[i] = new ResultDisposingTask<WicBitmapSource>?[mipDepth];
-            _bitmaps[i] = new ResultDisposingTask<Bitmap>?[mipDepth];
+            var slices = texFile.TextureBuffer.DepthOfMipmap(i);
+            _wicBitmaps[i] = new ResultDisposingTask<WicBitmapSource>?[slices];
+            _bitmaps[i] = new ResultDisposingTask<Bitmap>?[slices];
         }
 
-        _isCube = _texFile.Header.Type.HasFlag(TexFile.Attribute.TextureTypeCube);
+        IsCubeMap = _texFile.Header.Type.HasFlag(TexFile.Attribute.TextureTypeCube);
 
         _sliceSpacing = sliceSpacing;
 
@@ -85,6 +84,8 @@ public sealed class TexBitmapSource : IBitmapSource {
     public int ImageCount => 1;
     
     public IGridLayout Layout { get; private set; }
+
+    public bool IsCubeMap { get; }
 
     public Size SliceSpacing {
         get => _sliceSpacing;
@@ -192,7 +193,7 @@ public sealed class TexBitmapSource : IBitmapSource {
         return _texFile.TextureBuffer.HeightOfMipmap(mipmap);
     }
 
-    public int DepthOfMipmap(int imageIndex, int mipmap) {
+    public int NumSlicesOfMipmap(int imageIndex, int mipmap) {
         if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         return _texFile.TextureBuffer.DepthOfMipmap(mipmap);
@@ -270,7 +271,7 @@ public sealed class TexBitmapSource : IBitmapSource {
         var height = _texFile.TextureBuffer.HeightOfMipmap(_mipmap);
         var depth = _texFile.TextureBuffer.DepthOfMipmap(_mipmap);
 
-        Layout = IGridLayout.CreateGridLayoutForDepthView(0, _mipmap, width, height, depth, _isCube, _sliceSpacing);
+        Layout = IGridLayout.CreateGridLayoutForDepthView(0, _mipmap, width, height, depth, IsCubeMap, _sliceSpacing);
     }
 
     public static TexFile FromFile(FileInfo fileInfo) {

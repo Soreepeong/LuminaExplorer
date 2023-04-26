@@ -492,7 +492,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                 for (var i = 0; i < _pBitmaps.Length; i++) {
                     var a1 = _pBitmaps[i] = new TaskWrappingIUnknown<ID2D1Bitmap>[source.NumberOfMipmaps(i)][];
                     for (var j = 0; j < a1.Length; j++)
-                        a1[j] = new TaskWrappingIUnknown<ID2D1Bitmap>[source.DepthOfMipmap(i, j)];
+                        a1[j] = new TaskWrappingIUnknown<ID2D1Bitmap>[source.NumSlicesOfMipmap(i, j)];
                 }
 
                 r.Result.LayoutChanged += SourceTaskOnLayoutChanged;
@@ -552,7 +552,14 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                         () => {
                             var ptr = new ComPtr<ID2D1Bitmap>();
                             // do NOT merge into constructor, or it will do AddRef, which we do not want.
-                            _renderer.GetOrCreateFromWicBitmap(ref ptr.Handle, task.Result);
+
+                            if (task.Result.ConvertPixelFormatIfDifferent(out var after,
+                                    WicNet.WicPixelFormat.GUID_WICPixelFormat32bppPBGRA, false)) {
+                                using (after)
+                                    _renderer.GetOrCreateFromWicBitmap(ref ptr.Handle, after);
+                            } else
+                                _renderer.GetOrCreateFromWicBitmap(ref ptr.Handle, task.Result);
+                            
                             return ptr;
                         },
                         _cancellationTokenSource.Token));

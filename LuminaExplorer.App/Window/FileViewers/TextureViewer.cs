@@ -8,8 +8,10 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using DirectN;
 using Lumina.Data.Files;
+using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.ObjectRepresentationWrapper;
+using LuminaExplorer.Core.Util.DdsStructs;
 using LuminaExplorer.Core.VirtualFileSystem;
 using WicNet;
 using DialogResult = System.Windows.Forms.DialogResult;
@@ -62,6 +64,12 @@ public partial class TextureViewer : Form {
         TexViewer.MouseDown += TexViewerOnMouseDown;
         TexViewer.NavigateToNextFile += TexViewerOnNavigateToNextFile;
         TexViewer.NavigateToPrevFile += TexViewerOnNavigateToPrevFile;
+
+        TexViewer.SetFile(Task.Run(() => {
+            // var path = @"Z:\ROL\Sonic_Crytek_3D\textures\activistgirl_head_d.dds";
+            var path = @"Z:\ROL\Sonic_Crytek\Levels\textures\cubemaps\default\sky_cubemap_plus_cm.dds";
+            return (IBitmapSource) new DdsBitmapSource(new(path, File.OpenRead(path)));
+        }));
     }
 
     private void MouseActivityOnMiddleClick(Point cursor) => IsFullScreen = !IsFullScreen;
@@ -134,7 +142,7 @@ public partial class TextureViewer : Form {
                                 case 5: {
                                     for (var i = 0; i < source.ImageCount; i++) {
                                         for (var j = 0; j < source.NumberOfMipmaps(i); j++) {
-                                            for (var k = 0; k < source.DepthOfMipmap(i, j); k++) {
+                                            for (var k = 0; k < source.NumSlicesOfMipmap(i, j); k++) {
                                                 using var d = File.Open(Path.Join(
                                                         Path.GetDirectoryName(sfd.FileName),
                                                         Path.ChangeExtension(

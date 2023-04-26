@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Drawing;
 using System.Linq;
 
 namespace LuminaExplorer.Core.Util.DdsStructs.PixelFormats;
@@ -9,36 +7,42 @@ public readonly struct LuminancePixelFormat : IPixelFormat {
     public readonly ColorChannelDefinition L;
     public readonly AlphaChannelDefinition A;
     public readonly ColorChannelDefinition X;
-    public readonly int Bpp;
 
     public LuminancePixelFormat(
-        ColorChannelDefinition l = new(),
-        AlphaChannelDefinition a = new(),
-        ColorChannelDefinition x = new()) {
-        L = l;
-        A = a;
-        X = x;
+        ColorChannelDefinition? l = null,
+        AlphaChannelDefinition? a = null,
+        ColorChannelDefinition? x = null) {
+        L = l ?? new();
+        A = a ?? new();
+        X = x ?? new();
 
-        Bpp = new[] {l.Bits + l.Shift, a.Bits + a.Shift, x.Bits + x.Shift}.Max();
+        Bpp = new[] {L.Bits + L.Shift, A.Bits + A.Shift, X.Bits + X.Shift}.Max();
     }
 
-    public IEnumerator<Color> ToColors(ReadOnlySpan<byte> data, int width, int height, int stride) {
+    public int Bpp { get; }
+
+    public void ToB8G8R8A8(Span<byte> target, int targetStride, ReadOnlySpan<byte> source, int sourceStride, int width,
+        int height) {
         var bits = 0ul;
         var availBits = 0;
+        var outOffset = 0;
+
         for (var y = 0; y < height; y++) {
-            var offset = y * stride;
-            var offsetTo = offset + (width * Bpp + 7) / 8;
-            for (; offset < offsetTo; offset++) {
-                bits = (bits << 8) | data[offset];
+            var inOffset = y * sourceStride;
+            var inOffsetTo = inOffset + (width * Bpp + 7) / 8;
+            
+            for (var x = 0; x < width && inOffset < inOffsetTo; inOffset++) {
+                bits = (bits << 8) | source[inOffset];
                 availBits += 8;
-                if (availBits < Bpp)
-                    continue;
-
-                availBits -= Bpp;
-
-                var l = (int) ((bits >> L.Shift) & L.Mask);
-                var a = (int) ((bits >> A.Shift) & A.Mask);
-                yield return Color.FromArgb(a, l, l, l);
+                
+                for (; availBits >= Bpp && x < width; x++, availBits -= Bpp) {
+                    var l = (byte) L.DecodeValueAsInt(bits, 8);
+                    var a = (byte) (A.Bits == 0 ? 255 : A.DecodeValueAsInt(bits, 8));
+                    target[outOffset++] = a;
+                    target[outOffset++] = l;
+                    target[outOffset++] = l;
+                    target[outOffset++] = l;
+                }
             }
         }
     }

@@ -4,7 +4,6 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using DirectN;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
@@ -15,7 +14,6 @@ namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerCo
 
 public sealed class DdsBitmapSource : IBitmapSource {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private readonly bool _isCube;
     private DdsFile _ddsFile;
     private ResultDisposingTask<WicBitmapSource>?[ /* Image */][ /* Mip */][ /* Slice */] _wicBitmaps;
     private ResultDisposingTask<Bitmap>?[ /* Image */][ /* Mip */][ /* Slice */] _bitmaps;
@@ -26,31 +24,26 @@ public sealed class DdsBitmapSource : IBitmapSource {
     private bool _disposed;
 
     public DdsBitmapSource(DdsFile ddsFile, int imageIndex = 0, int mipmap = 0, Size sliceSpacing = new()) {
-
         _ddsFile = ddsFile;
-        ImageCount = _ddsFile.UseDxt10Header ? _ddsFile.Dxt10Header.ArraySize : 1;
-        var numMips = ddsFile.Header.Flags.HasFlag(DdsHeaderFlags.MipmapCount) ? ddsFile.Header.MipMapCount : 1;
-        var baseDepth = ddsFile.Header.Flags.HasFlag(DdsHeaderFlags.Depth) ? ddsFile.Header.Depth : 1;
 
         if (imageIndex < 0 || imageIndex >= ImageCount)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
-        if (mipmap < 0 || mipmap >= numMips)
+        if (mipmap < 0 || mipmap >= ddsFile.NumMipmaps)
             throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
 
         _wicBitmaps = new ResultDisposingTask<WicBitmapSource>[ImageCount][][];
         _bitmaps = new ResultDisposingTask<Bitmap>[ImageCount][][];
         for (var image = 0; image < ImageCount; image++) {
             var imageWicBitmaps =
-                _wicBitmaps[image] = new ResultDisposingTask<WicBitmapSource>?[numMips][];
-            var imageBitmaps = _bitmaps[image] = new ResultDisposingTask<Bitmap>?[numMips][];
-            for (var mip = 0; mip < numMips; mip++) {
-                var mipDepth = Math.Max(1, baseDepth >> mip);
-                imageWicBitmaps[mip] = new ResultDisposingTask<WicBitmapSource>?[mipDepth];
-                imageBitmaps[mip] = new ResultDisposingTask<Bitmap>?[mipDepth];
+                _wicBitmaps[image] = new ResultDisposingTask<WicBitmapSource>?[ddsFile.NumMipmaps][];
+            var imageBitmaps = _bitmaps[image] = new ResultDisposingTask<Bitmap>?[ddsFile.NumMipmaps][];
+            for (var mip = 0; mip < ddsFile.NumMipmaps; mip++) {
+                imageWicBitmaps[mip] = new ResultDisposingTask<WicBitmapSource>?[ddsFile.DepthOrNumFaces(mip)];
+                imageBitmaps[mip] = new ResultDisposingTask<Bitmap>?[ddsFile.DepthOrNumFaces(mip)];
             }
         }
 
-        _isCube = _ddsFile.Header.Caps2.HasFlag(DdsCaps2.Cubemap);
+        IsCubeMap = _ddsFile.Header.Caps2.HasFlag(DdsCaps2.Cubemap);
 
         _sliceSpacing = sliceSpacing;
 
@@ -93,9 +86,11 @@ public sealed class DdsBitmapSource : IBitmapSource {
 
     public string FileName => _ddsFile.Name;
 
-    public int ImageCount { get; }
+    public int ImageCount => _ddsFile.NumMipmaps;
 
     public IGridLayout Layout { get; private set; }
+    
+    public bool IsCubeMap { get; }
 
     public Size SliceSpacing {
         get => _sliceSpacing;
@@ -192,7 +187,7 @@ public sealed class DdsBitmapSource : IBitmapSource {
     public int NumberOfMipmaps(int imageIndex) {
         if (imageIndex < 0 || imageIndex >= ImageCount)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
-        return _ddsFile.Header.Flags.HasFlag(DdsHeaderFlags.MipmapCount) ? _ddsFile.Header.MipMapCount : 1;
+        return _ddsFile.NumMipmaps;
     }
 
     public int WidthOfMipmap(int imageIndex, int mipmap) {
@@ -200,7 +195,7 @@ public sealed class DdsBitmapSource : IBitmapSource {
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         if (mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
-        return _ddsFile.Header.Flags.HasFlag(DdsHeaderFlags.Width) ? _ddsFile.Header.Width : 1;
+        return _ddsFile.Width(mipmap);
     }
 
     public int HeightOfMipmap(int imageIndex, int mipmap) {
@@ -208,15 +203,15 @@ public sealed class DdsBitmapSource : IBitmapSource {
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         if (mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
-        return _ddsFile.Header.Flags.HasFlag(DdsHeaderFlags.Height) ? _ddsFile.Header.Height : 1;
+        return _ddsFile.Height(mipmap);
     }
 
-    public int DepthOfMipmap(int imageIndex, int mipmap) {
+    public int NumSlicesOfMipmap(int imageIndex, int mipmap) {
         if (imageIndex < 0 || imageIndex >= ImageCount)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         if (mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
-        return _ddsFile.Header.Flags.HasFlag(DdsHeaderFlags.Depth) ? _ddsFile.Header.Depth : 1;
+        return _ddsFile.DepthOrNumFaces(mipmap);
     }
 
     public void WriteTexFile(Stream stream) {
@@ -235,8 +230,8 @@ public sealed class DdsBitmapSource : IBitmapSource {
     private void Relayout() {
         var width = WidthOfMipmap(_imageIndex, _mipmap);
         var height = HeightOfMipmap(_imageIndex, _mipmap);
-        var depth = DepthOfMipmap(_imageIndex, _mipmap);
+        var slices = NumSlicesOfMipmap(_imageIndex, _mipmap);
 
-        Layout = IGridLayout.CreateGridLayoutForDepthView(0, _mipmap, width, height, depth, _isCube, _sliceSpacing);
+        Layout = IGridLayout.CreateGridLayoutForDepthView(0, _mipmap, width, height, slices, IsCubeMap, _sliceSpacing);
     }
 }

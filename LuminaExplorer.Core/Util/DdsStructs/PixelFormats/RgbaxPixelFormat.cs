@@ -12,50 +12,51 @@ public readonly struct RgbaxPixelFormat : IPixelFormat {
     public readonly AlphaChannelDefinition A;
     public readonly ColorChannelDefinition X1;
     public readonly ColorChannelDefinition X2;
-    public readonly int Bpp;
 
     public RgbaxPixelFormat(
-        ColorChannelDefinition r = new(),
-        ColorChannelDefinition g = new(),
-        ColorChannelDefinition b = new(),
-        AlphaChannelDefinition a = new(),
-        ColorChannelDefinition x1 = new(),
-        ColorChannelDefinition x2 = new()) {
-        R = r;
-        G = g;
-        B = b;
-        A = a;
-        X1 = x1;
-        X2 = x2;
+        ColorChannelDefinition? r = null,
+        ColorChannelDefinition? g = null,
+        ColorChannelDefinition? b = null,
+        AlphaChannelDefinition? a = null,
+        ColorChannelDefinition? x1 = null,
+        ColorChannelDefinition? x2 = null) {
+        R = r ?? new();
+        G = g ?? new();
+        B = b ?? new();
+        A = a ?? new();
+        X1 = x1 ?? new();
+        X2 = x2 ?? new();
         Bpp = new[] {
-            r.Bits + r.Shift,
-            g.Bits + g.Shift,
-            b.Bits + b.Shift,
-            a.Bits + a.Shift,
-            x1.Bits + x1.Shift,
-            x2.Bits + x2.Shift,
+            R.Bits + R.Shift,
+            G.Bits + G.Shift,
+            B.Bits + B.Shift,
+            A.Bits + A.Shift,
+            X1.Bits + X1.Shift,
+            X2.Bits + X2.Shift,
         }.Max();
     }
 
-    public IEnumerator<Color> ToColors(ReadOnlySpan<byte> data, int width, int height, int stride) {
+    public int Bpp { get; }
+
+    public void ToB8G8R8A8(Span<byte> target, int targetStride, ReadOnlySpan<byte> source, int sourceStride, int width,
+        int height) {
         var bits = 0ul;
         var availBits = 0;
+        var outOffset = 0;
+        
         for (var y = 0; y < height; y++) {
-            var offset = y * stride;
-            var offsetTo = offset + (width * Bpp + 7) / 8;
-            for (; offset < offsetTo; offset++) {
-                bits = (bits << 8) | data[offset];
+            var inOffset = y * sourceStride;
+            var inOffsetTo = inOffset + (width * Bpp + 7) / 8;
+            
+            for (var x = 0; x < width && inOffset < inOffsetTo; inOffset++) {
+                bits = (bits << 8) | source[inOffset];
                 availBits += 8;
-                if (availBits < Bpp)
-                    continue;
-
-                availBits -= Bpp;
-
-                var r = (int) ((bits >> R.Shift) & R.Mask);
-                var g = (int) ((bits >> G.Shift) & G.Mask);
-                var b = (int) ((bits >> B.Shift) & B.Mask);
-                var a = (int) ((bits >> A.Shift) & A.Mask);
-                yield return Color.FromArgb(a, r, g, b);
+                for (; availBits >= Bpp && x < width; x++, availBits -= Bpp) {
+                    target[outOffset++] = (byte)(A.Bits == 0 ? 255 : A.DecodeValueAsInt(bits, 8));
+                    target[outOffset++] = (byte)B.DecodeValueAsInt(bits, 8);
+                    target[outOffset++] = (byte)G.DecodeValueAsInt(bits, 8);
+                    target[outOffset++] = (byte)R.DecodeValueAsInt(bits, 8);
+                }
             }
         }
     }

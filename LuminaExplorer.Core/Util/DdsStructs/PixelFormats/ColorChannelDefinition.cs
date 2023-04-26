@@ -1,48 +1,101 @@
 ﻿using System;
+using System.Diagnostics;
 
 namespace LuminaExplorer.Core.Util.DdsStructs.PixelFormats;
 
-public readonly struct ColorChannelDefinition {
+public class ColorChannelDefinition {
     public readonly ValueType Type;
     public readonly byte Shift;
     public readonly byte Bits;
     public readonly uint Mask;
 
-    public ColorChannelDefinition(ValueType type = ValueType.Unknown, int shift = 0, int bits = 0) {
-        Type = bits == 0 ? ValueType.Unknown : type;
-        Shift = bits == 0 ? (byte) 0 : (byte) shift;
-        Bits = (byte) bits;
-        Mask = bits == 0 ? 0u : (1u << bits) - 1u;
+    public ColorChannelDefinition() {
+        Type = ValueType.Unknown;
+        Mask = Shift = Bits = 0;
     }
 
-    public ColorChannelDefinition(ValueType type = ValueType.Unknown, int shift = 0, int bits = 0, uint mask = 0) {
-        Type = bits == 0 ? ValueType.Unknown : type;
-        Shift = bits == 0 ? (byte) 0 : (byte) shift;
-        Bits = (byte) bits;
-        Mask = bits == 0 ? 0u : mask;
+    public ColorChannelDefinition(ValueType type, int shift, int bits, uint? mask = default) {
+        mask ??= bits switch {
+            32 => uint.MaxValue,
+            _ => (1u << bits) - 1u,
+        };
+        switch (bits) {
+            case < 0:
+                throw new ArgumentOutOfRangeException(nameof(bits), bits, null);
+            case 0:
+                Debug.Assert(mask == 0);
+                Type = ValueType.Unknown;
+                Mask = Shift = Bits = 0;
+                break;
+            default:
+                Debug.Assert(mask != 0);
+                Type = type;
+                Shift = (byte) shift;
+                Bits = (byte) bits;
+                Mask = mask.Value;
+                break;
+        }
     }
 
-    public int DecodeValueAsByte(ulong data, int outBits) {
-        var v = (uint)(data >> Shift & Mask);
+    public float DecodeValueAsFloat(ulong data) {
+        if (Bits == 0)
+            return -1f;
+        
+        var v = (uint) (data >> Shift & Mask);
         switch (Type) {
-            case ValueType.Sint:
-            case ValueType.Snorm: {
+            case ValueType.Snorm:
+            case ValueType.Sint: {
+                if (v >> (Bits - 1) == 0)
+                    return 1f * v / (Mask >> 1);
+                v = (~v & Mask) + 1;
+                if (v == 1 << Bits)
+                    return -1f;
+                return -1f * v / (Mask >> 1);
+            }
+            case ValueType.Unorm:
+            case ValueType.UnormSrgb:
+            case ValueType.Uint:
+            case ValueType.Typeless:
+            case ValueType.Unknown:
+                return 1f * v / Mask;
+            case ValueType.Sf16:
+            case ValueType.Uf16:
+                // Irrelevant with this format, but just in case
+                goto case ValueType.Unorm;
+            case ValueType.Float:
+                unsafe {
+                    var f = 0f;
+                    *(uint*) &f = v;
+                    return f;
+                }
+            default:
+                // "Approximate" it
+                goto case ValueType.Unorm;
+        }
+    }
+
+    public int DecodeValueAsInt(ulong data, int outBits) {
+        if (Bits == 0)
+            return 0;
+        
+        var v = (uint) (data >> Shift & Mask);
+        switch (Type) {
+            case ValueType.Snorm:
+            case ValueType.Sint: {
                 var negative = 0 != v >> (Bits - 1);
                 var value = negative ? (~v & (Mask >> 1)) : v;
                 var mid = 1 << (outBits - 1);
                 value = (uint) ((mid - 1) * value / (Mask >> 1));
-                return 0 == v >> (Bits - 1) 
+                return 0 == v >> (Bits - 1)
                     ? (int) (mid + value)
                     : (int) (mid - 1 - value);
             }
-            case ValueType.Uint:
             case ValueType.Unorm:
+            case ValueType.UnormSrgb:
+            case ValueType.Uint:
             case ValueType.Typeless:
             case ValueType.Unknown:
-                return (int)(((1 << outBits) - 1) * v / Mask);
-            case ValueType.UnormSrgb:
-                // TODO: srgb conversion
-                return (int)(((1 << outBits) - 1) * v / Mask);
+                return (int) (((1 << outBits) - 1) * v / Mask);
             case ValueType.Sf16:
             case ValueType.Uf16:
                 // Irrelevant with this format, but just in case
@@ -52,6 +105,7 @@ public readonly struct ColorChannelDefinition {
                     return (int) Math.Round(((1 << outBits) - 1) * BitConverter.ToSingle(new(&v, 4)));
                 }
             default:
+                // "Approximate" it
                 goto case ValueType.Unorm;
         }
     }

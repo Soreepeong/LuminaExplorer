@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Windows.Forms;
 using LuminaExplorer.App.Window;
+using LuminaExplorer.App.Window.FileViewers;
 using LuminaExplorer.Core.SqPackPath;
 using LuminaExplorer.Core.VirtualFileSystem.Sqpack;
 
@@ -19,6 +20,10 @@ static class Program {
         // To customize application configuration such as set high DPI settings or default font,
         // see https://aka.ms/applicationconfiguration.
         ApplicationConfiguration.Initialize();
+
+        using var tv = new TextureViewer();
+        Application.Run(tv);
+        return;
 
         var baseDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
 
