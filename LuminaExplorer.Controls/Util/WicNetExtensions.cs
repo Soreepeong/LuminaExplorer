@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 using DirectN;
 using Lumina.Data.Files;
 using LuminaExplorer.Core.Util;
@@ -12,7 +13,7 @@ using WicNet;
 namespace LuminaExplorer.Controls.Util;
 
 public static class WicNetExtensions {
-    public static WicBitmapSource ToWicBitmap(this TexFile texFile, int mipIndex, int slice) {
+    public static WicBitmapSource ToWicBitmapSource(this TexFile texFile, int mipIndex, int slice) {
         if (texFile.Header.Format is
             TexFile.TextureFormat.BC1 or
             TexFile.TextureFormat.BC2 or
@@ -56,6 +57,47 @@ public static class WicNetExtensions {
             texBuf.RawData).Object);
     }
 
+    public static bool ConvertPixelFormatIfDifferent(
+        this WicBitmapSource before,
+        out WicBitmapSource after,
+        Guid targetPixelFormat,
+        bool disposeBeforeIfConverted = true) {
+        
+        if (before.PixelFormat == targetPixelFormat) {
+            after = before;
+            return false;
+        }
+
+        var pConverter = WICImagingFactory.WithFactory(x => {
+            x.CreateFormatConverter(out var pConverterInner).ThrowOnError();
+            return pConverterInner;
+        });
+        
+        try {
+            pConverter.Initialize(
+                    before.ComObject.Object,
+                    targetPixelFormat,
+                    WICBitmapDitherType.WICBitmapDitherTypeNone,
+                    null,
+                    0f,
+                    WICBitmapPaletteType.WICBitmapPaletteTypeCustom)
+                .ThrowOnError();
+            after = new(pConverter);
+            if (disposeBeforeIfConverted)
+                before.Dispose();
+        } catch (Exception) {
+            Marshal.ReleaseComObject(pConverter);
+            throw;
+        }
+
+        return true;
+    }
+
+    public static WicBitmapSource ToWicBitmapSource(this DdsFile ddsFile, int imageIndex, int mipIndex, int slice) {
+        // TODO
+        throw new NotImplementedException();
+    }
+
     public static bool TryToGdipBitmap(
         this WicBitmapSource wicBitmap,
         [MaybeNullWhen(false)] out Bitmap b,
@@ -67,8 +109,20 @@ public static class WicNetExtensions {
                 new(Point.Empty, b.Size),
                 ImageLockMode.WriteOnly,
                 PixelFormat.Format32bppArgb);
-            wicBitmap.CopyPixels(bd.Height * bd.Stride, bd.Scan0, bd.Stride);
+            
             // WICPixelFormat says it's "BGRA"; Imaging.PixelFormat says it's "ARGB"
+            var targetFormatGuid = WicPixelFormat.GUID_WICPixelFormat32bppBGRA;
+
+            if (ConvertPixelFormatIfDifferent(wicBitmap, out var t, targetFormatGuid, false)) {
+                try {
+                    t.CopyPixels(bd.Height * bd.Stride, bd.Scan0, bd.Stride);
+                } finally {
+                    t.Dispose();
+                }
+            } else {
+                wicBitmap.CopyPixels(bd.Height * bd.Stride, bd.Scan0, bd.Stride);
+            }
+            
             b.UnlockBits(bd);
             exception = null;
             return true;

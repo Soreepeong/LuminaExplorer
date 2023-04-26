@@ -5,7 +5,7 @@ namespace LuminaExplorer.Core.Util.DdsStructs;
 [StructLayout(LayoutKind.Sequential)]
 public struct DdsHeaderDxt10 {
     /// <summary>The surface pixel format.</summary>
-    public int DxgiFormat;
+    public DxgiFormat DxgiFormat;
 
     /// <summary>Identifies the type of resource.</summary>
     public DdsHeaderDxt10ResourceDimension ResourceDimension;

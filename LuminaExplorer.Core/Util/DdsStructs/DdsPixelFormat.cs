@@ -8,7 +8,7 @@ public struct DdsPixelFormat {
 
     public DdsPixelFormatFlags Flags;
 
-    public DdsFourCc FourCC;
+    public DdsFourCc FourCc;
     public int RgbBitCount;
     public uint RBitMask;
     public uint GBitMask;

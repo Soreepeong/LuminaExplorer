@@ -6,11 +6,8 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using DirectN;
-using Lumina;
 using Lumina.Data;
 using Lumina.Data.Files;
-using Lumina.Data.Structs;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
@@ -133,20 +130,7 @@ public sealed class TexBitmapSource : IBitmapSource {
         if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         return (_wicBitmaps[mipmap][slice] ??= new(Task.Run(
-            () => {
-                WicBitmapSource? wb = null;
-                try {
-                    wb = _texFile.ToWicBitmap(mipmap, slice);
-                    _cancellationTokenSource.Token.ThrowIfCancellationRequested();
-                    wb.ConvertTo(
-                        WicPixelFormat.GUID_WICPixelFormat32bppPBGRA,
-                        paletteTranslate: WICBitmapPaletteType.WICBitmapPaletteTypeMedianCut);
-                    return wb;
-                } catch (Exception) {
-                    wb?.Dispose();
-                    throw;
-                }
-            },
+            () => _texFile.ToWicBitmapSource(mipmap, slice),
             _cancellationTokenSource.Token))).Task;
     }
 
