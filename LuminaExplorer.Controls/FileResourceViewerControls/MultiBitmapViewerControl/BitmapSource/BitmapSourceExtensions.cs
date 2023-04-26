@@ -101,8 +101,9 @@ public static class BitmapSourceExtensions {
     }
 
     public static void ConvertToDib(Bitmap bitmap, bool v5, ref Stream? stream) {
-        var lb = bitmap.LockBits(
-            new(Point.Empty, bitmap.Size),
+        using var bcopy = (Bitmap)bitmap.Clone(); 
+        var lb = bcopy.LockBits(
+            new(Point.Empty, bcopy.Size),
             ImageLockMode.ReadOnly,
             v5 ? PixelFormat.Format32bppArgb : PixelFormat.Format32bppPArgb);
         try {
@@ -117,8 +118,8 @@ public static class BitmapSourceExtensions {
                 if (v5) {
                     var h = new BitmapV5Header {
                         Size = sizeof(BitmapV5Header),
-                        Width = bitmap.Width,
-                        Height = bitmap.Height, // positive: bottom-up
+                        Width = bcopy.Width,
+                        Height = bcopy.Height, // positive: bottom-up
                         Planes = 1,
                         BitCount = 32,
                         Compression = 0u, // RGB
@@ -136,8 +137,8 @@ public static class BitmapSourceExtensions {
                     var h = new BitmapInfo {
                         Header = new() {
                             Size = sizeof(BitmapHeader),
-                            Width = bitmap.Width,
-                            Height = bitmap.Height, // positive: bottom-up
+                            Width = bcopy.Width,
+                            Height = bcopy.Height, // positive: bottom-up
                             Planes = 1,
                             BitCount = 32,
                             Compression = 3u, // BITFIELDS
@@ -163,7 +164,7 @@ public static class BitmapSourceExtensions {
                 }
             }
         } finally {
-            bitmap.UnlockBits(lb);
+            bcopy.UnlockBits(lb);
         }
     }
 

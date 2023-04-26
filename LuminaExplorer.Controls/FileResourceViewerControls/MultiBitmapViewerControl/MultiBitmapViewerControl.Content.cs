@@ -3,6 +3,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Lumina.Data;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 using LuminaExplorer.Controls.Util;
@@ -109,6 +110,23 @@ public partial class MultiBitmapViewerControl {
         fileResource,
         sliceSpacing: _sliceSpacing)));
 
+    public void SetFile(FileResource fileResource) {
+        if (fileResource is TexFile texFile) {
+            SetFile(texFile);
+            return;
+        }
+
+        switch (Path.GetExtension(fileResource.FilePath.Path).ToLowerInvariant()) {
+            case ".dds":
+                SetFile(Task.FromResult((IBitmapSource) new DdsBitmapSource(
+                    new(fileResource.FilePath.Path, fileResource.Data),
+                    sliceSpacing: _sliceSpacing)));
+                break;
+            default:
+                throw new NotSupportedException();
+        }
+    }
+
     public void SetFile(IBitmapSource bitmapSource) {
         bitmapSource.SliceSpacing = _sliceSpacing;
         SetFile(Task.FromResult(bitmapSource));
@@ -199,4 +217,20 @@ public partial class MultiBitmapViewerControl {
         _bitmapSourceTaskCurrent is {IsCompletedSuccessfully: true} sourceTask &&
         TryGetRenderers(out var renderers) &&
         renderers.Any(r => r.LastException is null && r.IsAnyVisibleSliceReadyForDrawing(sourceTask.Task));
+
+    public static bool MaySupportFileResource(FileResource fileResource) =>
+        fileResource is TexFile ||
+        Path.GetExtension(fileResource.FilePath.Path).ToLowerInvariant() switch {
+            ".tex" => true,
+            ".atex" => true,
+            ".dds" => true,
+            _ => false,
+        };
+
+    public static bool MaySupportExtension(string extension) => Path.GetExtension(extension).ToLowerInvariant() switch {
+        ".tex" => true,
+        ".atex" => true,
+        ".dds" => true,
+        _ => false,
+    };
 }

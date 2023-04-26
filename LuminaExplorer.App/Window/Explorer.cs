@@ -11,14 +11,14 @@ public partial class Explorer : Form {
     private NavigationHandler? _navigationHandler;
     private FileTreeHandler? _fileTreeHandler;
     private SearchHandler? _searchHandler;
-    private IVirtualFileSystem? _tree;
+    private IVirtualFileSystem? _vfs;
     private AppConfig _appConfig;
 
-    public Explorer(AppConfig? appConfig = default, IVirtualFileSystem? tree = default) {
+    public Explorer(AppConfig? appConfig = default, IVirtualFileSystem? vfs = default) {
         InitializeComponent();
 
         _appConfig = appConfig ?? new();
-        _tree = tree;
+        _vfs = vfs;
         _previewHandler = new(this);
         _fileListHandler = new(this);
         _navigationHandler = new(this);
@@ -45,21 +45,21 @@ public partial class Explorer : Form {
         }
     }
 
-    public IVirtualFileSystem? Tree {
-        get => _tree;
+    public IVirtualFileSystem? Vfs {
+        get => _vfs;
         set {
-            if (_tree == value)
+            if (_vfs == value)
                 return;
 
-            _tree = value;
+            _vfs = value;
             if (_fileListHandler is not null)
-                _fileListHandler.Tree = value;
+                _fileListHandler.Vfs = value;
             if (_navigationHandler is not null)
-                _navigationHandler.Tree = value;
+                _navigationHandler.Vfs = value;
             if (_fileTreeHandler is not null)
-                _fileTreeHandler.Tree = value;
+                _fileTreeHandler.Vfs = value;
             if (_searchHandler is not null)
-                _searchHandler.Tree = value;
+                _searchHandler.Vfs = value;
         }
     }
 

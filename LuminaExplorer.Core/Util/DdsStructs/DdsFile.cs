@@ -16,6 +16,14 @@ public class DdsFile {
 
     private readonly byte[] _data;
 
+    public DdsFile(string name, DdsHeaderLegacy legacyHeader, DdsHeaderDxt10? dxt10Header) {
+        Name = name;
+        LegacyHeader = legacyHeader;
+        UseDxt10Header = dxt10Header is not null;
+        Dxt10Header = dxt10Header ?? new();
+        _data = null!;
+    }
+
     public DdsFile(string name, Stream stream, bool closeAfter = true) {
         Name = name;
         try {
@@ -39,6 +47,17 @@ public class DdsFile {
         } finally {
             if (closeAfter)
                 stream.Dispose();
+        }
+    }
+
+    public DdsFile(string name, byte[] data) {
+        Name = name;
+        var br = new LuminaBinaryReader(_data = data);
+        LegacyHeader = br.ReadStructure<DdsHeaderLegacy>();
+        if (LegacyHeader.Header.PixelFormat.Flags.HasFlag(DdsPixelFormatFlags.FourCc) &&
+            LegacyHeader.Header.PixelFormat.FourCc == DdsFourCc.Dx10) {
+            UseDxt10Header = true;
+            Dxt10Header = br.ReadStructure<DdsHeaderDxt10>();
         }
     }
 
@@ -288,7 +307,7 @@ public class DdsFile {
         var pf = PixelFormat;
         if (pf is BcPixelFormat bcPixelFormat) {
             return Math.Max(1, (Width(mipmapIndex) + 3) / 4) *
-                Math.Max(1, (Width(mipmapIndex) + 3) / 4) *
+                Math.Max(1, (Height(mipmapIndex) + 3) / 4) *
                 bcPixelFormat.BlockSize;
         }
 
@@ -305,31 +324,56 @@ public class DdsFile {
 
     public int ImageSize => FaceSize * NumFaces;
 
-    public ReadOnlySpan<byte> ImageData(int imageIndex) {
+    public int ImageDataOffset(int imageIndex, out int size) {
         if (imageIndex < 0 || imageIndex >= NumImages)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
 
-        var imageSize = ImageSize;
-        return Data.Slice(imageSize * imageIndex, imageSize);
+        size = ImageSize;
+        return DataOffset + size * imageIndex;
+    }
+
+    public ReadOnlySpan<byte> ImageData(int imageIndex) {
+        var offset = ImageDataOffset(imageIndex, out var size);
+        return new(_data, offset, size);
+    }
+
+    public int FaceDataOffset(int imageIndex, int faceIndex, out int size) {
+        var offset = ImageDataOffset(imageIndex, out _);
+        size = FaceSize;
+        return offset + size * faceIndex;
     }
 
     public ReadOnlySpan<byte> FaceData(int imageIndex, int faceIndex) {
-        var slice = ImageData(imageIndex);
-        var faceSize = FaceSize;
-        return slice.Slice(faceSize * faceIndex, faceSize);
+        var offset = FaceDataOffset(imageIndex, faceIndex, out var size);
+        return new(_data, offset, size);
+    }
+
+    public int MipmapDataOffset(int imageIndex, int faceIndex, int mipmapIndex, out int size) {
+        var baseOffset = FaceDataOffset(imageIndex, faceIndex, out _);
+        var mipOffset = Enumerable.Range(0, mipmapIndex).Sum(MipmapSize);
+        size = MipmapSize(mipmapIndex);
+        return baseOffset + mipOffset;
     }
 
     public ReadOnlySpan<byte> MipmapData(int imageIndex, int faceIndex, int mipmapIndex) {
-        var slice = FaceData(imageIndex, faceIndex);
-        var offset = Enumerable.Range(0, mipmapIndex).Sum(MipmapSize);
-        return slice.Slice(offset, MipmapSize(mipmapIndex));
+        var offset = MipmapDataOffset(imageIndex, faceIndex, mipmapIndex, out var size);
+        return new(_data, offset, size);
+    }
+
+    public int SliceDataOffset(int imageIndex, int faceIndex, int mipmapIndex, int sliceIndex, out int size) {
+        var offset = MipmapDataOffset(imageIndex, faceIndex, mipmapIndex, out _);
+        size = SliceSize(mipmapIndex);
+        return offset + size * sliceIndex;
     }
 
     public ReadOnlySpan<byte> SliceData(int imageIndex, int faceIndex, int mipmapIndex, int sliceIndex) {
-        var slice = MipmapData(imageIndex, faceIndex, mipmapIndex);
-        var sliceSize = SliceSize(mipmapIndex);
-        return slice.Slice(sliceSize * sliceIndex, sliceSize);
+        var offset = SliceDataOffset(imageIndex, faceIndex, mipmapIndex, sliceIndex, out var size);
+        return new(_data, offset, size);
     }
+
+    public int SliceOrFaceDataOffset(int imageIndex, int mipmapIndex, int sliceIndex, out int size) => IsCubeMap
+        ? SliceDataOffset(imageIndex, sliceIndex, mipmapIndex, 0, out size)
+        : SliceDataOffset(imageIndex, 0, mipmapIndex, sliceIndex, out size);
 
     public ReadOnlySpan<byte> SliceOrFaceData(int imageIndex, int mipmapIndex, int sliceIndex) => IsCubeMap
         ? SliceData(imageIndex, sliceIndex, mipmapIndex, 0)

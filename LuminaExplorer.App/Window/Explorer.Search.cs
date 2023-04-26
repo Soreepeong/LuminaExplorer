@@ -17,7 +17,7 @@ public partial class Explorer {
         
         public SearchHandler(Explorer explorer) {
             _explorer = explorer;
-            Tree = explorer.Tree;
+            Vfs = explorer.Vfs;
             AppConfig = explorer._appConfig;
             _txtSearch = _explorer.txtSearch.TextBox!;
             _txtSearch.PlaceholderText = @"Search...";
@@ -31,7 +31,7 @@ public partial class Explorer {
             _explorer.txtSearch.KeyUp -= txtSearch_KeyUp;
         }
         
-        public IVirtualFileSystem? Tree { get; set; }
+        public IVirtualFileSystem? Vfs { get; set; }
 
         public AppConfig AppConfig { get; set; }
 
@@ -58,7 +58,7 @@ public partial class Explorer {
 
             _searchCancellationTokenSource.Cancel();
 
-            if (_explorer._fileListHandler is null || _explorer._navigationHandler is null || Tree is null)
+            if (_explorer._fileListHandler is null || _explorer._navigationHandler is null || Vfs is null)
                 return;
 
             var cancelSource = _searchCancellationTokenSource = new();
@@ -114,12 +114,12 @@ public partial class Explorer {
                 }
             }
 
-            Tree.Search(
+            Vfs.Search(
                 searchBaseFolder,
                 _txtSearch.Text,
                 ReportProgress,
                 folder => {
-                    if (Tree is { } tree)
+                    if (Vfs is { } tree)
                         OnObjectFound(new(tree, folder));
                     else {
                         cancelSource.Cancel();
@@ -127,7 +127,7 @@ public partial class Explorer {
                     }
                 },
                 file => {
-                    if (Tree is { } tree)
+                    if (Vfs is { } tree)
                         OnObjectFound(new(tree, file));
                     else {
                         cancelSource.Cancel();

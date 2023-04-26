@@ -89,7 +89,7 @@ public sealed class DdsBitmapSource : IBitmapSource {
     public int ImageCount => _ddsFile.NumMipmaps;
 
     public IGridLayout Layout { get; private set; }
-    
+
     public bool IsCubeMap { get; }
 
     public Size SliceSpacing {
@@ -224,7 +224,120 @@ public sealed class DdsBitmapSource : IBitmapSource {
     }
 
     public void DescribeImage(StringBuilder sb) {
-        sb.AppendLine("TODO"); // TODO
+        if (_ddsFile.Header.PixelFormat.Flags != DdsPixelFormatFlags.FourCc)
+            sb.Append(_ddsFile.Header.PixelFormat.Flags & ~DdsPixelFormatFlags.FourCc).Append("; ");
+
+        sb.Append($"{_ddsFile.DataOffset + _ddsFile.Data.Length:##,###} Bytes");
+        if (_ddsFile.Header.Flags.HasFlag(DdsHeaderFlags.MipmapCount))
+            sb.Append("; ").Append(_ddsFile.NumMipmaps).Append(" Mipmaps");
+        sb.AppendLine();
+        
+        if (_ddsFile.Header.PixelFormat.Flags.HasFlag(DdsPixelFormatFlags.FourCc)) {
+            if (_ddsFile.Header.PixelFormat.Flags != DdsPixelFormatFlags.FourCc)
+                sb.Append(_ddsFile.Header.PixelFormat.Flags & ~DdsPixelFormatFlags.FourCc).Append("; ");
+            var uival = (uint) _ddsFile.Header.PixelFormat.FourCc;
+            var c1 = (char) Math.Clamp((uival >> 0) & 0xFF, 0x20, 0x7F);
+            var c2 = (char) Math.Clamp((uival >> 8) & 0xFF, 0x20, 0x7F);
+            var c3 = (char) Math.Clamp((uival >> 16) & 0xFF, 0x20, 0x7F);
+            var c4 = (char) Math.Clamp((uival >> 24) & 0xFF, 0x20, 0x7F);
+            sb.AppendLine($"FourCC=0x{uival:X08}({c1}{c2}{c3}{c4})");
+        } else {
+            var inferredFourCc = _ddsFile.PixelFormat.FourCc;
+            if (inferredFourCc != _ddsFile.Header.PixelFormat.FourCc && inferredFourCc != DdsFourCc.Unknown) {
+                var uival = (uint) inferredFourCc;
+                var c1 = (char) Math.Clamp((uival >> 0) & 0xFF, 0x20, 0x7F);
+                var c2 = (char) Math.Clamp((uival >> 8) & 0xFF, 0x20, 0x7F);
+                var c3 = (char) Math.Clamp((uival >> 16) & 0xFF, 0x20, 0x7F);
+                var c4 = (char) Math.Clamp((uival >> 24) & 0xFF, 0x20, 0x7F);
+                sb.AppendLine($"FourCC(Inferred)=0x{uival:X08}({c1}{c2}{c3}{c4})");
+            }
+        }
+
+        if (_ddsFile.UseDxt10Header)
+            sb.AppendLine($"DxgiFormat={_ddsFile.Dxt10Header.DxgiFormat} ({(int) _ddsFile.Dxt10Header.DxgiFormat})");
+        else {
+            var inferredDxgiFormat = _ddsFile.PixelFormat.DxgiFormat;
+            if (inferredDxgiFormat != DxgiFormat.Unknown &&
+                (!_ddsFile.UseDxt10Header || inferredDxgiFormat != _ddsFile.Dxt10Header.DxgiFormat)) {
+                sb.AppendLine($"DxgiFormat(Inferred)={inferredDxgiFormat} ({(int) inferredDxgiFormat})");
+            }
+        }
+
+        var useW = _ddsFile.Header.Flags.HasFlag(DdsHeaderFlags.Width);
+        var useH = _ddsFile.Header.Flags.HasFlag(DdsHeaderFlags.Height);
+        var useD = _ddsFile.Header.Flags.HasFlag(DdsHeaderFlags.Depth);
+
+        var isStandardCube = useW && useH && !useD && _ddsFile.NumFaces == 6;
+        var isStandard1D = useW && !useH && !useD && !_ddsFile.IsCubeMap;
+        var isStandard2D = useW && useH && !useD && !_ddsFile.IsCubeMap;
+        var isStandard3D = useW && useH && useD && !_ddsFile.IsCubeMap;
+        var isNonstandard = !isStandardCube && !isStandard1D && !isStandard2D && !isStandard3D;
+        if (isStandard1D)
+            sb.Append("1D: ").Append(_ddsFile.Header.Width);
+        else if (isStandard2D)
+            sb.Append("2D: ").Append(_ddsFile.Header.Width)
+                .Append(" x ").Append(_ddsFile.Header.Height);
+        else if (isStandard3D)
+            sb.Append("3D: ").Append(_ddsFile.Header.Width)
+                .Append(" x ").Append(_ddsFile.Header.Height)
+                .Append(" x ").Append(_ddsFile.Header.Depth);
+        else if (isStandardCube)
+            sb.Append("Cube: ").Append(_ddsFile.Header.Width)
+                .Append(" x ").Append(_ddsFile.Header.Height);
+        else {
+            sb.Append("Nonstandard;");
+            if (useW) sb.Append(" W=").Append(_ddsFile.Header.Width);
+            if (useH) sb.Append(" H=").Append(_ddsFile.Header.Height);
+            if (useD) sb.Append(" D=").Append(_ddsFile.Header.Depth);
+        }
+
+        if (_ddsFile.UseDxt10Header && _ddsFile.Dxt10Header.ArraySize != 1)
+            sb.Append($" [{_ddsFile.Dxt10Header.ArraySize}]");
+
+        if (_ddsFile.Header.Caps2.HasFlag(DdsCaps2.Volume))
+            sb.Append("; Volume");
+
+        sb.AppendLine();
+
+        if (isNonstandard && IsCubeMap) {
+            sb.Append("Cube Faces: ");
+            if (_ddsFile.Header.Caps2.HasFlag(DdsCaps2.CubemapPositiveX))
+                sb.Append(" +X");
+            if (_ddsFile.Header.Caps2.HasFlag(DdsCaps2.CubemapNegativeX))
+                sb.Append(" -X");
+            if (_ddsFile.Header.Caps2.HasFlag(DdsCaps2.CubemapPositiveY))
+                sb.Append(" +Y");
+            if (_ddsFile.Header.Caps2.HasFlag(DdsCaps2.CubemapNegativeY))
+                sb.Append(" -Y");
+            if (_ddsFile.Header.Caps2.HasFlag(DdsCaps2.CubemapPositiveZ))
+                sb.Append(" +Z");
+            if (_ddsFile.Header.Caps2.HasFlag(DdsCaps2.CubemapNegativeZ))
+                sb.Append(" -Z");
+            sb.AppendLine();
+        }
+
+        if (_mipmap > 0) {
+            sb.AppendLine().Append("Mipmap #").Append(_mipmap + 1).Append(": ");
+            if (isStandard1D)
+                sb.Append(WidthOfMipmap(0, _mipmap));
+            else if (isStandard2D)
+                sb.Append(WidthOfMipmap(0, _mipmap))
+                    .Append(" x ").Append(HeightOfMipmap(0, _mipmap));
+            else if (isStandard3D)
+                sb.Append(WidthOfMipmap(0, _mipmap))
+                    .Append(" x ").Append(HeightOfMipmap(0, _mipmap))
+                    .Append(" x ").Append(NumSlicesOfMipmap(0, _mipmap));
+            else if (isStandardCube)
+                sb.Append(WidthOfMipmap(0, _mipmap))
+                    .Append(" x ").Append(HeightOfMipmap(0, _mipmap));
+            else {
+                if (useW) sb.Append(" W=").Append(WidthOfMipmap(0, _mipmap));
+                if (useH) sb.Append(" H=").Append(HeightOfMipmap(0, _mipmap));
+                if (useD) sb.Append(" D=").Append(_ddsFile.DepthOrNumFaces(_mipmap));
+            }
+
+            sb.AppendLine();
+        }
     }
 
     private void Relayout() {

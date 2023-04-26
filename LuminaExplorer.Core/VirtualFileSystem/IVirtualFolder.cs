@@ -1,11 +1,15 @@
-﻿namespace LuminaExplorer.Core.VirtualFileSystem;
+﻿using System;
 
-public interface IVirtualFolder {
-    public const string UpFolderKey = "../";
+namespace LuminaExplorer.Core.VirtualFileSystem;
+
+public interface IVirtualFolder : IEquatable<IVirtualFolder> {
+    public Exception? AccessException { get; }
     
     public IVirtualFolder? Parent { get; }
 
-    public uint PathHash { get; }
+    public uint? PathHash { get; }
 
     public string Name { get; }
+
+    public void Refresh();
 }

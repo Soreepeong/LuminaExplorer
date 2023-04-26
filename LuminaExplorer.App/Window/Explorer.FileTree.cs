@@ -14,7 +14,7 @@ public partial class Explorer {
         private readonly Explorer _explorer;
         private readonly TreeView _treeView;
 
-        private IVirtualFileSystem? _tree;
+        private IVirtualFileSystem? _vfs;
 
         public FileTreeHandler(Explorer explorer) {
             _explorer = explorer;
@@ -27,49 +27,49 @@ public partial class Explorer {
             _treeView.AfterExpand += AfterExpand;
             _treeView.AfterSelect += AfterSelect;
 
-            _tree = _explorer._tree;
-            if (_tree is not null) {
-                _treeView.Nodes.Add(new FolderTreeNode(_tree));
+            _vfs = _explorer._vfs;
+            if (_vfs is not null) {
+                _treeView.Nodes.Add(new FolderTreeNode(_vfs));
                 _treeView.Nodes[0].Expand();
                 _treeView.SelectedNode = _treeView.Nodes[0];
 
-                _tree.FolderChanged += IVirtualFolderChanged;
+                _vfs.FolderChanged += IVirtualFolderChanged;
             }
         }
 
         public void Dispose() {
-            Tree = null;
+            Vfs = null;
 
             _treeView.AfterExpand -= AfterExpand;
             _treeView.AfterSelect -= AfterSelect;
         }
 
-        public IVirtualFileSystem? Tree {
-            get => _tree;
+        public IVirtualFileSystem? Vfs {
+            get => _vfs;
             set {
-                if (_tree == value)
+                if (_vfs == value)
                     return;
 
-                if (_tree is not null) {
-                    _tree.FolderChanged -= IVirtualFolderChanged;
+                if (_vfs is not null) {
+                    _vfs.FolderChanged -= IVirtualFolderChanged;
                     _treeView.Nodes.Clear();
                 }
 
-                _tree = value;
+                _vfs = value;
 
-                if (_tree is not null) {
-                    _treeView.Nodes.Add(new FolderTreeNode(_tree));
+                if (_vfs is not null) {
+                    _treeView.Nodes.Add(new FolderTreeNode(_vfs));
                     _treeView.Nodes[0].Expand();
                     _treeView.SelectedNode = _treeView.Nodes[0];
 
-                    _tree.FolderChanged += IVirtualFolderChanged;
+                    _vfs.FolderChanged += IVirtualFolderChanged;
                 }
             }
         }
 
         private void IVirtualFolderChanged(IVirtualFolder changedFolder,
             IVirtualFolder[]? previousPathFromRoot) {
-            if (_tree is not { } tree)
+            if (_vfs is not { } tree)
                 return;
 
             if (previousPathFromRoot is null)
@@ -84,7 +84,7 @@ public partial class Explorer {
                 node = node2;
             }
 
-            if (node.Folder != changedFolder)
+            if (!Equals(node.Folder, changedFolder))
                 return;
 
             node.Remove();
@@ -94,7 +94,7 @@ public partial class Explorer {
                 return;
 
             foreach (var folder in tree.GetTreeFromRoot(changedFolder).Skip(1)) {
-                if (folder == changedFolder.Parent) {
+                if (Equals(folder, changedFolder.Parent)) {
                     newParentNode.Nodes.Add(node);
                     break;
                 }
@@ -116,7 +116,7 @@ public partial class Explorer {
         }
 
         public Task<FolderTreeNode> ExpandTreeTo(params string[] pathComponents) {
-            if (_tree is null)
+            if (_vfs is null)
                 throw new InvalidOperationException();
             return ExpandTreeToImpl(
                 (FolderTreeNode) _treeView.Nodes[0],
@@ -130,7 +130,7 @@ public partial class Explorer {
                 if (name == "./")
                     continue;
 
-                if (name == IVirtualFolder.UpFolderKey) {
+                if (name == "../") {
                     node = node.Parent as FolderTreeNode ?? node;
                     continue;
                 }
@@ -160,14 +160,14 @@ public partial class Explorer {
         }
 
         private Task _treeView_PostProcessFolderTreeNodeExpansion(FolderTreeNode ln) {
-            if (_tree is not { } tree)
+            if (_vfs is not { } tree)
                 return Task.CompletedTask;
             var resolvedFolder = tree.AsFoldersResolved(ln.Folder);
 
             if (ln.CallerMustPopulate()) {
                 resolvedFolder = resolvedFolder
                     .ContinueWith(f => {
-                            if (_tree is not { } tree2)
+                            if (_vfs is not { } tree2)
                                 return f.Result;
                             ln.Nodes.Clear();
                             ln.Nodes.AddRange(tree2.GetFolders(ln.Folder)
@@ -216,7 +216,7 @@ public partial class Explorer {
                     if (node is not FolderTreeNode n)
                         continue;
 
-                    if (n.Folder == folder) {
+                    if (Equals(n.Folder, folder)) {
                         childNode = n;
                         return true;
                     }

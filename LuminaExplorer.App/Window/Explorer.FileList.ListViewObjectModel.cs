@@ -24,7 +24,7 @@ namespace LuminaExplorer.App.Window;
 public partial class Explorer {
     private class
         ExplorerListViewDataSource : AbstractVirtualListDataSource, IDisposable, IReadOnlyList<VirtualObject> {
-        private readonly IVirtualFileSystem _tree;
+        private readonly IVirtualFileSystem _vfs;
 
         private VirtualObjectImageLoader _previewCache;
         private int _previewSize;
@@ -35,9 +35,9 @@ public partial class Explorer {
         private CancellationTokenSource _sorterCancel = new();
         private Task _sortTask = Task.CompletedTask;
 
-        public ExplorerListViewDataSource(VirtualObjectListView volv, IVirtualFileSystem tree, int numPreviewerThreads)
+        public ExplorerListViewDataSource(VirtualObjectListView volv, IVirtualFileSystem vfs, int numPreviewerThreads)
             : base(volv) {
-            _tree = tree;
+            _vfs = vfs;
             _previewCache = new(numPreviewerThreads);
             _previewCache.ImageLoaded += PreviewImageLoaded;
         }
@@ -87,7 +87,7 @@ public partial class Explorer {
         public IVirtualFolder? CurrentFolder {
             get => _currentFolder;
             set {
-                if (_currentFolder == value)
+                if (Equals(_currentFolder, value))
                     return;
 
                 _currentFolder = value;
@@ -96,7 +96,7 @@ public partial class Explorer {
                     return;
                 }
 
-                var fileNameResolver = _fileNameResolver = _tree.AsFileNamesResolved(_currentFolder);
+                var fileNameResolver = _fileNameResolver = _vfs.AsFileNamesResolved(_currentFolder);
                 if (!fileNameResolver.IsCompletedSuccessfully)
                     listView.SetObjects(Array.Empty<object>());
                 else
@@ -108,9 +108,9 @@ public partial class Explorer {
                                 return;
                             _fileNameResolver = null;
 
-                            listView.SetObjects(_tree.GetFolders(_currentFolder)
-                                .Select(x => new VirtualObject(_tree, x))
-                                .Concat(_tree.GetFiles(_currentFolder).Select(x => new VirtualObject(_tree, x))));
+                            listView.SetObjects(_vfs.GetFolders(_currentFolder)
+                                .Select(x => new VirtualObject(_vfs, x))
+                                .Concat(_vfs.GetFiles(_currentFolder).Select(x => new VirtualObject(_vfs, x))));
                         }, default,
                         TaskContinuationOptions.DenyChildAttach,
                         TaskScheduler.FromCurrentSynchronizationContext());
@@ -162,10 +162,10 @@ public partial class Explorer {
                             (a.IsFolder ? a.CompareByName(b) : a.Lookup.Type.CompareTo(b.Lookup.Type))),
                         nameof(VirtualObject.Hash1) => (a, b) => orderMultiplier * (
                             a.CompareByFolderOrFile(b) ??
-                            (a.IsFolder ? a.CompareByName(b) : a.Hash1Value.CompareTo(b.Hash1Value))),
+                            (a.IsFolder ? a.CompareByName(b) : MiscUtils.CompareNullable(a.Hash1Value, b.Hash1Value))),
                         nameof(VirtualObject.Hash2) => (a, b) => orderMultiplier * (
                             a.CompareByFolderOrFile(b) ??
-                            (a.IsFolder ? a.CompareByName(b) : a.Hash2Value.CompareTo(b.Hash2Value))),
+                            (a.IsFolder ? a.CompareByName(b) : MiscUtils.CompareNullable(a.Hash2Value, b.Hash2Value))),
                         nameof(VirtualObject.RawSize) => (a, b) => orderMultiplier * (
                             a.CompareByFolderOrFile(b) ??
                             (a.IsFolder ? a.CompareByName(b) : a.Lookup.Size.CompareTo(b.Lookup.Size))),
@@ -275,7 +275,7 @@ public partial class Explorer {
     private sealed class VirtualObject : IDisposable, INotifyPropertyChanged {
         private readonly IVirtualFile? _file;
         private readonly IVirtualFolder? _folder;
-        private readonly Lazy<uint> _hash2;
+        private readonly Lazy<uint?> _hash2;
 
         private string _name;
         private Lazy<IVirtualFileLookup>? _lookup;
@@ -297,7 +297,7 @@ public partial class Explorer {
             _folder = folder;
             _name = folder.Name.Trim('/');
             _fullPath = new(() => tree.GetFullPath(folder));
-            _hash2 = new(0u);
+            _hash2 = new((uint?)null);
         }
 
         private void ReleaseUnmanagedResources() {
@@ -329,9 +329,9 @@ public partial class Explorer {
             return lookup is not null;
         }
 
-        public uint Hash1Value => IsFolder ? Folder.PathHash : File.NameHash;
+        public uint? Hash1Value => IsFolder ? Folder.PathHash : File.NameHash;
 
-        public uint Hash2Value => _hash2.Value;
+        public uint? Hash2Value => _hash2.Value;
 
         [UsedImplicitly] public bool Checked { get; set; }
 
@@ -352,9 +352,9 @@ public partial class Explorer {
                 }
                 : "<error>";
 
-        public string Hash1 => $"{Hash1Value:X08}";
+        public string Hash1 => Hash1Value is null ? "" : $"{Hash1Value.Value:X08}";
 
-        public string Hash2 => IsFolder ? "" : $"{Hash2Value:X08}";
+        public string Hash2 => Hash2Value is null ? "" : $"{Hash2Value.Value:X08}";
 
         public string RawSize => IsFolder ? "" : UiUtils.FormatSize(Lookup.Size);
 

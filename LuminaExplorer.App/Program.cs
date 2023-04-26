@@ -7,6 +7,7 @@ using System.Windows.Forms;
 using LuminaExplorer.App.Window;
 using LuminaExplorer.App.Window.FileViewers;
 using LuminaExplorer.Core.SqPackPath;
+using LuminaExplorer.Core.VirtualFileSystem.Physical;
 using LuminaExplorer.Core.VirtualFileSystem.Sqpack;
 
 namespace LuminaExplorer.App;
@@ -21,9 +22,9 @@ static class Program {
         // see https://aka.ms/applicationconfiguration.
         ApplicationConfiguration.Initialize();
 
-        using var tv = new TextureViewer();
-        Application.Run(tv);
-        return;
+        // using var tv = new TextureViewer();
+        // Application.Run(tv);
+        // return;
 
         var baseDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
 
@@ -38,6 +39,7 @@ static class Program {
 
         appConfig ??= new();
 
+        /*
         var gameData = new Lumina.GameData(appConfig.SqPackRootDirectoryPath);
         var hashCacheFile = new FileInfo(Path.Combine(baseDir, appConfig.CacheFilePath));
         if (!hashCacheFile.Exists || hashCacheFile.Length == 0) {
@@ -49,9 +51,11 @@ static class Program {
         }
 
         var hashdb = new HashDatabase(hashCacheFile);
-
-        using var vsptree = new SqpackFileSystem(hashdb, gameData);
-        using var mainExplorer = new Explorer(appConfig, vsptree);
+        using var fs = new SqpackFileSystem(hashdb, gameData);
+        //*/
+        using var fs = new PhysicalFileSystem();
+        
+        using var mainExplorer = new Explorer(appConfig, fs);
         
         try {
             Application.Run(mainExplorer);

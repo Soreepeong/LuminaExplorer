@@ -8,9 +8,9 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using BrightIdeasSoftware;
 using Lumina.Data;
-using Lumina.Data.Files;
 using LuminaExplorer.App.Utils;
 using LuminaExplorer.App.Window.FileViewers;
+using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.VirtualFileSystem;
 
@@ -27,12 +27,12 @@ public partial class Explorer {
         private readonly Icon? _fileIconLarge;
 
         private ExplorerListViewDataSource? _source;
-        private IVirtualFileSystem? _tree;
+        private IVirtualFileSystem? _vfs;
         private AppConfig _appConfig;
 
         public FileListHandler(Explorer explorer) {
             _explorer = explorer;
-            _tree = explorer.Tree;
+            _vfs = explorer.Vfs;
             _listView = explorer.lvwFiles;
             _cboView = explorer.cboView.ComboBox!;
             _appConfig = explorer.AppConfig;
@@ -51,7 +51,7 @@ public partial class Explorer {
             _fileIconLarge = UiUtils.ExtractPeIcon("shell32.dll", 0, true);
             _folderIconLarge = UiUtils.ExtractPeIcon("shell32.dll", 4, true);
 
-            if (_tree is { } tree) {
+            if (_vfs is { } tree) {
                 _listView.VirtualListDataSource = _source = new(_listView, tree, _appConfig.PreviewThumbnailerThreads) {
                     SortThreads = _appConfig.SortThreads,
                 };
@@ -74,36 +74,36 @@ public partial class Explorer {
 
             _explorer.Resize += WindowResized;
 
-            if (_tree is not null) {
-                _tree.FolderChanged += IVirtualFolderChanged;
-                _tree.FileChanged += IVirtualFileChanged;
+            if (_vfs is not null) {
+                _vfs.FolderChanged += IVirtualFolderChanged;
+                _vfs.FileChanged += IVirtualFileChanged;
             }
 
             _cboView.SelectedIndex = _appConfig.ListViewMode;
             _cboView.SelectedIndexChanged += cboView_SelectedIndexChanged;
         }
 
-        public IVirtualFileSystem? Tree {
-            get => _tree;
+        public IVirtualFileSystem? Vfs {
+            get => _vfs;
             set {
-                if (_tree == value)
+                if (_vfs == value)
                     return;
 
-                if (_tree is not null) {
-                    _tree.FolderChanged -= IVirtualFolderChanged;
-                    _tree.FileChanged -= IVirtualFileChanged;
+                if (_vfs is not null) {
+                    _vfs.FolderChanged -= IVirtualFolderChanged;
+                    _vfs.FileChanged -= IVirtualFileChanged;
                     SafeDispose.One(ref _source);
                     // cannot set to null, so replace it with an empty data source.
                     _listView.VirtualListDataSource = new AbstractVirtualListDataSource(_listView);
                 }
 
-                _tree = value;
+                _vfs = value;
 
-                if (_tree is not null) {
-                    _tree.FolderChanged += IVirtualFolderChanged;
-                    _tree.FileChanged += IVirtualFileChanged;
+                if (_vfs is not null) {
+                    _vfs.FolderChanged += IVirtualFolderChanged;
+                    _vfs.FileChanged += IVirtualFileChanged;
                     _listView.VirtualListDataSource = _source =
-                        new(_listView, _tree, _appConfig.PreviewThumbnailerThreads) {
+                        new(_listView, _vfs, _appConfig.PreviewThumbnailerThreads) {
                             SortThreads = _appConfig.SortThreads,
                         };
                 }
@@ -162,7 +162,7 @@ public partial class Explorer {
         public int ItemCount => _source?.Count ?? 0;
 
         public void Dispose() {
-            Tree = null;
+            Vfs = null;
 
             _listView.SelectionChanged -= SelectionChanged;
             _listView.ItemDrag -= ItemDrag;
@@ -192,13 +192,13 @@ public partial class Explorer {
         public void AddObjects(ICollection objects) => _listView.AddObjects(objects);
 
         private void IVirtualFileChanged(IVirtualFile changedFile) {
-            if (_tree is not { } tree || _source is not { } source)
+            if (_vfs is not { } tree || _source is not { } source)
                 return;
 
-            if (source.CurrentFolder != changedFile.Parent)
+            if (!Equals(source.CurrentFolder, changedFile.Parent))
                 return;
 
-            if (source.FirstOrDefault(x => x.File == changedFile) is { } modelObject) {
+            if (source.FirstOrDefault(x => Equals(x.File, changedFile)) is { } modelObject) {
                 modelObject.Name = changedFile.Name;
                 modelObject.FullPath = tree.GetFullPath(changedFile);
             }
@@ -206,13 +206,13 @@ public partial class Explorer {
 
         private void IVirtualFolderChanged(IVirtualFolder changedFolder,
             IVirtualFolder[]? previousPathFromRoot) {
-            if (_tree is not { } tree || _source is not { } source)
+            if (_vfs is not { } tree || _source is not { } source)
                 return;
 
-            if (source.CurrentFolder != changedFolder.Parent)
+            if (!Equals(source.CurrentFolder, changedFolder.Parent))
                 return;
 
-            if (source.FirstOrDefault(x => x.Folder == changedFolder) is { } modelObject) {
+            if (source.FirstOrDefault(x => Equals(x.Folder, changedFolder)) is { } modelObject) {
                 modelObject.Name = changedFolder.Name;
                 modelObject.FullPath = tree.GetFullPath(changedFolder);
             }
@@ -251,7 +251,7 @@ public partial class Explorer {
         }
 
         private void ItemDrag(object? sender, ItemDragEventArgs e) {
-            if (Tree is not { } tree)
+            if (Vfs is not { } tree)
                 return;
 
             // TODO: export using IStorage, and maybe offer concrete file contents so that it's possible to drag into external hex editors?
@@ -269,7 +269,8 @@ public partial class Explorer {
                         Name = x.Name,
                         Length = lookup.Size,
                         StreamContents = dstStream => {
-                            using var srcStream = lookup.CreateStream();
+                            var innerLookup = tree.GetLookup(x);
+                            using var srcStream = innerLookup.CreateStream();
                             srcStream.CopyTo(dstStream);
                         },
                     };
@@ -330,7 +331,7 @@ public partial class Explorer {
                 return;
             }
 
-            if (_tree is not { } tree)
+            if (_vfs is not { } tree)
                 return;
 
             foreach (var file in files.Take(16)) {
@@ -350,12 +351,12 @@ public partial class Explorer {
                         return;
                     }
 
-                    if (fr.Result is TexFile texFile) {
+                    if (MultiBitmapViewerControl.MaySupportFileResource(fr.Result)) {
                         var viewer = new TextureViewer();
                         viewer.SetFile(
                             tree,
                             file,
-                            texFile,
+                            fr.Result,
                             _explorer._navigationHandler?.CurrentFolder,
                             source.ObjectList.Where(x => !x.IsFolder).Select(x => x.File));
                         viewer.ShowRelativeTo(_explorer);

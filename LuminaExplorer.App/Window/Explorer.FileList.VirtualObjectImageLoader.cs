@@ -7,7 +7,6 @@ using System.Drawing.Imaging;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Lumina.Data.Files;
 using Lumina.Data.Structs;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.VirtualFileSystem;
@@ -17,7 +16,7 @@ namespace LuminaExplorer.App.Window;
 public partial class Explorer {
     private sealed class VirtualObjectImageLoader : IDisposable {
         private readonly object _syncRoot = new();
-        
+
         private readonly Task[] _workers;
         private readonly CancellationTokenSource _disposing = new();
         private readonly SemaphoreSlim _requestSemaphore = new(0, 1);
@@ -178,7 +177,7 @@ public partial class Explorer {
 
                             if (previousItem.Bitmap is null || previousItem.ShouldReload)
                                 break;
-                            
+
                             lock (_syncRoot)
                                 _requests.Remove(virtualObject);
                         }
@@ -186,20 +185,22 @@ public partial class Explorer {
                         if (!_requestsOrdered.IsEmpty)
                             continue;
                     }
-                    
+
                     await _requestSemaphore.WaitAsync(_disposing.Token);
                 }
 
                 var item = new PendingItem();
+                Bitmap? sourceBitmap = null;
                 Bitmap? targetBitmap = null;
                 IVirtualFileLookup? lookup = null;
                 try {
-                    if (!virtualObject.TryGetLookup(out lookup) || lookup.File != vfile)
+                    if (!virtualObject.TryGetLookup(out lookup) || !Equals(lookup.File, vfile))
                         continue;
 
                     var canBeTexture = false;
                     canBeTexture |= lookup.Type == FileType.Texture;
-                    canBeTexture |= vfile.Name.EndsWith(".atex", StringComparison.InvariantCultureIgnoreCase);
+                    canBeTexture |= BinaryReaderExtensions.ThumbnailSupportedExtensions.Any(
+                        x => vfile.Name.EndsWith(x, StringComparison.InvariantCultureIgnoreCase));
                     // may be an .atex file
                     canBeTexture |= !vfile.NameResolved && lookup is {Type: FileType.Standard, Size: > 256};
 
@@ -209,7 +210,8 @@ public partial class Explorer {
                     var w = Width;
                     var h = Height;
                     await using var stream = lookup.CreateStream();
-                    var f = await stream.ExtractMipmapOfSizeAtLeast(
+                    
+                    sourceBitmap = await stream.ExtractMipmapOfSizeAtLeast(
                         Math.Max(w, h),
                         virtualObject.PlatformId,
                         _disposing.Token);
@@ -217,63 +219,49 @@ public partial class Explorer {
                     if (_disposing.IsCancellationRequested)
                         return;
 
-                    f = f.Filter(format: TexFile.TextureFormat.B8G8R8A8);
-
-                    if (_disposing.IsCancellationRequested)
-                        return;
-
-                    unsafe {
-                        fixed (void* p = f.RawData) {
-                            using var sourceBitmap = new Bitmap(f.Width, f.Height, 4 * f.Width,
-                                PixelFormat.Format32bppArgb, (nint) p);
-
-                            // Note: sourceBitmap does not copy the given data. Making a copy is required.
-                            if (f.Width <= w && f.Height <= w) {
-                                item.CompletionSource.SetResult(new(sourceBitmap));
-                                continue;
-                            }
-
-                            var srcRect = new Rectangle(0, 0, sourceBitmap.Width, sourceBitmap.Height);
-
-                            var sourceAspectRatio = (float) sourceBitmap.Height / sourceBitmap.Width;
-                            var targetAspectRatio = (float) w / h;
-                            if (sourceAspectRatio < targetAspectRatio) {
-                                // horizontally wider
-                                if (sourceAspectRatio < targetAspectRatio / _cropThresholdAspectRatioRatio) {
-                                    sourceAspectRatio = targetAspectRatio / _cropThresholdAspectRatioRatio;
-                                    srcRect.Width = (int) (sourceBitmap.Height / sourceAspectRatio);
-                                    srcRect.X = (sourceBitmap.Width - srcRect.Width) / 2;
-                                }
-
-                                // fit height
-                                h = (int) (w * sourceAspectRatio);
-                            } else {
-                                // vertically wider
-                                if (sourceAspectRatio > targetAspectRatio * _cropThresholdAspectRatioRatio) {
-                                    sourceAspectRatio = targetAspectRatio * _cropThresholdAspectRatioRatio;
-                                    srcRect.Height = (int) (sourceBitmap.Width * sourceAspectRatio);
-                                    srcRect.Y = (sourceBitmap.Height - srcRect.Height) / 2;
-                                }
-
-                                // fit width
-                                w = (int) (h / sourceAspectRatio);
-                            }
-
-                            targetBitmap = new(w, h, PixelFormat.Format32bppArgb);
-                            using (var g = Graphics.FromImage(targetBitmap)) {
-                                g.InterpolationMode = _interpolationMode;
-                                g.DrawImage(sourceBitmap, new Rectangle(0, 0, w, h), srcRect, GraphicsUnit.Pixel);
-                            }
-                        }
+                    if (sourceBitmap.Width <= w && sourceBitmap.Height <= w) {
+                        item.CompletionSource.SetResult(new(sourceBitmap));
+                        sourceBitmap = null;
+                        continue;
                     }
+
+                    var srcRect = new Rectangle(0, 0, sourceBitmap.Width, sourceBitmap.Height);
+
+                    var sourceAspectRatio = (float) sourceBitmap.Height / sourceBitmap.Width;
+                    var targetAspectRatio = (float) w / h;
+                    if (sourceAspectRatio < targetAspectRatio) {
+                        // horizontally wider
+                        if (sourceAspectRatio < targetAspectRatio / _cropThresholdAspectRatioRatio) {
+                            sourceAspectRatio = targetAspectRatio / _cropThresholdAspectRatioRatio;
+                            srcRect.Width = (int) (sourceBitmap.Height / sourceAspectRatio);
+                            srcRect.X = (sourceBitmap.Width - srcRect.Width) / 2;
+                        }
+
+                        // fit height
+                        h = (int) (w * sourceAspectRatio);
+                    } else {
+                        // vertically wider
+                        if (sourceAspectRatio > targetAspectRatio * _cropThresholdAspectRatioRatio) {
+                            sourceAspectRatio = targetAspectRatio * _cropThresholdAspectRatioRatio;
+                            srcRect.Height = (int) (sourceBitmap.Width * sourceAspectRatio);
+                            srcRect.Y = (sourceBitmap.Height - srcRect.Height) / 2;
+                        }
+
+                        // fit width
+                        w = (int) (h / sourceAspectRatio);
+                    }
+
+                    targetBitmap = new(w, h, PixelFormat.Format32bppArgb);
+                    using var g = Graphics.FromImage(targetBitmap);
+                    g.InterpolationMode = _interpolationMode;
+                    g.DrawImage(sourceBitmap, new Rectangle(0, 0, w, h), srcRect, GraphicsUnit.Pixel);
 
                     item.CompletionSource.SetResult(targetBitmap);
                     targetBitmap = null;
-
                 } catch (Exception e) {
                     item.CompletionSource.SetException(e);
-
                 } finally {
+                    sourceBitmap?.Dispose();
                     targetBitmap?.Dispose();
                     lookup?.Dispose();
                     lock (_syncRoot) {
@@ -286,12 +274,11 @@ public partial class Explorer {
                                     _previews.Add(vfile, item);
                                 if (item.Bitmap is { } b)
                                     ImageLoaded?.Invoke(virtualObject, vfile, b);
-
                             } else {
                                 item.Bitmap?.Dispose();
 
                                 // if the object still points to a same file, queue the task again.
-                                if (virtualObject.File == vfile) {
+                                if (Equals(virtualObject.File, vfile)) {
                                     _requests.Add(virtualObject);
                                     _requestsOrdered.Add(Tuple.Create(virtualObject, vfile));
                                 }

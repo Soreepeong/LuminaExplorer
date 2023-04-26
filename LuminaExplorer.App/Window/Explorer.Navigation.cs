@@ -17,7 +17,7 @@ public partial class Explorer {
         private int _navigationHistoryPosition = -1;
         private IVirtualFolder? _currentFolder;
 
-        private IVirtualFileSystem? _tree;
+        private IVirtualFileSystem? _vfs;
         private AppConfig _appConfig;
 
         public NavigationHandler(Explorer explorer) {
@@ -27,9 +27,9 @@ public partial class Explorer {
             _txtPath.AutoCompleteMode = AutoCompleteMode.Suggest;
             _txtPath.AutoCompleteSource = AutoCompleteSource.CustomSource;
 
-            _tree = explorer.Tree;
-            if (_tree is not null)
-                _tree.FolderChanged += SqPackTree_FolderChanged_Navigation;
+            _vfs = explorer.Vfs;
+            if (_vfs is not null)
+                _vfs.FolderChanged += SqPackVfsFolderChangedNavigation;
 
             _explorer.btnNavBack.Click += btnNavBack_Click;
             _explorer.btnNavForward.Click += btnNavForward_Click;
@@ -49,25 +49,25 @@ public partial class Explorer {
             _explorer.txtPath.KeyDown -= txtPath_KeyDown;
             _explorer.txtPath.KeyUp -= txtPath_KeyUp;
 
-            Tree = null;
+            Vfs = null;
         }
 
-        public IVirtualFileSystem? Tree {
-            get => _tree;
+        public IVirtualFileSystem? Vfs {
+            get => _vfs;
             set {
-                if (_tree == value)
+                if (_vfs == value)
                     return;
 
-                if (_tree is not null)
-                    _tree.FolderChanged -= SqPackTree_FolderChanged_Navigation;
+                if (_vfs is not null)
+                    _vfs.FolderChanged -= SqPackVfsFolderChangedNavigation;
 
-                _tree = value;
+                _vfs = value;
                 _currentFolder = null;
 
-                if (_tree is not null) {
-                    _tree.FolderChanged += SqPackTree_FolderChanged_Navigation;
+                if (_vfs is not null) {
+                    _vfs.FolderChanged += SqPackVfsFolderChangedNavigation;
 
-                    NavigateTo(_tree.RootFolder, true);
+                    NavigateTo(_vfs.RootFolder, true);
                 }
             }
         }
@@ -80,7 +80,7 @@ public partial class Explorer {
 
         public IVirtualFolder? CurrentFolder => _currentFolder;
 
-        private void SqPackTree_FolderChanged_Navigation(IVirtualFolder changedFolder,
+        private void SqPackVfsFolderChangedNavigation(IVirtualFolder changedFolder,
             IVirtualFolder[]? previousPathFromRoot) {
             _explorer.btnNavUp.Enabled = _currentFolder?.Parent is not null;
         }
@@ -92,7 +92,7 @@ public partial class Explorer {
         private void btnNavUp_Click(object? sender, EventArgs e) => NavigateUp();
 
         private void btnsHistory_DropDownOpening(object? sender, EventArgs e) {
-            if (_tree is not { } tree)
+            if (_vfs is not { } tree)
                 return;
 
             var counter = 0;
@@ -134,7 +134,7 @@ public partial class Explorer {
                     _explorer._fileTreeHandler?.ExpandTreeTo(_txtPath.Text)
                         .ContinueWith(
                             vfr => {
-                                if (_tree is not { } tree)
+                                if (_vfs is not { } tree)
                                     return;
 
                                 var fullPath = tree.GetFullPath(vfr.Result.Folder);
@@ -162,7 +162,7 @@ public partial class Explorer {
                 }
 
                 case Keys.Escape: {
-                    if (_tree is not { } tree || _currentFolder is not { } currentFolder)
+                    if (_vfs is not { } tree || _currentFolder is not { } currentFolder)
                         return;
 
                     _txtPath.Text = tree.GetFullPath(currentFolder);
@@ -173,7 +173,7 @@ public partial class Explorer {
         }
 
         private void txtPath_KeyUp(object? sender, KeyEventArgs keyEventArgs) {
-            if (_tree is not { } tree)
+            if (_vfs is not { } tree)
                 return;
 
             var searchedText = _txtPath.Text;
@@ -185,13 +185,13 @@ public partial class Explorer {
             tree.AsFoldersResolved(cleanerPath)
                 .ContinueWith(
                     res => {
-                        if (_tree is not { } tree2)
+                        if (_vfs is not { } tree2)
                             return;
 
                         if (searchedText != _txtPath.Text || !res.IsCompletedSuccessfully)
                             return;
 
-                        if (_txtPath.Tag == res.Result)
+                        if (Equals(_txtPath.Tag, res.Result))
                             return;
 
                         _txtPath.Tag = res.Result;
@@ -202,7 +202,7 @@ public partial class Explorer {
                         var parentFolder = tree2.GetFullPath(res.Result);
                         var src = new AutoCompleteStringCollection();
 
-                        foreach (var f in tree2.GetFolders(res.Result).Where(x => x != res.Result.Parent))
+                        foreach (var f in tree2.GetFolders(res.Result).Where(x => !Equals(x, res.Result.Parent)))
                             src.Add($"{parentFolder}{f.Name[..^1]}");
                         _txtPath.AutoCompleteCustomSource = src;
 
@@ -240,10 +240,10 @@ public partial class Explorer {
         }
 
         public void NavigateTo(IVirtualFolder folder, bool addToHistory) {
-            if (_tree is not { } tree)
+            if (_vfs is not { } tree)
                 return;
 
-            if (_currentFolder == folder)
+            if (Equals(_currentFolder, folder))
                 return;
 
             _currentFolder = folder;
@@ -278,12 +278,12 @@ public partial class Explorer {
         }
 
         public async Task<IVirtualFolder> NavigateTo(params string[] pathComponents) {
-            if (_tree is null)
+            if (_vfs is null)
                 throw new InvalidOperationException();
 
-            var folder = _tree.RootFolder;
-            foreach (var part in _tree.NormalizePath(pathComponents).Split("/")) {
-                var folders = _tree.GetFolders(await _tree.AsFoldersResolved(folder));
+            var folder = _vfs.RootFolder;
+            foreach (var part in _vfs.NormalizePath(pathComponents).Split("/")) {
+                var folders = _vfs.GetFolders(await _vfs.AsFoldersResolved(folder));
                 var candidate = folders.FirstOrDefault(x =>
                     string.Compare(x.Name, part, StringComparison.InvariantCultureIgnoreCase) == 0);
                 if (candidate is null)

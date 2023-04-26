@@ -17,9 +17,9 @@ public sealed partial class SqpackFileSystem : IVirtualFileSystem {
     // Enter writer lock when nodes may be moved around across parents not in same hierarchy.
     private readonly ReaderWriterLockSlim _treeStructureLock = new();
 
-    private readonly LruCache<VirtualFile, SqpackFileLookup> _fileLookups = new(4096, true);
+    private readonly LruCache<SqpackFile, SqpackFileLookup> _fileLookups = new(4096, true);
 
-    public readonly VirtualFolder RootFolderTyped = VirtualFolder.CreateRoot();
+    public readonly SqpackFolder RootFolderTyped = SqpackFolder.CreateRoot();
     public readonly DirectoryInfo InstallationSqPackDirectory;
     public readonly PlatformId PlatformId;
 
@@ -77,7 +77,7 @@ public sealed partial class SqpackFileSystem : IVirtualFileSystem {
         FileChanged = null;
     }
 
-    public SqpackFileLookup GetLookup(VirtualFile file) {
+    public SqpackFileLookup GetLookup(SqpackFile file) {
         SqpackFileLookup? data;
         lock (_fileLookups) {
             if (_fileLookups.TryGet(file, out data))
@@ -100,7 +100,7 @@ public sealed partial class SqpackFileSystem : IVirtualFileSystem {
         return (SqpackFileLookup) data.Clone();
     }
 
-    public IVirtualFileLookup GetLookup(IVirtualFile file) => GetLookup((VirtualFile) file);
+    public IVirtualFileLookup GetLookup(IVirtualFile file) => GetLookup((SqpackFile) file);
 
     public string NormalizePath(params string[] pathComponents) =>
         Path.Join(pathComponents).Replace('\\', '/').Trim('/');

@@ -6,12 +6,10 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using DirectN;
-using Lumina.Data.Files;
-using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
+using Lumina.Data;
+using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.ObjectRepresentationWrapper;
-using LuminaExplorer.Core.Util.DdsStructs;
 using LuminaExplorer.Core.VirtualFileSystem;
 using WicNet;
 using DialogResult = System.Windows.Forms.DialogResult;
@@ -26,7 +24,6 @@ public partial class TextureViewer : Form {
     private const int MinimumHeight = 240;
 
     private static readonly Guid TextureViewerSaveToGuid = Guid.Parse("5793cbbc-ae79-4d14-8825-9de07d583848");
-    private static readonly string[] ValidTextureExtensions = {".tex", ".atex"};
 
     private readonly MouseActivityTracker _panelMouseTracker;
     private int _unconstrainedPanelWidth = 240;
@@ -36,7 +33,7 @@ public partial class TextureViewer : Form {
     private readonly List<Tuple<IVirtualFile, bool>> _playlist = new();
     private IVirtualFolder? _folder;
     private int _indexInPlaylist;
-    private IVirtualFileSystem? _tree;
+    private IVirtualFileSystem? _vfs;
 
     private bool _isFullScreen;
     private FormBorderStyle _nonFullScreenBorderStyle;
@@ -64,12 +61,6 @@ public partial class TextureViewer : Form {
         TexViewer.MouseDown += TexViewerOnMouseDown;
         TexViewer.NavigateToNextFile += TexViewerOnNavigateToNextFile;
         TexViewer.NavigateToPrevFile += TexViewerOnNavigateToPrevFile;
-
-        TexViewer.SetFile(Task.Run(() => {
-            // var path = @"Z:\ROL\Sonic_Crytek_3D\textures\activistgirl_head_d.dds";
-            var path = @"Z:\ROL\Sonic_Crytek\Levels\textures\cubemaps\default\sky_cubemap_plus_cm.dds";
-            return (IBitmapSource) new DdsBitmapSource(new(path, File.OpenRead(path)));
-        }));
     }
 
     private void MouseActivityOnMiddleClick(Point cursor) => IsFullScreen = !IsFullScreen;
@@ -293,30 +284,29 @@ public partial class TextureViewer : Form {
         }
     }
 
-    public void SetFile(IVirtualFileSystem tree, IVirtualFile file, TexFile texFile, IVirtualFolder? folder,
+    public void SetFile(IVirtualFileSystem tree, IVirtualFile file, FileResource fileResource, IVirtualFolder? folder,
         IEnumerable<IVirtualFile> playlist) {
-        _tree = tree;
+        _vfs = tree;
         _folder = folder;
         _playlist.Clear();
         _playlist.AddRange(playlist.Select(item => Tuple.Create(
             item,
-            item.NameResolved && ValidTextureExtensions.All(
-                x => !item.Name.EndsWith(x, StringComparison.InvariantCultureIgnoreCase)))));
+            item.NameResolved && MultiBitmapViewerControl.MaySupportExtension(Path.GetExtension(item.Name)))));
 
         var fileTuple = Tuple.Create(file, true);
         _indexInPlaylist = _playlist.IndexOf(fileTuple);
         if (_indexInPlaylist < 0)
             _playlist.Insert(_indexInPlaylist = 0, fileTuple);
-        SelectFile(_indexInPlaylist, texFile);
+        SelectFile(_indexInPlaylist, fileResource);
     }
 
     private async Task<bool> FindAndSelectFirstTexFile(int index, int step, CancellationToken cancellationToken,
         bool cycle = true) {
-        if (_tree is not { } tree)
+        if (_vfs is not { } tree)
             return false;
 
         var invalidIndices = new List<int>();
-        TexFile? texFile = null;
+        FileResource? fileResource = null;
         for (; index >= 0 && index < _playlist.Count; index += step) {
             var (item, confirmed) = _playlist[index];
 
@@ -326,22 +316,27 @@ public partial class TextureViewer : Form {
                     if (cycle)
                         TexViewer.ClearOverlayString();
                 });
+                return true;
             }
 
-            if (item.NameResolved && ValidTextureExtensions.All(
-                    x => !item.Name.EndsWith(x, StringComparison.InvariantCultureIgnoreCase))) {
+            if (item.NameResolved && MultiBitmapViewerControl.MaySupportExtension(Path.GetExtension(item.Name))) {
                 invalidIndices.Add(index);
                 continue;
             }
 
             using var lookup = tree.GetLookup(item);
             try {
-                texFile = await lookup.AsFileResource<TexFile>(cancellationToken);
-                _playlist[index] = Tuple.Create(item, true);
-                break;
+                fileResource = await lookup.AsFileResource(cancellationToken);
+                if (MultiBitmapViewerControl.MaySupportFileResource(fileResource)) {
+                    _playlist[index] = Tuple.Create(item, true);
+                    break;
+                }
             } catch (Exception) {
-                invalidIndices.Add(index);
+                // pass
             }
+            
+            fileResource = null;
+            invalidIndices.Add(index);
         }
 
         if (invalidIndices.Any()) {
@@ -354,9 +349,9 @@ public partial class TextureViewer : Form {
             }
         }
 
-        if (texFile is not null) {
+        if (fileResource is not null) {
             await TexViewer.RunOnUiThread(() => {
-                SelectFile(index, texFile);
+                SelectFile(index, fileResource);
                 if (cycle)
                     TexViewer.ClearOverlayString();
             });
@@ -395,8 +390,8 @@ public partial class TextureViewer : Form {
         }
     }
 
-    private void SelectFile(int index, TexFile? texFile) {
-        if (_tree is not { } tree)
+    private void SelectFile(int index, FileResource? fileResource) {
+        if (_vfs is not { } tree)
             return;
         _indexInPlaylist = index;
         var (file, _) = _playlist[index];
@@ -405,16 +400,16 @@ public partial class TextureViewer : Form {
         _texFileLoadCancelTokenSource?.Cancel();
         _texFileLoadCancelTokenSource = null;
 
-        if (texFile is not null) {
-            TexViewer.SetFile(texFile);
-            PropertyPanelGrid.SelectedObject = new WrapperTypeConverter().ConvertFrom(texFile);
+        if (fileResource is not null) {
+            TexViewer.SetFile(fileResource);
+            PropertyPanelGrid.SelectedObject = new WrapperTypeConverter().ConvertFrom(fileResource);
             return;
         }
 
         _texFileLoadCancelTokenSource = new();
 
         using var lookup = tree.GetLookup(file);
-        lookup.AsFileResource<TexFile>(_texFileLoadCancelTokenSource.Token)
+        lookup.AsFileResource(_texFileLoadCancelTokenSource.Token)
             .ContinueWith(
                 r => {
                     if (!r.IsCompletedSuccessfully || index != _indexInPlaylist)

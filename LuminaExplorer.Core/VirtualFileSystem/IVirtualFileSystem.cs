@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace LuminaExplorer.Core.VirtualFileSystem;
@@ -24,23 +23,13 @@ public interface IVirtualFileSystem : IDisposable {
 
     public string GetFullPath(IVirtualFolder folder);
     public string GetFullPath(IVirtualFile file);
-    public uint GetFullPathHash(IVirtualFile file);
+    public uint? GetFullPathHash(IVirtualFile file);
     public IVirtualFolder[] GetTreeFromRoot(IVirtualFolder folder);
     public bool HasNoSubfolder(IVirtualFolder folder);
     public int GetKnownFolderCount(IVirtualFolder folder);
     public List<IVirtualFile> GetFiles(IVirtualFolder folder);
-    public List<IVirtualFolder> GetFolders(IVirtualFolder folder, bool excludeUpDir = true);
+    public List<IVirtualFolder> GetFolders(IVirtualFolder folder);
 
-    public Task Search(
-        IVirtualFolder rootFolder,
-        string query,
-        Action<SearchProgress> progressCallback,
-        Action<IVirtualFolder> folderFoundCallback,
-        Action<IVirtualFile> fileFoundCallback,
-        int numThreads = default,
-        TimeSpan timeoutPerEntry = default,
-        CancellationToken cancellationToken = default);
-    
     public class SearchProgress {
         public readonly Stopwatch Stopwatch = new();
 

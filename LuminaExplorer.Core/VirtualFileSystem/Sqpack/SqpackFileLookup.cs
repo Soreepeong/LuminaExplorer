@@ -1,13 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Lumina;
 using Lumina.Data;
-using Lumina.Data.Attributes;
 using Lumina.Data.Structs;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.VirtualFileSystem.Sqpack.SqpackFileStream;
@@ -17,8 +14,8 @@ namespace LuminaExplorer.Core.VirtualFileSystem.Sqpack;
 public sealed class SqpackFileLookup : ICloneable, IVirtualFileLookup {
     private VirtualFileLookupCore? _core;
 
-    public SqpackFileLookup(SqpackFileSystem tree, VirtualFile virtualFile, string datPath) =>
-        _core = new(tree, virtualFile, datPath);
+    public SqpackFileLookup(SqpackFileSystem tree, SqpackFile sqpackFile, string datPath) =>
+        _core = new(tree, sqpackFile, datPath);
 
     private SqpackFileLookup(VirtualFileLookupCore? core) {
         _core = core;
@@ -46,21 +43,17 @@ public sealed class SqpackFileLookup : ICloneable, IVirtualFileLookup {
 
     public object Clone() => new SqpackFileLookup(_core);
 
-    public VirtualFile FileTyped => Core.File;
+    public SqpackFile FileTyped => Core.FileTyped;
 
-    public VirtualFile File => Core.File;
+    public IVirtualFile File => Core.FileTyped;
 
     public FileType Type => Core.Type;
 
-    public uint Size => Core.Size;
+    public long Size => Core.Size;
 
-    public uint ReservedSpaceUnits => Core.ReservedSpaceUnits;
+    public long ReservedBytes => Core.ReservedBytes;
 
-    public uint OccupiedSpaceUnits => Core.OccupiedSpaceUnits;
-
-    public ulong ReservedBytes => Core.ReservedBytes;
-
-    public ulong OccupiedBytes => Core.OccupiedBytes;
+    public long OccupiedBytes => Core.OccupiedBytes;
 
     public Stream CreateStream() => Core.CreateStream();
 
@@ -72,26 +65,22 @@ public sealed class SqpackFileLookup : ICloneable, IVirtualFileLookup {
     public Task<T> AsFileResource<T>(CancellationToken cancellationToken = default) where T : FileResource =>
         Core.AsFileResource<T>(cancellationToken);
 
-    private class VirtualFileLookupCore {
+    private class VirtualFileLookupCore : IVirtualFileLookup{
         private int _refcount = 1;
 
-        private readonly SqpackFileSystem _tree;
+        private readonly SqpackFileSystem _vfs;
         private readonly Lazy<BaseSqpackFileStream> _dataStream;
 
-        public readonly VirtualFile File;
-        public readonly FileType Type;
-        public readonly uint Size;
-        public readonly uint ReservedSpaceUnits;
-        public readonly uint OccupiedSpaceUnits;
+        public readonly SqpackFile FileTyped;
 
         private readonly SqPackFileInfo _fileInfo;
         private readonly ModelBlock? _modelBlock;
 
-        internal VirtualFileLookupCore(SqpackFileSystem tree, VirtualFile file, string datPath) {
-            _tree = tree;
-            File = file;
+        internal VirtualFileLookupCore(SqpackFileSystem vfs, SqpackFile file, string datPath) {
+            _vfs = vfs;
+            FileTyped = file;
 
-            using var reader = new LuminaBinaryReader(System.IO.File.OpenRead(datPath), tree.PlatformId);
+            using var reader = new LuminaBinaryReader(System.IO.File.OpenRead(datPath), vfs.PlatformId);
             reader.Position = file.Offset;
 
             _fileInfo = reader.WithSeek(file.Offset).ReadStructure<SqPackFileInfo>();
@@ -102,18 +91,18 @@ public sealed class SqpackFileLookup : ICloneable, IVirtualFileLookup {
             Type = _fileInfo.Type;
             Size = _fileInfo.RawFileSize;
             unsafe {
-                ReservedSpaceUnits = _fileInfo.__unknown[0];
-                OccupiedSpaceUnits = _fileInfo.__unknown[1];
+                ReservedBytes = (long)_fileInfo.__unknown[0] << 7;
+                OccupiedBytes = (long)_fileInfo.__unknown[1] << 7;
             }
 
             _dataStream = new(() => {
                 BaseSqpackFileStream result = Type switch {
-                    FileType.Empty => new EmptySqpackFileStream(_tree.PlatformId),
-                    FileType.Standard => new StandardSqpackFileStream(datPath, _tree.PlatformId, file.Offset,
+                    FileType.Empty => new EmptySqpackFileStream(_vfs.PlatformId),
+                    FileType.Standard => new StandardSqpackFileStream(datPath, _vfs.PlatformId, file.Offset,
                         _fileInfo),
-                    FileType.Model => new ModelSqpackFileStream(datPath, _tree.PlatformId, file.Offset,
+                    FileType.Model => new ModelSqpackFileStream(datPath, _vfs.PlatformId, file.Offset,
                         _modelBlock!.Value),
-                    FileType.Texture => new TextureSqpackFileStream(datPath, _tree.PlatformId, file.Offset, _fileInfo),
+                    FileType.Texture => new TextureSqpackFileStream(datPath, _vfs.PlatformId, file.Offset, _fileInfo),
                     _ => throw new NotSupportedException(),
                 };
 
@@ -123,8 +112,19 @@ public sealed class SqpackFileLookup : ICloneable, IVirtualFileLookup {
             });
         }
 
-        public ulong ReservedBytes => (ulong) ReservedSpaceUnits << 7;
-        public ulong OccupiedBytes => (ulong) OccupiedSpaceUnits << 7;
+        public void Dispose() {
+            throw new NotImplementedException();
+        }
+
+        public IVirtualFile File => FileTyped;
+        
+        public FileType Type { get; }
+        
+        public long Size { get; }
+        
+        public long ReservedBytes { get; }
+        
+        public long OccupiedBytes { get; }
 
         public void AddRef() => Interlocked.Increment(ref _refcount);
 
@@ -160,25 +160,20 @@ public sealed class SqpackFileLookup : ICloneable, IVirtualFileLookup {
             };
             typeof(LuminaFileInfo)
                 .GetProperty("Offset", bindingFlags)
-                !.SetValue(luminaFileInfo, File.Offset);
+                !.SetValue(luminaFileInfo, FileTyped.Offset);
             if (Type == FileType.Model) {
                 typeof(LuminaFileInfo)
                     .GetProperty("ModelBlock", bindingFlags)
                     !.SetValue(luminaFileInfo, _modelBlock);
             }
 
-            typeof(FileResource)
-                .GetProperty("FilePath", bindingFlags)
-                !.SetValue(file, GameData.ParseFilePath(_tree.GetFullPath(File)));
-            typeof(FileResource)
-                .GetProperty("Data", bindingFlags)
-                !.SetValue(file, buffer);
-            typeof(FileResource)
-                .GetProperty("Reader", bindingFlags)
-                !.SetValue(file, reader);
-            typeof(FileResource)
-                .GetMethod("LoadFile", bindingFlags)
-                !.Invoke(file, null);
+            var pfp = GameData.ParseFilePath(_vfs.GetFullPath(FileTyped));
+
+            typeof(FileResource).GetProperty("FileInfo", bindingFlags)!.SetValue(file, luminaFileInfo);
+            typeof(FileResource).GetProperty("FilePath", bindingFlags)!.SetValue(file, pfp);
+            typeof(FileResource).GetProperty("Data", bindingFlags)!.SetValue(file, buffer);
+            typeof(FileResource).GetProperty("Reader", bindingFlags)!.SetValue(file, reader);
+            typeof(FileResource).GetMethod("LoadFile", bindingFlags)!.Invoke(file, null);
             return file;
         }
 
@@ -186,7 +181,7 @@ public sealed class SqpackFileLookup : ICloneable, IVirtualFileLookup {
             Task.Factory.StartNew(
                 () => ReadAll(cancellationToken)
                     .ContinueWith(buffer => {
-                        var reader = new LuminaBinaryReader(buffer.Result, _tree.PlatformId);
+                        var reader = new LuminaBinaryReader(buffer.Result, _vfs.PlatformId);
                         try {
                             cancellationToken.ThrowIfCancellationRequested();
                             return (T) AsFileResourceImpl(reader.WithSeek(0), buffer.Result, typeof(T));
@@ -204,61 +199,8 @@ public sealed class SqpackFileLookup : ICloneable, IVirtualFileLookup {
             Task.Factory.StartNew(
                 () => ReadAll(cancellationToken)
                     .ContinueWith(buffer => {
-                        var reader = new LuminaBinaryReader(buffer.Result, _tree.PlatformId);
-
-                        var magic = Size >= 4 ? reader.ReadUInt32() : 0;
-
-                        var fileResourceType = typeof(FileResource);
-                        var allResourceTypes = AppDomain.CurrentDomain.GetAssemblies()
-                            .SelectMany(x => x.GetTypes())
-                            .Where(x => fileResourceType.IsAssignableFrom(x) && x != fileResourceType)
-                            .ToArray();
-
-                        var typeByExt = allResourceTypes.ToDictionary(
-                            x => (x.GetCustomAttribute<FileExtensionAttribute>()?.Extension ?? $".{x.Name[..^4]}")
-                                .ToLowerInvariant(),
-                            x => x);
-
-                        typeByExt[".atex"] = typeByExt[".tex"];
-
-                        var typeByMagic = new Dictionary<uint, Type> {
-                            {
-                                0x42444553u, typeByExt[".scd"]
-                            },
-                        };
-                        var possibleTypes = new HashSet<Type>();
-
-                        switch (Type) {
-                            case FileType.Empty:
-                                break;
-
-                            case FileType.Standard: {
-                                if (File.NameResolveAttempted) {
-                                    if (typeByExt.TryGetValue(
-                                            Path.GetExtension(File.Name).ToLowerInvariant(),
-                                            out var type))
-                                        possibleTypes.Add(type);
-                                }
-
-                                {
-                                    if (typeByMagic.TryGetValue(magic, out var type))
-                                        possibleTypes.Add(type);
-                                }
-
-                                break;
-                            }
-
-                            case FileType.Model:
-                                possibleTypes.Add(typeByExt[".mdl"]);
-                                break;
-
-                            case FileType.Texture:
-                                possibleTypes.Add(typeByExt[".tex"]);
-                                break;
-
-                            default:
-                                throw new NotSupportedException();
-                        }
+                        var reader = new LuminaBinaryReader(buffer.Result, _vfs.PlatformId);
+                        var possibleTypes = IVirtualFileLookup.FindPossibleTypes(this, reader);
 
                         foreach (var f in possibleTypes) {
                             cancellationToken.ThrowIfCancellationRequested();

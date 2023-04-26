@@ -1,10 +1,12 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using Lumina.Data;
 using Lumina.Data.Files;
 using LuminaExplorer.App.Utils;
+using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
 using LuminaExplorer.Core.ObjectRepresentationWrapper;
 using LuminaExplorer.Core.VirtualFileSystem;
 
@@ -33,14 +35,14 @@ public partial class Explorer {
             _previewingFileResource = null;
             _explorer.ppgPreview.SelectedObject = null;
             _explorer.hbxPreview.ByteProvider = null;
-            _explorer.texPreview.LoadingFileNameWhenEmpty = null;
-            _explorer.texPreview.ClearFile();
+            _explorer.bitmapPreview.LoadingFileNameWhenEmpty = null;
+            _explorer.bitmapPreview.ClearFile();
         }
 
         public bool TryGetAvailableFileResource(IVirtualFile file,
             [MaybeNullWhen(false)] out FileResource fileResource) {
             fileResource = null!;
-            if (file != _previewingFile || _previewingFileResource is null)
+            if (!Equals(file, _previewingFile) || _previewingFileResource is null)
                 return false;
 
             fileResource = _previewingFileResource;
@@ -48,7 +50,7 @@ public partial class Explorer {
         }
 
         public void PreviewFile(IVirtualFile file) {
-            if (_previewingFile == file)
+            if (Equals(_previewingFile, file))
                 return;
 
             _previewingFile = file;
@@ -56,15 +58,15 @@ public partial class Explorer {
             var mainThreadScheduler = TaskScheduler.FromCurrentSynchronizationContext();
             var token = (_previewCancellationTokenSource = new()).Token;
 
-            _explorer.texPreview.LoadingFileNameWhenEmpty = file.Name;
-            _explorer.texPreview.ClearFile(true);
+            _explorer.bitmapPreview.LoadingFileNameWhenEmpty = file.Name;
+            _explorer.bitmapPreview.ClearFile(true);
 
-            if (_explorer.Tree is not { } tree)
+            if (_explorer.Vfs is not { } tree)
                 return;
             using var lookup = tree.GetLookup(file);
             lookup.AsFileResource(token)
                 .ContinueWith(fr => {
-                        if (_previewingFile != file || _explorer.Tree is not { } tree2)
+                        if (!Equals(file, _previewingFile))
                             return;
 
                         if (!fr.IsCompletedSuccessfully) {
@@ -75,10 +77,12 @@ public partial class Explorer {
                         _explorer.ppgPreview.SelectedObject = new WrapperTypeConverter().ConvertFrom(fr.Result);
                         _explorer.hbxPreview.ByteProvider = new FileResourceByteProvider(fr.Result);
                         if (fr.Result is TexFile tf)
-                            _explorer.texPreview.SetFile(tf);
+                            _explorer.bitmapPreview.SetFile(tf);
+                        else if (MultiBitmapViewerControl.MaySupportExtension(file.Name))
+                            _explorer.bitmapPreview.SetFile(fr.Result);
                         else {
-                            _explorer.texPreview.LoadingFileNameWhenEmpty = null;
-                            _explorer.texPreview.ClearFile();
+                            _explorer.bitmapPreview.LoadingFileNameWhenEmpty = null;
+                            _explorer.bitmapPreview.ClearFile();
                         }
                     },
                     token,

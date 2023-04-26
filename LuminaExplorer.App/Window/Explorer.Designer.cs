@@ -50,7 +50,7 @@ partial class Explorer {
         toolStripContainer1 = new ToolStripContainer();
         tspActions = new ToolStrip();
         cboView = new ToolStripComboBox();
-        texPreview = new MultiBitmapViewerControl();
+        bitmapPreview = new MultiBitmapViewerControl();
         menuStrip1.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize) splMain).BeginInit();
         splMain.Panel1.SuspendLayout();
@@ -232,7 +232,7 @@ partial class Explorer {
         // 
         // splPreview.Panel2
         // 
-        splPreview.Panel2.Controls.Add(texPreview);
+        splPreview.Panel2.Controls.Add(bitmapPreview);
         splPreview.Size = new Size(320, 687);
         splPreview.SplitterDistance = 486;
         splPreview.TabIndex = 0;
@@ -409,16 +409,16 @@ partial class Explorer {
         // 
         // texPreview
         // 
-        texPreview.ContentBorderColor = Color.LightGray;
-        texPreview.Dock = DockStyle.Fill;
-        texPreview.Location = new Point(0, 0);
-        texPreview.Margin = new Padding(0);
-        texPreview.Name = "texPreview";
-        texPreview.Padding = new Padding(8, 8, 8, 8);
-        texPreview.Size = new Size(320, 197);
-        texPreview.TabIndex = 0;
-        texPreview.Text = "texFileViewerControl1";
-        texPreview.TransparencyCellSize = 8;
+        bitmapPreview.ContentBorderColor = Color.LightGray;
+        bitmapPreview.Dock = DockStyle.Fill;
+        bitmapPreview.Location = new Point(0, 0);
+        bitmapPreview.Margin = new Padding(0);
+        bitmapPreview.Name = "bitmapPreview";
+        bitmapPreview.Padding = new Padding(8, 8, 8, 8);
+        bitmapPreview.Size = new Size(320, 197);
+        bitmapPreview.TabIndex = 0;
+        bitmapPreview.Text = "texFileViewerControl1";
+        bitmapPreview.TransparencyCellSize = 8;
         // 
         // Explorer
         // 
@@ -495,5 +495,5 @@ partial class Explorer {
     private PropertyGrid ppgPreview;
     private TabPage tabPreviewRawBytes;
     private Be.Windows.Forms.HexBox hbxPreview;
-    private MultiBitmapViewerControl texPreview;
+    private MultiBitmapViewerControl bitmapPreview;
 }

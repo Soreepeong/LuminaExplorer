@@ -1,9 +1,11 @@
-﻿namespace LuminaExplorer.Core.VirtualFileSystem;
+﻿using System;
 
-public interface IVirtualFile {
-    public IVirtualFolder? Parent { get; }
+namespace LuminaExplorer.Core.VirtualFileSystem;
+
+public interface IVirtualFile : IEquatable<IVirtualFile> {
+    public IVirtualFolder Parent { get; }
     
-    public uint NameHash { get; }
+    public uint? NameHash { get; }
 
     public string Name { get; }
 

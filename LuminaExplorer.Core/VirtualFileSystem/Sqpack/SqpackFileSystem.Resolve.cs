@@ -12,11 +12,11 @@ using LuminaExplorer.Core.SqPackPath;
 namespace LuminaExplorer.Core.VirtualFileSystem.Sqpack;
 
 public sealed partial class SqpackFileSystem {
-    private readonly Dictionary<VirtualFolder, Lazy<Task<IVirtualFolder>>> _childFoldersResolvers = new();
-    private readonly Dictionary<VirtualFolder, Task<IVirtualFolder>> _childFilesResolvers = new();
+    private readonly Dictionary<SqpackFolder, Lazy<Task<IVirtualFolder>>> _childFoldersResolvers = new();
+    private readonly Dictionary<SqpackFolder, Task<IVirtualFolder>> _childFilesResolvers = new();
 
     public bool IsFoldersResolved(IVirtualFolder ifolder) {
-        var folder = (VirtualFolder) ifolder;
+        var folder = (SqpackFolder) ifolder;
         lock (_childFoldersResolvers) {
             if (!_childFoldersResolvers.TryGetValue(folder, out var resolver))
                 return true;
@@ -35,13 +35,13 @@ public sealed partial class SqpackFileSystem {
         => AsFoldersResolvedImpl(RootFolderTyped, NormalizePath(pathComponents).Split('/'), 0);
 
     private Task<IVirtualFolder> AsFoldersResolvedImpl(IVirtualFolder ifolder, string[] parts, int partIndex) {
-        var folder = (VirtualFolder) ifolder;
+        var folder = (SqpackFolder) ifolder;
         for (; partIndex < parts.Length; partIndex++) {
             var name = parts[partIndex] + "/";
             if (name == "./")
                 continue;
 
-            if (name == IVirtualFolder.UpFolderKey) {
+            if (name == "../") {
                 folder = folder.ParentTyped ?? folder;
                 continue;
             }
@@ -61,7 +61,7 @@ public sealed partial class SqpackFileSystem {
     }
 
     public Task<IVirtualFolder> AsFoldersResolved(IVirtualFolder ifolder) {
-        var folder = (VirtualFolder) ifolder;
+        var folder = (SqpackFolder) ifolder;
         lock (_childFoldersResolvers) {
             if (!_childFoldersResolvers.TryGetValue(folder, out var resolver))
                 return Task.FromResult(ifolder);
@@ -74,7 +74,7 @@ public sealed partial class SqpackFileSystem {
     }
 
     public Task<IVirtualFolder> AsFileNamesResolved(IVirtualFolder ifolder) {
-        var folder = (VirtualFolder) ifolder;
+        var folder = (SqpackFolder) ifolder;
         lock (_childFilesResolvers) {
             if (folder.FileNamesResolveAttempted) {
                 _childFilesResolvers.Remove(folder);
@@ -84,7 +84,7 @@ public sealed partial class SqpackFileSystem {
             if (_childFilesResolvers.TryGetValue(folder, out var resolver))
                 return resolver;
 
-            VirtualFile[]? filesToResolve = null;
+            SqpackFile[]? filesToResolve = null;
 
             var folderResolver = AsFoldersResolved(folder);
             if (folderResolver.IsCompleted) {
@@ -110,15 +110,15 @@ public sealed partial class SqpackFileSystem {
     }
 
     private void PopulateFolderResolverFor(
-        VirtualFolder currentFolder,
+        SqpackFolder currentFolder,
         HashDatabase hashDatabase,
         string expectedPathPrefix,
         List<Category> chunks) {
         lock (_childFoldersResolvers) {
             _childFoldersResolvers.Add(currentFolder, new(() => Task.Run(() => {
                 _treeStructureLock.EnterReadLock();
-                var unknownContainer = VirtualFolder.CreateUnknownContainer(currentFolder);
-                var unknownFolders = new Dictionary<Tuple<int, uint>, VirtualFolder>();
+                var unknownContainer = SqpackFolder.CreateUnknownContainer(currentFolder);
+                var unknownFolders = new Dictionary<Tuple<int, uint>, SqpackFolder>();
                 try {
                     foreach (var category in chunks) {
                         var indexId = (uint) ((category.CategoryId << 16) | (category.Expansion << 8) | category.Chunk);
@@ -130,21 +130,21 @@ public sealed partial class SqpackFileSystem {
                             var folderHash = unchecked((uint) (hashes.hash >> 32));
                             var folderEntry = hashDatabase.GetFolderEntry(indexId, folderHash);
 
-                            VirtualFolder virtualFolder;
+                            SqpackFolder sqpackFolder;
 
                             if (folderEntry is null) {
                                 if (!unknownFolders.TryGetValue(Tuple.Create(category.Chunk, folderHash),
-                                        out virtualFolder!)) {
+                                        out sqpackFolder!)) {
                                     unknownFolders.Add(
                                         Tuple.Create(category.Chunk, folderHash),
-                                        virtualFolder = VirtualFolder.CreateUnknownEntry(
+                                        sqpackFolder = SqpackFolder.CreateUnknownEntry(
                                             category.Chunk,
                                             folderHash,
                                             unknownContainer));
                                 }
                             } else {
                                 var folderName = hashDatabase.GetString(folderEntry.Value.NameOffset);
-                                virtualFolder = folderName == expectedPathPrefix
+                                sqpackFolder = folderName == expectedPathPrefix
                                     ? currentFolder
                                     : UnsafeGetOrCreateSubfolder(
                                         currentFolder,
@@ -152,15 +152,15 @@ public sealed partial class SqpackFileSystem {
                             }
 
                             var fileHash = unchecked((uint) hashes.hash);
-                            var virtualFile = new VirtualFile(
+                            var virtualFile = new SqpackFile(
                                 folderEntry is null
                                     ? () => hashDatabase.FindFileName(indexId, fileHash)
                                     : () => hashDatabase.GetFileName(folderEntry.Value, fileHash),
                                 indexId,
                                 fileHash,
                                 hashes.data,
-                                virtualFolder);
-                            virtualFolder.Files.Add(virtualFile);
+                                sqpackFolder);
+                            sqpackFolder.Files.Add(virtualFile);
                         }
 
                         using var fs = category.Index.File.OpenRead();
@@ -189,7 +189,7 @@ public sealed partial class SqpackFileSystem {
                                 ? currentFolder
                                 : UnsafeGetOrCreateSubfolder(currentFolder,
                                     folderName[(expectedPathPrefix.Length + 1)..]);
-                            var virtualFile = new VirtualFile(fileName, indexId, e.NameHash, e.Data, virtualFolder);
+                            var virtualFile = new SqpackFile(fileName, indexId, e.NameHash, e.Data, virtualFolder);
                             virtualFolder.Files.Add(virtualFile);
                         }
                     }
@@ -211,11 +211,11 @@ public sealed partial class SqpackFileSystem {
         }
     }
 
-    private VirtualFolder UnsafeGetOrCreateSubfolder(VirtualFolder parent, string path) {
+    private SqpackFolder UnsafeGetOrCreateSubfolder(SqpackFolder parent, string path) {
         var sepOffset = path.IndexOf('/');
         var name = sepOffset == -1 ? path : path[..sepOffset];
         if (!parent.Folders.TryGetValue(name, out var subfolder)) {
-            parent.Folders.Add(name, subfolder = VirtualFolder.CreateKnownEntry(
+            parent.Folders.Add(name, subfolder = SqpackFolder.CreateKnownEntry(
                 name,
                 UnsafeGetFullPath(parent) + name,
                 parent));
@@ -247,7 +247,7 @@ public sealed partial class SqpackFileSystem {
                 chunkRootSolver.Remove(folderTask);
 
                 var ifolder = await folderTask.ConfigureAwait(false);
-                var folder = (VirtualFolder) ifolder;
+                var folder = (SqpackFolder) ifolder;
 
                 changedCallbacks.Clear();
 
@@ -285,8 +285,7 @@ public sealed partial class SqpackFileSystem {
                             // found an unknown folder; this folder is a sqpack chunk.
                             // if unknown folder exists, then it always is resolved.
                             var resolvingItems = unknownFolder.Folders
-                                .Where(x => x.Key != IVirtualFolder.UpFolderKey &&
-                                            x.Value.PathHash == folderNameHash)
+                                .Where(x => x.Value.PathHash == folderNameHash)
                                 .ToArray();
 
                             if (resolvingItems.Any()) {
@@ -311,7 +310,7 @@ public sealed partial class SqpackFileSystem {
                                         var tempDir = UnsafeGetOrCreateSubfolder(f, subPath);
                                         Debug.Assert(!tempDir.Files.Any(),
                                             "Temporary folder must be empty.");
-                                        Debug.Assert(tempDir.Folders.All(x => x.Key == IVirtualFolder.UpFolderKey),
+                                        Debug.Assert(!tempDir.Folders.Any(),
                                             "Temporary folder must be empty.");
                                         var parent = tempDir.ParentTyped;
                                         Debug.Assert(parent is not null,
@@ -331,7 +330,7 @@ public sealed partial class SqpackFileSystem {
                             }
                         }
 
-                        foreach (var (_, f) in folder.Folders.Where(x => x.Key != IVirtualFolder.UpFolderKey)) {
+                        foreach (var (_, f) in folder.Folders) {
                             if (folderName.StartsWith(UnsafeGetFullPath(f),
                                     StringComparison.InvariantCultureIgnoreCase))
                                 chunkRootSolver.Add(AsFoldersResolved(f));

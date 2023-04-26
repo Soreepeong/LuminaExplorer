@@ -211,7 +211,7 @@ public sealed class TexBitmapSource : IBitmapSource {
         sb.Append(_texFile.Header.Format).Append("; ")
             .Append($"{_texFile.Data.Length:##,###} Bytes");
         if (_texFile.Header.MipLevels > 1)
-            sb.Append("; ").Append(_texFile.Header.MipLevels).Append(" mipmaps");
+            sb.Append("; ").Append(_texFile.Header.MipLevels).Append(" Mipmaps");
         sb.AppendLine();
 
         if (_texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType1D))
@@ -229,17 +229,17 @@ public sealed class TexBitmapSource : IBitmapSource {
         if (_mipmap > 0) {
             sb.AppendLine().Append("Mipmap #").Append(_mipmap + 1).Append(": ");
             if (_texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType1D))
-                sb.Append(_texFile.TextureBuffer.WidthOfMipmap(_mipmap));
+                sb.Append(WidthOfMipmap(0, _mipmap));
             if (_texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType2D))
-                sb.Append(_texFile.TextureBuffer.WidthOfMipmap(_mipmap))
-                    .Append(" x ").Append(_texFile.TextureBuffer.HeightOfMipmap(_mipmap));
+                sb.Append(WidthOfMipmap(0, _mipmap))
+                    .Append(" x ").Append(HeightOfMipmap(0, _mipmap));
             if (_texFile.Header.Type.HasFlag(TexFile.Attribute.TextureType3D))
-                sb.Append(_texFile.TextureBuffer.WidthOfMipmap(_mipmap))
-                    .Append(" x ").Append(_texFile.TextureBuffer.HeightOfMipmap(_mipmap))
-                    .Append(" x ").Append(_texFile.TextureBuffer.DepthOfMipmap(_mipmap));
+                sb.Append(WidthOfMipmap(0, _mipmap))
+                    .Append(" x ").Append(HeightOfMipmap(0, _mipmap))
+                    .Append(" x ").Append(NumSlicesOfMipmap(0, _mipmap));
             if (_texFile.Header.Type.HasFlag(TexFile.Attribute.TextureTypeCube))
-                sb.Append(_texFile.TextureBuffer.WidthOfMipmap(_mipmap))
-                    .Append(" x ").Append(_texFile.TextureBuffer.HeightOfMipmap(_mipmap));
+                sb.Append(WidthOfMipmap(0, _mipmap))
+                    .Append(" x ").Append(HeightOfMipmap(0, _mipmap));
         }
         
         sb.AppendLine();
