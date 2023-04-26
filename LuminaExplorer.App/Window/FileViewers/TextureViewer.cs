@@ -6,10 +6,15 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using DirectN;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.ObjectRepresentationWrapper;
 using LuminaExplorer.Core.VirtualFileSystem;
+using DialogResult = System.Windows.Forms.DialogResult;
+using MessageBox = System.Windows.Forms.MessageBox;
+using MessageBoxButtons = System.Windows.Forms.MessageBoxButtons;
+using MessageBoxIcon = System.Windows.Forms.MessageBoxIcon;
 
 namespace LuminaExplorer.App.Window.FileViewers;
 
@@ -139,9 +144,9 @@ public partial class TextureViewer : Form {
                                                 var t = source.GetWicBitmapSourceAsync(i, j, k);
                                                 t.Wait();
                                                 t.Result.Save(d, sfd.FilterIndex switch {
-                                                    3 => WicNet.WicCodec.GUID_ContainerFormatPng,
-                                                    4 => WicNet.WicCodec.GUID_ContainerFormatJpeg,
-                                                    5 => WicNet.WicCodec.GUID_ContainerFormatBmp,
+                                                    3 => WICConstants.GUID_ContainerFormatPng,
+                                                    4 => WICConstants.GUID_ContainerFormatJpeg,
+                                                    5 => WICConstants.GUID_ContainerFormatBmp,
                                                     _ => throw new InvalidOperationException(),
                                                 });
                                             }

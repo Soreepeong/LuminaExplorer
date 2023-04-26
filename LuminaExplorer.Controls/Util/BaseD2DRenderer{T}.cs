@@ -109,7 +109,7 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
 
                             SafeDispose.One(ref _dxgiSwapChain);
                             SafeDispose.One(ref _d3dContext);
-                            DxgiFactory.Object.CreateSwapChain(SharedD3D11Device.Object, ref desc, out var swapChain)
+                            DxgiFactory.CreateSwapChain(SharedD3D11Device, ref desc, out var swapChain)
                                 .ThrowOnError();
                             _dxgiSwapChain = new ComObject<IDXGISwapChain>(swapChain);
                         }
@@ -129,7 +129,7 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
                             dpiY = Control.DeviceDpi,
                         };
 
-                        D2DFactory.Object.CreateDxgiSurfaceRenderTarget(_dxgiSurface.Object, ref rtp, out var rt)
+                        D2DFactory.CreateDxgiSurfaceRenderTarget(_dxgiSurface.Object, ref rtp, out var rt)
                             .ThrowOnError();
                         _renderTarget = new ComObject<ID2D1RenderTarget>(rt);
                     } catch (Exception e) {
@@ -217,7 +217,7 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
         if (paragraphAlignment is not null)
             textFormat.Object.SetParagraphAlignment(paragraphAlignment.Value);
 
-        DWriteFactory.Object.CreateTextLayout(
+        DWriteFactory.CreateTextLayout(
             @string,
             stringLength,
             textFormat.Object,
@@ -324,14 +324,23 @@ public abstract class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
 
     protected IComObject<IDWriteTextFormat> GetOrCreateFromFont(
         ref IComObject<IDWriteTextFormat>? textFormat,
-        Font font) => textFormat ??= DWriteFactory.CreateTextFormat(
-            familyName: font.FontFamily.Name,
-            size: font.SizeInPoints * 4 / 3,
-            weight: font.Bold
+        Font font) {
+        if (textFormat is not null)
+            return textFormat;
+            
+        DWriteFactory.CreateTextFormat(
+            Control.Font.FontFamily.Name,
+            null,
+            Control.Font.Bold
                 ? DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_BOLD
                 : DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL,
-            style: font.Italic
+            Control.Font.Italic
                 ? DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_ITALIC
                 : DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_NORMAL,
-            localeName: "");
+            DWRITE_FONT_STRETCH.DWRITE_FONT_STRETCH_NORMAL,
+            Control.Font.SizeInPoints * 4 / 3,
+            "",
+            out var format).ThrowOnError();
+        return textFormat = new ComObject<IDWriteTextFormat>(format);
+    }
 }

@@ -153,16 +153,7 @@ public sealed class DdsBitmapSource : IBitmapSource {
         if (mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         return (_wicBitmaps[imageIndex][mipmap][slice] ??= new(Task.Run(
-            () => {
-                IComObject<IWICBitmapSource>? wb = null;
-                try {
-                    wb = _ddsFile.ToWicBitmap(mipmap, slice);
-                    return wb;
-                } catch (Exception) {
-                    wb?.Dispose();
-                    throw;
-                }
-            },
+            () => _ddsFile.ToWicBitmapSource(imageIndex, mipmap, slice),
             _cancellationTokenSource.Token))).Task;
     }
 

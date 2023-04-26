@@ -41,17 +41,27 @@ internal sealed class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerControl>
         Control.PixelGridLineColorChanged += ControlOnPixelGridLineColorChanged;
     }
 
-    private IComObject<IDWriteTextFormat> ScalingFontTextFormat =>
-        _scalingFontTextFormat ??= DWriteFactory.CreateTextFormat(
-            familyName: Control.Font.FontFamily.Name,
-            size: Control.EffectiveFontSizeInPoints * 4 / 3,
-            weight: Control.Font.Bold
-                ? DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_BOLD
-                : DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL,
-            style: Control.Font.Italic
-                ? DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_ITALIC
-                : DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_NORMAL,
-            localeName: "");
+    private IComObject<IDWriteTextFormat> ScalingFontTextFormat {
+        get {
+            if (_scalingFontTextFormat is not null)
+                return _scalingFontTextFormat;
+            
+            DWriteFactory.CreateTextFormat(
+                Control.Font.FontFamily.Name,
+                null,
+                Control.Font.Bold
+                    ? DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_BOLD
+                    : DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL,
+                Control.Font.Italic
+                    ? DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_ITALIC
+                    : DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH.DWRITE_FONT_STRETCH_NORMAL,
+                Control.EffectiveFontSizeInPoints * 4 / 3,
+                "",
+                out var format).ThrowOnError();
+            return _scalingFontTextFormat = new ComObject<IDWriteTextFormat>(format);
+        }
+    }
 
     public RectangleF? AutoDescriptionRectangle {
         get {

@@ -14,7 +14,7 @@ namespace LuminaExplorer.Controls.Util;
 
 public static class DirectNExtensions {
     private static readonly Lazy<IComObject<IWICImagingFactory>> WicFactoryLazy = new(() => {
-        using var co = new ComObject<WicImagingFactory>(new());
+        var co = new ComObject<WicImagingFactory>(new());
         return new ComObject<IWICImagingFactory>(co.As<IWICImagingFactory>());
     });
 
@@ -73,9 +73,12 @@ public static class DirectNExtensions {
         return new ComObject<IWICBitmapSource>(pBitmap);
     }
 
-    
-    
-    public static void Test(this IComObject<IWICBitmapSource> wicBitmap, Stream target, Guid format) {
+    public static IComObject<IWICBitmapSource> ToWicBitmapSource(this DdsFile ddsFile, int imageIndex, int mipIndex, int slice) {
+        // TODO
+        throw new NotImplementedException();
+    }
+
+    public static void Save(this IComObject<IWICBitmapSource> wicBitmap, Stream target, Guid format) {
         using var wrapper = new StreamIStreamWrapper(target, true);
 
         WicFactory.Object.CreateEncoder(format, 0, out var pEncoder).ThrowOnError();
@@ -92,6 +95,12 @@ public static class DirectNExtensions {
 
         wicBitmap.Object.GetResolution(out var dpiX, out var dpiY).ThrowOnError();
         frameEncode.Object.SetResolution(dpiX, dpiY).ThrowOnError();
+
+        wicBitmap.Object.GetPixelFormat(out var pixelFormat).ThrowOnError();
+        frameEncode.Object.SetPixelFormat(pixelFormat).ThrowOnError();
+
+        frameEncode.Object.WriteSource(wicBitmap.Object, 0).ThrowOnError();
+        frameEncode.Object.Commit().ThrowOnError();
     }
 
     public static bool ConvertPixelFormatDifferent(

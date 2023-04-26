@@ -8,22 +8,31 @@ namespace LuminaExplorer.Controls.Util;
 public abstract class BaseD2DRenderer : IDisposable {
     private static Exception? _apiInitializationException;
 
-    private static IComObject<ID2D1Factory>? _pD2D1Factory;
-    private static IComObject<IDWriteFactory>? _pDWriteFactory;
-    private static IComObject<IDXGIFactory1>? _pDxgiFactory;
-
-    private static IComObject<ID3D11Device>? _pSharedD3D11Device;
+    private static ID2D1Factory? _pD2D1Factory;
+    private static IDWriteFactory? _pDWriteFactory;
+    private static IDXGIFactory? _pDxgiFactory;
+    private static ID3D11Device? _pSharedD3D11Device;
 
     protected static void TryInitializeApis() {
         if (_apiInitializationException is not null)
             throw _apiInitializationException;
 
         try {
-            _pDxgiFactory = DXGIFunctions.CreateDXGIFactory1<IDXGIFactory1>();
-            _pD2D1Factory = D2D1Functions.D2D1CreateFactory<ID2D1Factory>(
-                D2D1_FACTORY_TYPE.D2D1_FACTORY_TYPE_SINGLE_THREADED);
-            _pDWriteFactory = DWriteFunctions.DWriteCreateFactory<IDWriteFactory>(
-                DWRITE_FACTORY_TYPE.DWRITE_FACTORY_TYPE_ISOLATED);
+            if (DXGIFunctions.CreateDXGIFactory(typeof(IDXGIFactory4).GUID, out var pFactory).IsError) {
+                if (DXGIFunctions.CreateDXGIFactory(typeof(IDXGIFactory1).GUID, out pFactory).IsError) {
+                    DXGIFunctions.CreateDXGIFactory(typeof(IDXGIFactory).GUID, out pFactory).ThrowOnError();
+                }
+            }
+
+            _pDxgiFactory = (IDXGIFactory)pFactory;
+            var d2D1FactoryOptions = new D2D1_FACTORY_OPTIONS();
+            D2D1Functions.D2D1CreateFactory(
+                D2D1_FACTORY_TYPE.D2D1_FACTORY_TYPE_MULTI_THREADED,
+                typeof(ID2D1Factory).GUID,
+                ref d2D1FactoryOptions,
+                out pFactory).ThrowOnError();
+            _pD2D1Factory = (ID2D1Factory) pFactory;
+            _pDWriteFactory = DWriteFunctions.DWriteCreateFactory(DWRITE_FACTORY_TYPE.DWRITE_FACTORY_TYPE_ISOLATED).Object;
 
             using var anyAdapter = CreateAnyAvailableDxgiAdapter();
             Direct3DDeviceBuilder
@@ -32,8 +41,9 @@ public abstract class BaseD2DRenderer : IDisposable {
                 .WithFlagAdd(D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_DEBUG)
                 .WithFlagAdd(D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_BGRA_SUPPORT)
                 .Create()
-                .TakeDevice(out _pSharedD3D11Device)
+                .TakeDevice(out var d)
                 .Dispose();
+            _pSharedD3D11Device = d.Object;
         } catch (Exception e) {
             _apiInitializationException = e;
             throw;
@@ -51,22 +61,20 @@ public abstract class BaseD2DRenderer : IDisposable {
         Dispose(false);
     }
 
-    protected static IComObject<IDXGIFactory1> DxgiFactory => _pDxgiFactory ?? throw InitializationException;
-
-    protected static IComObject<ID2D1Factory> D2DFactory => _pD2D1Factory ?? throw InitializationException;
-
-    protected static IComObject<IDWriteFactory> DWriteFactory => _pDWriteFactory ?? throw InitializationException;
-
-    protected static IComObject<ID3D11Device> SharedD3D11Device => _pSharedD3D11Device ?? throw InitializationException;
+    protected static IDXGIFactory DxgiFactory => _pDxgiFactory ?? throw InitializationException;
+    protected static ID2D1Factory D2DFactory => _pD2D1Factory ?? throw InitializationException;
+    protected static IDWriteFactory DWriteFactory => _pDWriteFactory ?? throw InitializationException;
+    protected static ID3D11Device SharedD3D11Device => _pSharedD3D11Device ?? throw InitializationException;
 
     private static Exception InitializationException => _apiInitializationException ?? new Exception("Uninitialized");
 
     protected static IComObject<IDXGIAdapter> CreateAnyAvailableDxgiAdapter() {
-        if (DxgiFactory.EnumAdapters1<IDXGIAdapter1>().FirstOrDefault() is { } a)
-            return a;
+        if (DxgiFactory.EnumAdapters<IDXGIAdapter>().FirstOrDefault() is { } a0)
+            return a0;
+        if (((IDXGIFactory1)DxgiFactory).EnumAdapters1<IDXGIAdapter1>().FirstOrDefault() is { } a1)
+            return a1;
 
-        using var pFactory4 = new ComObject<IDXGIFactory4>(DxgiFactory.As<IDXGIFactory4>());
-        pFactory4.Object.EnumWarpAdapter(typeof(IDXGIAdapter1).GUID, out var adapter).ThrowOnError();
+        ((IDXGIFactory4)DxgiFactory).EnumWarpAdapter(typeof(IDXGIAdapter1).GUID, out var adapter).ThrowOnError();
         return new ComObject<IDXGIAdapter1>((IDXGIAdapter1) adapter);
     }
 
