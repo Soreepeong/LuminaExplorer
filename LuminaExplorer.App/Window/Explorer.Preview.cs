@@ -78,7 +78,7 @@ public partial class Explorer {
                         _explorer.hbxPreview.ByteProvider = new FileResourceByteProvider(fr.Result);
                         if (fr.Result is TexFile tf)
                             _explorer.bitmapPreview.SetFile(tf);
-                        else if (MultiBitmapViewerControl.MaySupportExtension(file.Name))
+                        else if (MultiBitmapViewerControl.MaySupportFileName(file.Name))
                             _explorer.bitmapPreview.SetFile(fr.Result);
                         else {
                             _explorer.bitmapPreview.LoadingFileNameWhenEmpty = null;

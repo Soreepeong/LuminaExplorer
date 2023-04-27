@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -170,9 +171,36 @@ public sealed class DdsBitmapSource : IBitmapSource {
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         return (_bitmaps[imageIndex][mipmap][slice] ??= new(GetWicBitmapSourceAsync(imageIndex, mipmap, slice)
             .ContinueWith(r => {
-                if (!r.Result.TryToGdipBitmap(out var b, out var e))
-                    throw e;
-                return b;
+                if (_wicBitmaps[imageIndex][mipmap][slice] is {Task.IsCompletedSuccessfully: true} wicBitmapTask) {
+                    if (wicBitmapTask.Result.TryToGdipBitmap(out var b, out _))
+                        return b;
+                }
+
+                var bitmap = new Bitmap(
+                    _ddsFile.Width(mipmap),
+                    _ddsFile.Height(mipmap), 
+                    PixelFormat.Format32bppArgb);
+                try {
+                    var lb = bitmap.LockBits(
+                        new(Point.Empty, bitmap.Size),
+                        ImageLockMode.WriteOnly,
+                        PixelFormat.Format32bppArgb);
+                    unsafe {
+                        _ddsFile.PixFmt.ToB8G8R8A8(
+                            new((void*) lb.Scan0, lb.Stride * lb.Height),
+                            lb.Stride,
+                            _ddsFile.SliceOrFaceData(imageIndex, mipmap, slice),
+                            _ddsFile.Pitch(mipmap),
+                            lb.Width,
+                            lb.Height);
+                    }
+                    bitmap.UnlockBits(lb);
+
+                    return bitmap;
+                } catch (Exception) {
+                    bitmap.Dispose();
+                    throw;
+                }
             }, _cancellationTokenSource.Token))).Task;
     }
 

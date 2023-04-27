@@ -291,7 +291,7 @@ public partial class TextureViewer : Form {
         _playlist.Clear();
         _playlist.AddRange(playlist.Select(item => Tuple.Create(
             item,
-            item.NameResolved && MultiBitmapViewerControl.MaySupportExtension(Path.GetExtension(item.Name)))));
+            item.NameResolved && MultiBitmapViewerControl.MaySupportFileName(item.Name))));
 
         var fileTuple = Tuple.Create(file, true);
         _indexInPlaylist = _playlist.IndexOf(fileTuple);
@@ -319,22 +319,26 @@ public partial class TextureViewer : Form {
                 return true;
             }
 
-            if (item.NameResolved && MultiBitmapViewerControl.MaySupportExtension(Path.GetExtension(item.Name))) {
-                invalidIndices.Add(index);
-                continue;
+            if (item.NameResolved) {
+                if (!MultiBitmapViewerControl.MaySupportFileName(item.Name)) {
+                    invalidIndices.Add(index);
+                    continue;
+                }
             }
 
             using var lookup = tree.GetLookup(item);
-            try {
-                fileResource = await lookup.AsFileResource(cancellationToken);
-                if (MultiBitmapViewerControl.MaySupportFileResource(fileResource)) {
-                    _playlist[index] = Tuple.Create(item, true);
-                    break;
+            if (lookup.Size < 0x80000000u) {
+                try {
+                    fileResource = await lookup.AsFileResource(cancellationToken);
+                    if (MultiBitmapViewerControl.MaySupportFileResource(fileResource)) {
+                        _playlist[index] = Tuple.Create(item, true);
+                        break;
+                    }
+                } catch (Exception) {
+                    // pass
                 }
-            } catch (Exception) {
-                // pass
             }
-            
+
             fileResource = null;
             invalidIndices.Add(index);
         }

@@ -7,11 +7,17 @@ using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerContro
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.TexRenderer;
 
 internal interface ITexRenderer : IDisposable {
-    event Action<Task<IBitmapSource>>? AnyBitmapSourceSliceAvailableForDrawing;
+    event Action<Task<IBitmapSource>>? AnyBitmapSourceSliceLoadAttemptFinished;
+
+    event Action<Task<IBitmapSource>>? AllBitmapSourceSliceLoadAttemptFinished;
     
     Exception? LastException { get; }
 
     RectangleF? AutoDescriptionRectangle { get; set; }
+
+    Task<IBitmapSource>? PreviousSourceTask { get; set; }
+    
+    Task<IBitmapSource>? CurrentSourceTask { get; set; }
 
     public void UiThreadInitialize();
 

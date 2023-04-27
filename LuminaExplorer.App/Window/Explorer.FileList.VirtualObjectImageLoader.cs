@@ -4,10 +4,12 @@ using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Lumina.Data.Structs;
+using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.VirtualFileSystem;
 
@@ -197,21 +199,31 @@ public partial class Explorer {
                     if (!virtualObject.TryGetLookup(out lookup) || !Equals(lookup.File, vfile))
                         continue;
 
-                    var canBeTexture = false;
-                    canBeTexture |= lookup.Type == FileType.Texture;
-                    canBeTexture |= BinaryReaderExtensions.ThumbnailSupportedExtensions.Any(
+                    var definitelyTexture = false;
+                    definitelyTexture |= lookup.Type == FileType.Texture;
+                    definitelyTexture |= Path.GetExtension(vfile.Name).ToLowerInvariant() is ".tex" or ".atex";
+                    
+                    var mightBeTexture = false;
+                    mightBeTexture |= definitelyTexture;
+                    mightBeTexture |= ImagingExtensions.ThumbnailSupportedExtensions.Any(
                         x => vfile.Name.EndsWith(x, StringComparison.InvariantCultureIgnoreCase));
                     // may be an .atex file
-                    canBeTexture |= !vfile.NameResolved && lookup is {Type: FileType.Standard, Size: > 256};
+                    mightBeTexture |= !vfile.NameResolved && lookup is {Type: FileType.Standard, Size: > 256};
 
-                    if (!canBeTexture)
+                    if (!mightBeTexture)
                         continue;
 
                     var w = Width;
                     var h = Height;
                     await using var stream = lookup.CreateStream();
                     
-                    sourceBitmap = await stream.ExtractMipmapOfSizeAtLeast(
+                    if (definitelyTexture)
+                        sourceBitmap = await stream.ExtractMipmapOfSizeAtLeastForTex(
+                            Math.Max(w, h),
+                            virtualObject.PlatformId,
+                            _disposing.Token);
+                    else 
+                        sourceBitmap = await stream.ExtractMipmapOfSizeAtLeast(
                         Math.Max(w, h),
                         virtualObject.PlatformId,
                         _disposing.Token);

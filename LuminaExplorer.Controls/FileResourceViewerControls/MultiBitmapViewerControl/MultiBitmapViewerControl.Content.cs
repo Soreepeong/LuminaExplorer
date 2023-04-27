@@ -9,6 +9,7 @@ using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerContro
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.Util.DdsStructs;
+using WicNet;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
 
@@ -76,14 +77,22 @@ public partial class MultiBitmapViewerControl {
         MouseActivity.Enabled = false;
 
         ClearDisplayInformationCache();
-        bitmapSource.Task.ContinueWith(r => {
-            if (!r.IsCompletedSuccessfully ||
+        bitmapSource.Task.ContinueWith(result => {
+            if (!result.IsCompletedSuccessfully ||
                 bitmapSource != _bitmapSourceTaskCurrent ||
                 _currentMipmap != mipmap ||
-                _currentImageIndex != imageIndex)
-                return;
+                _currentImageIndex != imageIndex) {
+                if (_bitmapSourceTaskPrevious is not null) {
+                    if (TryGetRenderers(out var renderers))
+                        foreach (var r in renderers)
+                            r.PreviousSourceTask = null;
+                    SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
+                }
 
-            r.Result.UpdateSelection(imageIndex, mipmap);
+                return;
+            }
+
+            result.Result.UpdateSelection(imageIndex, mipmap);
         }, UiTaskScheduler);
 
         Invalidate();
@@ -95,20 +104,23 @@ public partial class MultiBitmapViewerControl {
                 SetFile(new DdsFile(fileInfo.Name, fileInfo.OpenRead()));
                 break;
             case ".tex":
+            case ".atex":
                 SetFile(TexBitmapSource.FromFile(fileInfo));
                 break;
             default:
-                throw new NotSupportedException();
+                SetFile(fileInfo.FullName, fileInfo.Length, fileInfo.OpenRead());
+                break;
         }
     }
 
-    public void SetFile(DdsFile fileResource) => SetFile(Task.FromResult((IBitmapSource) new DdsBitmapSource(
-        fileResource,
-        sliceSpacing: _sliceSpacing)));
+    public void SetFile(DdsFile fileResource) => SetFile(new DdsBitmapSource(fileResource));
 
-    public void SetFile(TexFile fileResource) => SetFile(Task.FromResult((IBitmapSource) new TexBitmapSource(
-        fileResource,
-        sliceSpacing: _sliceSpacing)));
+    public void SetFile(TexFile fileResource) => SetFile(new TexBitmapSource(fileResource));
+
+    public void SetFile(string name, long size, Stream stream) => 
+        SetFile(Task.Run(() => (IBitmapSource) new PlainBitmapSource(name, size, stream, _sliceSpacing)));
+
+    public void SetFile(string name, byte[] rawData) => SetFile(name, rawData.Length, new MemoryStream(rawData, false));
 
     public void SetFile(FileResource fileResource) {
         if (fileResource is TexFile texFile) {
@@ -118,12 +130,11 @@ public partial class MultiBitmapViewerControl {
 
         switch (Path.GetExtension(fileResource.FilePath.Path).ToLowerInvariant()) {
             case ".dds":
-                SetFile(Task.FromResult((IBitmapSource) new DdsBitmapSource(
-                    new(fileResource.FilePath.Path, fileResource.Data),
-                    sliceSpacing: _sliceSpacing)));
+                SetFile(new DdsBitmapSource(new(fileResource.FilePath.Path, fileResource.Data)));
                 break;
             default:
-                throw new NotSupportedException();
+                SetFile(fileResource.FilePath.Path, fileResource.Data);
+                break;
         }
     }
 
@@ -220,17 +231,17 @@ public partial class MultiBitmapViewerControl {
 
     public static bool MaySupportFileResource(FileResource fileResource) =>
         fileResource is TexFile ||
-        Path.GetExtension(fileResource.FilePath.Path).ToLowerInvariant() switch {
-            ".tex" => true,
-            ".atex" => true,
-            ".dds" => true,
-            _ => false,
-        };
+        MaySupportFileName(fileResource.FilePath.Path);
 
-    public static bool MaySupportExtension(string extension) => Path.GetExtension(extension).ToLowerInvariant() switch {
+    public static bool MaySupportFileName(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() switch {
+        // TexBitmapSource
         ".tex" => true,
         ".atex" => true,
+
+        // DdsBitmapSource
         ".dds" => true,
-        _ => false,
+
+        // PlainBitmapSource
+        { } y => WicImagingComponent.DecoderFileExtensions.Any(x => x.ToLowerInvariant() == y),
     };
 }

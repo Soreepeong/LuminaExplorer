@@ -153,7 +153,7 @@ public partial class Explorer {
                 _ => _objects.SortIntoNewListAsync()
                     .With(column.AspectName switch {
                         nameof(VirtualObject.FullPath) => (a, b) =>
-                            string.Compare(a.FullPath, b.FullPath, StringComparison.InvariantCultureIgnoreCase) *
+                            MiscUtils.CompareNatural(a.FullPath, b.FullPath) *
                             orderMultiplier,
                         nameof(VirtualObject.Name) => (a, b) =>
                             (a.CompareByFolderOrFile(b) ?? a.CompareByName(b)) * orderMultiplier,
@@ -370,7 +370,7 @@ public partial class Explorer {
         public int CompareByName(VirtualObject other) =>
             !IsFolder && !other.IsFolder && File.NameResolved != other.File.NameResolved
                 ? File.NameResolved ? -1 : 1
-                : string.Compare(_name, other._name, StringComparison.InvariantCultureIgnoreCase);
+                : MiscUtils.CompareNatural(_name, other._name);
 
         public int? CompareByFolderOrFile(VirtualObject other) => IsFolder == other.IsFolder ? null : IsFolder ? -1 : 1;
 

@@ -14,7 +14,7 @@ namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerCo
 internal sealed class GdipTexRenderer : ITexRenderer {
     private readonly BufferedGraphicsContext _bufferedGraphicsContext = new();
     private readonly Task<IBitmapSource>?[] _sources = new Task<IBitmapSource>?[2];
-    
+
     private RectangleF? _autoDescriptionRectangle;
 
     public GdipTexRenderer(MultiBitmapViewerControl control) {
@@ -32,17 +32,35 @@ internal sealed class GdipTexRenderer : ITexRenderer {
         _bufferedGraphicsContext.Dispose();
     }
 
-    private Task<IBitmapSource>? SourceTaskPrevious {
+    public Task<IBitmapSource>? PreviousSourceTask {
         get => _sources[0];
         set => _sources[0] = value;
     }
 
-    private Task<IBitmapSource>? SourceTaskCurrent {
+    public Task<IBitmapSource>? CurrentSourceTask {
         get => _sources[1];
-        set => _sources[1] = value;
+        set {
+            if (_sources[1] == value)
+                return;
+
+            _sources[1]?.ContinueWith(r => {
+                if (r.IsCompletedSuccessfully) {
+                    r.Result.LayoutChanged -= BitmapSourceCurrentOnLayoutChanged;
+                    BitmapSourceCurrentOnLayoutChanged();
+                }
+            });
+            _sources[1] = value;
+            _sources[1]?.ContinueWith(r => {
+                if (r.IsCompletedSuccessfully)
+                    r.Result.LayoutChanged += BitmapSourceCurrentOnLayoutChanged;
+            });
+        }
     }
 
-    public event Action<Task<IBitmapSource>>? AnyBitmapSourceSliceAvailableForDrawing;
+
+    public event Action<Task<IBitmapSource>>? AnyBitmapSourceSliceLoadAttemptFinished;
+
+    public event Action<Task<IBitmapSource>>? AllBitmapSourceSliceLoadAttemptFinished;
 
     private MultiBitmapViewerControl Control { get; }
 
@@ -71,7 +89,7 @@ internal sealed class GdipTexRenderer : ITexRenderer {
             using var font = new Font(
                 controlFont.FontFamily,
                 Control.EffectiveFontSizeInPoints,
-                controlFont.Style, 
+                controlFont.Style,
                 controlFont.Unit,
                 controlFont.GdiCharSet,
                 controlFont.GdiVerticalFont);
@@ -87,78 +105,48 @@ internal sealed class GdipTexRenderer : ITexRenderer {
         set => _autoDescriptionRectangle = value;
     }
 
-    private LoadState TryGetActiveSource(out IBitmapSource source, out Exception? exception) {
-        source = null!;
-        exception = null;
-        var hasLoading = false;
-
-        foreach (var bitmapSourceTask in new[] {SourceTaskCurrent, SourceTaskPrevious}) {
-            if (bitmapSourceTask?.IsCompletedSuccessfully is not true) {
-                if (exception is null && bitmapSourceTask?.IsFaulted is true)
-                    exception = bitmapSourceTask.Exception;
-                else
-                    hasLoading = true;
-                continue;
-            }
-
-            source = bitmapSourceTask.Result;
-            return LoadState.Loaded;
-        }
-
-        if (hasLoading)
-            return LoadState.Loading;
-
-        return exception is not null ? LoadState.Error : LoadState.Empty;
-    }
-
     public bool UpdateBitmapSource(Task<IBitmapSource>? previous, Task<IBitmapSource>? current) {
-        var changed = false;
         LastException = null;
+        if (PreviousSourceTask == previous && CurrentSourceTask == current)
+            return false;
 
-        if (previous == current)
-            previous = null;
+        PreviousSourceTask = previous;
+        CurrentSourceTask = current;
 
-        changed |= SourceTaskPrevious != previous;
-        SourceTaskPrevious = previous;
-
-        if (SourceTaskCurrent != current) {
-            changed = true;
-            SourceTaskCurrent?.ContinueWith(r => {
-                if (r.IsCompletedSuccessfully) {
-                    r.Result.LayoutChanged -= BitmapSourceCurrentOnLayoutChanged;
-                    BitmapSourceCurrentOnLayoutChanged();
-                }
-            });
-            SourceTaskCurrent = current;
-            SourceTaskCurrent?.ContinueWith(r => {
-                if (r.IsCompletedSuccessfully)
-                    r.Result.LayoutChanged += BitmapSourceCurrentOnLayoutChanged;
-            });
-        }
-
-        return changed;
+        return true;
     }
 
     private void BitmapSourceCurrentOnLayoutChanged() {
-        if (SourceTaskCurrent is not { } b)
+        if (CurrentSourceTask is not { } bitmapSourceTask)
             return;
-        b.ContinueWith(r => {
-            if (!r.IsCompletedSuccessfully)
-                return;
-            r.Result.GetGdipBitmapAsync(r.Result.Layout[0])
-                .ContinueWith(_ => AnyBitmapSourceSliceAvailableForDrawing?.Invoke(b));
-        });
+
+        var bitmapSource = bitmapSourceTask.Result;
+        var layout = bitmapSource.Layout;
+
+        if (layout.Any()) {
+            _ = bitmapSource.GetGdipBitmapAsync(layout[0])
+                .ContinueWith(_ => {
+                    if (bitmapSourceTask == CurrentSourceTask || layout == bitmapSource.Layout)
+                        AnyBitmapSourceSliceLoadAttemptFinished?.Invoke(bitmapSourceTask);
+                });
+        }
+
+        _ = Task.WhenAll(layout.Select(bitmapSource.GetWicBitmapSourceAsync))
+            .ContinueWith(_ => {
+                if (bitmapSourceTask == CurrentSourceTask || layout == bitmapSource.Layout)
+                    AllBitmapSourceSliceLoadAttemptFinished?.Invoke(bitmapSourceTask);
+            });
     }
 
     public bool IsAnyVisibleSliceReadyForDrawing(Task<IBitmapSource>? bitmapSourceTask)
         => bitmapSourceTask?.IsCompletedSuccessfully is true &&
-           bitmapSourceTask.Result.Layout.Any(bitmapSourceTask.Result.HasGdipBitmap) &&
-           (bitmapSourceTask == SourceTaskCurrent || bitmapSourceTask == SourceTaskPrevious);
+            bitmapSourceTask.Result.Layout.Any(bitmapSourceTask.Result.HasGdipBitmap) &&
+            (bitmapSourceTask == CurrentSourceTask || bitmapSourceTask == PreviousSourceTask);
 
     public bool IsEveryVisibleSliceReadyForDrawing(Task<IBitmapSource>? bitmapSourceTask)
         => bitmapSourceTask?.IsCompletedSuccessfully is true &&
-           bitmapSourceTask.Result.Layout.All(bitmapSourceTask.Result.HasGdipBitmap) &&
-           (bitmapSourceTask == SourceTaskCurrent || bitmapSourceTask == SourceTaskPrevious);
+            bitmapSourceTask.Result.Layout.All(bitmapSourceTask.Result.HasGdipBitmap) &&
+            (bitmapSourceTask == CurrentSourceTask || bitmapSourceTask == PreviousSourceTask);
 
     public bool Draw(PaintEventArgs e) {
         BufferedGraphics? bufferedGraphics = null;
@@ -173,22 +161,22 @@ internal sealed class GdipTexRenderer : ITexRenderer {
                     out var hideIfNotLoading))
                 overlayString = null;
 
-            if (IsAnyVisibleSliceReadyForDrawing(SourceTaskCurrent))
+            if (IsAnyVisibleSliceReadyForDrawing(CurrentSourceTask))
                 g.Clear(Control.BackColorWhenLoaded);
-            else if (SourceTaskCurrent?.IsFaulted is true)
+            else if (CurrentSourceTask?.IsFaulted is true)
                 g.Clear(Control.BackColor);
-            else if (IsAnyVisibleSliceReadyForDrawing(SourceTaskPrevious))
+            else if (IsAnyVisibleSliceReadyForDrawing(PreviousSourceTask))
                 g.Clear(Control.BackColorWhenLoaded);
             else
                 g.Clear(Control.BackColor);
 
-            var currentSourceFullyAvailable = IsEveryVisibleSliceReadyForDrawing(SourceTaskCurrent);
+            var currentSourceFullyAvailable = IsEveryVisibleSliceReadyForDrawing(CurrentSourceTask);
             var isLoading = false;
             foreach (var sourceTask in _sources) {
                 if (sourceTask is null)
                     continue;
-                if (currentSourceFullyAvailable && SourceTaskPrevious == sourceTask) {
-                    Debug.Assert(SourceTaskPrevious != SourceTaskCurrent);
+                if (currentSourceFullyAvailable && PreviousSourceTask == sourceTask) {
+                    Debug.Assert(PreviousSourceTask != CurrentSourceTask);
                     continue;
                 }
 
@@ -256,13 +244,35 @@ internal sealed class GdipTexRenderer : ITexRenderer {
                     // 3. Draw bitmaps
                     foreach (var sliceCell in source.Layout) {
                         var bitmapTask = source.GetGdipBitmapAsync(sliceCell);
+                        var rc = source.Layout.RectOf(sliceCell, imageRect);
                         if (bitmapTask.IsCompletedSuccessfully) {
-                            g.DrawImage(bitmapTask.Result, source.Layout.RectOf(sliceCell, imageRect));
-                        } else if (!bitmapTask.IsFaulted) {
-                            // TODO: draw loading
-                        } else {
-                            // TODO: draw error
+                            g.DrawImage(bitmapTask.Result, rc);
+                            continue;
                         }
+
+                        string msg;
+                        if (bitmapTask.IsFaulted) {
+                            msg = $"Error\n({sliceCell.ImageIndex}, {sliceCell.Mipmap}, {sliceCell.Slice})\n" +
+                                $"{bitmapTask.Exception}";
+                            using var bb = new SolidBrush(Control.BackColor.MultiplyOpacity(
+                                Control.OverlayBackgroundOpacity));
+                            g.FillRectangle(bb, rc);
+                        } else if (Control.IsLoadingBoxDelayed)
+                            continue;
+                        else
+                            msg = "Loading...";
+
+                        DrawText(
+                            g,
+                            msg,
+                            rc,
+                            StringAlignment.Center,
+                            StringAlignment.Center,
+                            Control.Font,
+                            Control.ForeColor,
+                            Control.BackColor,
+                            1f,
+                            2);
                     }
 
                     // skip pixel grid for gdip mode
@@ -331,7 +341,7 @@ internal sealed class GdipTexRenderer : ITexRenderer {
     private void DrawText(
         Graphics g,
         string? @string,
-        Rectangle rectangle,
+        RectangleF rectangle,
         StringAlignment alignment,
         StringAlignment lineAlignment,
         Font font,

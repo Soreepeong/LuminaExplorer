@@ -1,27 +1,12 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using Lumina.Data;
-using Lumina.Data.Files;
-using Lumina.Data.Parsing.Tex.Buffers;
-using Lumina.Data.Structs;
-using LuminaExplorer.Core.Util.DdsStructs;
-using LuminaExplorer.Core.VirtualFileSystem.Sqpack.SqpackFileStream;
 
 namespace LuminaExplorer.Core.Util;
 
 public static class BinaryReaderExtensions {
-    public static readonly IReadOnlySet<string> ThumbnailSupportedExtensions = new HashSet<string> {
-        ".tex", ".atex", ".dds"
-    };
-    
     private const float QuaternionComponentRange = 0.707106781186f; // 1 / sqrt(2)
 
     #region Utilities for chaining calls
@@ -205,131 +190,6 @@ public static class BinaryReaderExtensions {
             (tmp[3 - i], tmp[2 - i]) = (tmp[2 - i], tmp[3 - i]);
 
         return new(tmp[0], tmp[1], tmp[2], tmp[3]);
-    }
-
-    #endregion
-
-    #region Utilities for extracting previews
-
-    public static async Task<Bitmap> ExtractMipmapOfSizeAtLeast(
-        this Stream stream,
-        int minEdgeLength,
-        PlatformId platformId,
-        CancellationToken cancellationToken = default) {
-        if (stream is not BufferedStream)
-            stream = new BufferedStream(stream);
-        var s = new LuminaBinaryReader(stream).WithSeek(0);
-        var sniff = s.ReadUInt32();
-        if (sniff == DdsHeaderLegacy.MagicValue)
-            return await ExtractMipmapOfSizeAtLeastForDds(stream, minEdgeLength, cancellationToken);
-        return await ExtractMipmapOfSizeAtLeastForTex(stream, minEdgeLength, platformId, cancellationToken);
-    }
-
-    public static async Task<Bitmap> ExtractMipmapOfSizeAtLeastForTex(
-        this Stream stream,
-        int minEdgeLength,
-        PlatformId platformId,
-        CancellationToken cancellationToken = default) {
-        var s = new LuminaBinaryReader(stream, platformId).WithSeek(0);
-
-        var header = stream switch {
-            BufferedStream {UnderlyingStream: TextureSqpackFileStream utvfs} => utvfs.TexHeader,
-            TextureSqpackFileStream tvfs => tvfs.TexHeader,
-            _ => s.ReadStructure<TexFile.TexHeader>(),
-        };
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var level = 0;
-        while (level < header.MipLevels - 1 &&
-               (header.Width >> (level + 1)) >= minEdgeLength &&
-               (header.Height >> (level + 1)) >= minEdgeLength)
-            level++;
-
-        uint offset;
-        int length;
-        unsafe {
-            offset = header.OffsetToSurface[level];
-            length = (int) ((level == header.MipLevels - 1
-                ? stream.Length
-                : header.OffsetToSurface[level + 1]) - offset);
-        }
-
-        var buffer = new byte[length];
-
-        await s.WithSeek(offset).BaseStream.ReadExactlyAsync(buffer, cancellationToken);
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var mipWidth = Math.Max(1, header.Width >> level);
-        var mipHeight = Math.Max(1, header.Height >> level);
-        var tbuf = TextureBuffer.FromTextureFormat(
-            header.Type,
-            header.Format,
-            mipWidth,
-            mipHeight,
-            1,
-            new[] {length},
-            buffer,
-            platformId);
-        
-        var bmp = new Bitmap(tbuf.Width, tbuf.Height, PixelFormat.Format32bppArgb);
-        try {
-            var lb= bmp.LockBits(new(Point.Empty, bmp.Size), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
-            Marshal.Copy(tbuf.RawData, 0, lb.Scan0, lb.Stride * lb.Height);
-            bmp.UnlockBits(lb);
-            return bmp;
-        } catch (Exception) {
-            bmp.Dispose();
-            throw;
-        }
-    }
-
-    public static async Task<Bitmap> ExtractMipmapOfSizeAtLeastForDds(
-        this Stream stream,
-        int minEdgeLength,
-        CancellationToken cancellationToken = default) {
-        var s = new LuminaBinaryReader(stream).WithSeek(0);
-        
-        var legacyHeader = s.ReadStructure<DdsHeaderLegacy>();
-        DdsHeaderDxt10? dxt10Header = null;
-        if (legacyHeader.Header.PixelFormat.Flags.HasFlag(DdsPixelFormatFlags.FourCc) &&
-            legacyHeader.Header.PixelFormat.FourCc == DdsFourCc.Dx10) {
-            dxt10Header = s.ReadStructure<DdsHeaderDxt10>();
-        }
-        
-        var ddsFile = new DdsFile("", legacyHeader, dxt10Header, null!);
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var level = 0;
-        while (level < ddsFile.NumMipmaps - 1 &&
-               ddsFile.Width(level + 1) >= minEdgeLength &&
-               ddsFile.Height(level + 1) >= minEdgeLength)
-            level++;
-
-        var offset = ddsFile.SliceOrFaceDataOffset(0, level, 0, out var length);
-        var buffer = new byte[length];
-        await s.WithSeek(offset).BaseStream.ReadExactlyAsync(buffer, cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var bmp = new Bitmap(ddsFile.Width(level), ddsFile.Height(level), PixelFormat.Format32bppArgb);
-        try {
-            var lb = bmp.LockBits(new(Point.Empty, bmp.Size), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
-            ddsFile.PixFmt.ToB8G8R8A8(
-                lb.Scan0,
-                lb.Height * lb.Stride,
-                lb.Stride,
-                buffer,
-                ddsFile.Pitch(level),
-                bmp.Width,
-                bmp.Height);
-            bmp.UnlockBits(lb);
-            return bmp;
-        } catch (Exception) {
-            bmp.Dispose();
-            throw;
-        }
     }
 
     #endregion

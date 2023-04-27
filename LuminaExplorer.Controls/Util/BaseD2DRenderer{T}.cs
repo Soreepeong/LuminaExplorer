@@ -1,6 +1,5 @@
 using System;
 using System.Drawing;
-using System.Threading;
 using System.Windows.Forms;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
@@ -16,7 +15,6 @@ namespace LuminaExplorer.Controls.Util;
 
 public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
     private readonly object _renderTargetObtainLock = new();
-    private Thread _mainThread = null!;
 
     private IDXGISwapChain* _pDxgiSwapChain;
     private ID3D11DeviceContext* _pD3dContext;
@@ -40,7 +38,6 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
 
     public void UiThreadInitialize() {
         try {
-            _mainThread = Thread.CurrentThread;
             _controlHandle = Control.Handle;
             Control.Resize += ControlOnResize;
             Control.ForeColorChanged += ControlOnForeColorChanged;
@@ -147,12 +144,7 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
                     }
                 }
 
-                if (_mainThread == Thread.CurrentThread)
-                    DoObtain();
-                else {
-                    using var wh = Control.BeginInvoke(DoObtain).AsyncWaitHandle;
-                    wh.WaitOne();
-                }
+                DoObtain();
 
                 if (result.exc is not null)
                     throw LastException = result.exc;
@@ -248,7 +240,7 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
     }
 
     protected void DrawText(string? @string,
-        Rectangle rectangle,
+        RectangleF rectangle,
         WordWrapping? wordWrapping = null,
         TextAlignment? textAlignment = null,
         ParagraphAlignment? paragraphAlignment = null,

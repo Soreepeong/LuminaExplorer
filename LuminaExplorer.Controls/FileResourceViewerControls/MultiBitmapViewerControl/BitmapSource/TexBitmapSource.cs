@@ -3,11 +3,14 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Lumina;
 using Lumina.Data;
 using Lumina.Data.Files;
+using Lumina.Data.Structs;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
@@ -128,24 +131,30 @@ public sealed class TexBitmapSource : IBitmapSource {
     public Task<WicBitmapSource> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice) {
         if (_disposed)
             throw new ObjectDisposedException(nameof(TexBitmapSource));
-        if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+        if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+        if (mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+            throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
         return (_wicBitmaps[mipmap][slice] ??= new(Task.Run(
             () => _texFile.ToWicBitmapSource(mipmap, slice),
             _cancellationTokenSource.Token))).Task;
     }
 
     public bool HasWicBitmapSource(int imageIndex, int mipmap, int slice) {
-        if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+        if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+        if (mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+            throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
         return _wicBitmaps[mipmap][slice]?.IsCompletedSuccessfully is true;
     }
 
     Task<Bitmap> IBitmapSource.GetGdipBitmapAsync(int imageIndex, int mipmap, int slice) {
         if (_disposed)
             throw new ObjectDisposedException(nameof(TexBitmapSource));
-        if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+        if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+        if (mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+            throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
         return (_bitmaps[mipmap][slice] ??= new(Task.Run(
             () => {
                 if (_wicBitmaps[mipmap][slice] is {Task.IsCompletedSuccessfully: true} wicBitmapTask) {
@@ -154,24 +163,29 @@ public sealed class TexBitmapSource : IBitmapSource {
                 }
 
                 var texBuf = _texFile.TextureBuffer.Filter(mipmap, slice, TexFile.TextureFormat.B8G8R8A8);
-                unsafe {
-                    fixed (void* p = texBuf.RawData) {
-                        using var b = new Bitmap(
-                            texBuf.Width,
-                            texBuf.Height,
-                            4 * texBuf.Width,
-                            PixelFormat.Format32bppArgb,
-                            (nint) p);
-                        return new(b);
-                    }
+                var bitmap = new Bitmap(texBuf.Width, texBuf.Height, PixelFormat.Format32bppArgb);
+                try {
+                    var lb = bitmap.LockBits(
+                        new(Point.Empty, bitmap.Size),
+                        ImageLockMode.WriteOnly,
+                        PixelFormat.Format32bppArgb);
+                    Marshal.Copy(texBuf.RawData, 0, lb.Scan0, lb.Stride * lb.Height);
+                    bitmap.UnlockBits(lb);
+
+                    return bitmap;
+                } catch (Exception) {
+                    bitmap.Dispose();
+                    throw;
                 }
             },
             _cancellationTokenSource.Token))).Task;
     }
 
     public bool HasGdipBitmap(int imageIndex, int mipmap, int slice) {
-        if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+        if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+        if (mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+            throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
         return _bitmaps[mipmap][slice]?.IsCompletedSuccessfully is true;
     }
 
@@ -182,20 +196,26 @@ public sealed class TexBitmapSource : IBitmapSource {
     }
 
     public int WidthOfMipmap(int imageIndex, int mipmap) {
-        if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+        if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+        if (mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+            throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
         return _texFile.TextureBuffer.WidthOfMipmap(mipmap);
     }
 
     public int HeightOfMipmap(int imageIndex, int mipmap) {
-        if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+        if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+        if (mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+            throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
         return _texFile.TextureBuffer.HeightOfMipmap(mipmap);
     }
 
     public int NumSlicesOfMipmap(int imageIndex, int mipmap) {
-        if (imageIndex != 0 || mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+        if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
+        if (mipmap < 0 || mipmap >= NumberOfMipmaps(imageIndex))
+            throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
         return _texFile.TextureBuffer.DepthOfMipmap(mipmap);
     }
 
@@ -278,19 +298,18 @@ public sealed class TexBitmapSource : IBitmapSource {
         
         const BindingFlags bindingFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
         var file = (TexFile) Activator.CreateInstance(typeof(TexFile))!;
-        typeof(FileResource)
-            .GetProperty("FilePath", bindingFlags)
-            !.SetValue(file, fileInfo.FullName);
-        typeof(FileResource)
-            .GetProperty("Data", bindingFlags)
-            !.SetValue(file, data);
-        typeof(FileResource)
-            .GetProperty("Reader", bindingFlags)
-            !.SetValue(file, new LuminaBinaryReader(data));
-        typeof(FileResource)
-            .GetMethod("LoadFile", bindingFlags)
-            !.Invoke(file, null);
+        var luminaFileInfo = new LuminaFileInfo {
+            Type = FileType.Texture,
+        };
+
+        var pfp = new ParsedFilePath();
+        typeof(ParsedFilePath).GetProperty("Path", bindingFlags)!.SetValue(pfp, fileInfo.FullName);
+
+        typeof(FileResource).GetProperty("FileInfo", bindingFlags)!.SetValue(file, luminaFileInfo);
+        typeof(FileResource).GetProperty("FilePath", bindingFlags)!.SetValue(file, pfp);
+        typeof(FileResource).GetProperty("Data", bindingFlags)!.SetValue(file, data);
+        typeof(FileResource).GetProperty("Reader", bindingFlags)!.SetValue(file, new LuminaBinaryReader(data));
+        typeof(FileResource).GetMethod("LoadFile", bindingFlags)!.Invoke(file, null);
         return file;
-    
     }
 }
