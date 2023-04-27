@@ -25,6 +25,7 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
     private static IDXGIFactory* _pDxgiFactory;
 
     private static ID3D11Device* _pSharedD3D11Device;
+    private static ID3D11DeviceContext* _pSharedD3D11Context;
 
     protected static void TryInitializeApis() {
         if (_apiInitializationException is not null)
@@ -60,7 +61,11 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
                 .WithFlagAdd(CreateDeviceFlag.BgraSupport)
                 .Create()
                 .TakeDevice(out _pSharedD3D11Device)
+                .TakeContext(out _pSharedD3D11Context)
                 .Dispose();
+
+            using var dxgiDevice = SharedD3D11Device->QueryInterface<IDXGIDevice2>();
+            dxgiDevice.SetMaximumFrameLatency(1);
         } catch (Exception e) {
             _apiInitializationException = e;
             throw;
@@ -97,6 +102,10 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
 
     protected static ID3D11Device* SharedD3D11Device => _pSharedD3D11Device is not null
         ? _pSharedD3D11Device
+        : throw InitializationException;
+
+    protected static ID3D11DeviceContext* SharedD3D11Context => _pSharedD3D11Context is not null
+        ? _pSharedD3D11Context
         : throw InitializationException;
 
     private static Exception InitializationException => _apiInitializationException ?? new Exception("Uninitialized");

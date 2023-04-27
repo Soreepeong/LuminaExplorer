@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <PackageReference Include="Lumina" Version="3.10.2" />
+    <PackageReference Include="Microsoft.HLSL.CSharpVB" Version="1.0.2" />
     <PackageReference Include="ObjectListView.Official" Version="2.9.2-alpha2" />
     <PackageReference Include="Silk.NET.Core" Version="2.17.1" />
     <PackageReference Include="Silk.NET.Direct2D" Version="2.17.1" />

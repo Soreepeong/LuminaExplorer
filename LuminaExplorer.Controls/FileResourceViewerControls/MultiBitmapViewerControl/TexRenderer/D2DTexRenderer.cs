@@ -12,6 +12,7 @@ using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
+using Silk.NET.Direct3D11;
 using Silk.NET.DirectWrite;
 using Silk.NET.Maths;
 using FontStyle = Silk.NET.DirectWrite.FontStyle;
@@ -218,9 +219,32 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             (bitmapSourceTask == SourceCurrent?.SourceTask && SourceCurrent.IsEveryVisibleSliceReadyForDrawing()) ||
             (bitmapSourceTask == SourcePrevious?.SourceTask && SourcePrevious.IsEveryVisibleSliceReadyForDrawing()));
 
-    protected override void DrawInternal() {
-        var pRenderTarget = RenderTarget;
+    protected override void Draw3D(ID3D11RenderTargetView* pRenderTarget) {
+        var context = SharedD3D11Context;
+        var colors = ArrayPool<float>.Shared.Rent(4);
+        try {
+            Color color;
+            if (SourceCurrent?.IsAnyVisibleSliceReadyForDrawing() is true)
+                color = Control.BackColorWhenLoaded;
+            else if (SourceCurrent?.SourceTask.IsFaulted is true)
+                color = Control.BackColor;
+            else if (SourcePrevious?.IsAnyVisibleSliceReadyForDrawing() is true)
+                color = Control.BackColorWhenLoaded;
+            else
+                color = Control.BackColor;
 
+            colors[0] = 1f * color.R / 255;
+            colors[1] = 1f * color.G / 255;
+            colors[2] = 1f * color.B / 255;
+            colors[3] = 1f * color.A / 255;
+
+            context->ClearRenderTargetView(pRenderTarget, ref colors[0]);
+        } finally {
+            ArrayPool<float>.Shared.Return(colors);
+        }
+    }
+
+    protected override void Draw2D(ID2D1RenderTarget* pRenderTarget) {
         var imageRect = Rectangle.Truncate(Control.ImageRect);
         var clientSize = Control.ClientSize;
         var overlayRect = new Rectangle(
@@ -236,15 +260,6 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                 out var overlayBackOpacity,
                 out var hideIfNotLoading))
             overlayString = null;
-
-        if (SourceCurrent?.IsAnyVisibleSliceReadyForDrawing() is true)
-            pRenderTarget->Clear(Control.BackColorWhenLoaded.ToD3Dcolorvalue());
-        else if (SourceCurrent?.SourceTask.IsFaulted is true)
-            pRenderTarget->Clear(Control.BackColor.ToD3Dcolorvalue());
-        else if (SourcePrevious?.IsAnyVisibleSliceReadyForDrawing() is true)
-            pRenderTarget->Clear(Control.BackColorWhenLoaded.ToD3Dcolorvalue());
-        else
-            pRenderTarget->Clear(Control.BackColor.ToD3Dcolorvalue());
 
         var currentSourceFullyAvailable = SourceCurrent?.IsEveryVisibleSliceReadyForDrawing() is true;
         var isLoading = false;

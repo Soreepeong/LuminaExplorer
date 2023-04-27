@@ -19,7 +19,8 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
     private IDXGISwapChain* _pDxgiSwapChain;
     private ID3D11DeviceContext* _pD3dContext;
     private IDXGISurface* _pDxgiSurface;
-    private ID2D1RenderTarget* _pRenderTarget;
+    private ID2D1RenderTarget* _pRenderTarget2D;
+    private ID3D11RenderTargetView* _pRenderTarget3D;
 
     private ID2D1Brush* _pForeColorBrush;
     private ID2D1Brush* _pBackColorBrush;
@@ -60,7 +61,8 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
         SafeRelease(ref _pBackColorBrush);
         SafeRelease(ref _pDxgiSwapChain);
         SafeRelease(ref _pD3dContext);
-        SafeRelease(ref _pRenderTarget);
+        SafeRelease(ref _pRenderTarget2D);
+        SafeRelease(ref _pRenderTarget3D);
         SafeRelease(ref _pDxgiSurface);
 
         base.Dispose(disposing);
@@ -76,84 +78,97 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
 
     protected IDWriteTextFormat* FontTextFormat => GetOrCreateFromFont(ref _pFontTextFormat, Control.Font);
 
-    protected ID2D1RenderTarget* RenderTarget {
+    protected ID2D1RenderTarget* RenderTarget2D {
         get {
-            if (_pRenderTarget is not null)
-                return _pRenderTarget;
-
-            lock (_renderTargetObtainLock) {
-                if (_pRenderTarget is not null)
-                    return _pRenderTarget;
-
-                SafeRelease(ref _pDxgiSurface);
-
-                (Exception? exc, object? unused) result = new();
-
-                void DoObtain() {
-                    try {
-                        if (_pDxgiSwapChain is null) {
-                            var desc = new SwapChainDesc {
-                                BufferDesc = new() {
-                                    Width = 0,
-                                    Height = 0,
-                                    Format = Format.FormatB8G8R8A8Unorm,
-                                    RefreshRate = new(1, 60),
-                                    Scaling = ModeScaling.Centered,
-                                },
-                                SampleDesc = new() {
-                                    Count = 1,
-                                    Quality = 0,
-                                },
-                                BufferCount = 1,
-                                BufferUsage = DXGI.UsageRenderTargetOutput,
-                                OutputWindow = _controlHandle,
-                                Windowed = true,
-                            };
-
-                            SafeRelease(ref _pDxgiSwapChain);
-                            SafeRelease(ref _pD3dContext);
-                            fixed (IDXGISwapChain** ppSwapChain = &_pDxgiSwapChain)
-                                ThrowH(DxgiFactory->CreateSwapChain(
-                                    (IUnknown*) SharedD3D11Device,
-                                    &desc,
-                                    ppSwapChain));
-                        }
-
-                        ThrowH(_pDxgiSwapChain->ResizeBuffers(0, 0, 0, Format.FormatUnknown, 0));
-
-                        fixed (void* ppNewSurface = &_pDxgiSurface)
-                        fixed (Guid* g = &IDXGISurface.Guid)
-                            ThrowH(_pDxgiSwapChain->GetBuffer(0, g, (void**) ppNewSurface));
-
-                        var rtp = new RenderTargetProperties {
-                            Type = RenderTargetType.Default,
-                            PixelFormat = new() {
-                                AlphaMode = AlphaMode.Premultiplied,
-                                Format = Format.FormatUnknown,
-                            },
-                            DpiX = Control.DeviceDpi,
-                            DpiY = Control.DeviceDpi,
-                        };
-
-                        fixed (ID2D1RenderTarget** pRenderTarget = &_pRenderTarget)
-                            ThrowH(D2DFactory->CreateDxgiSurfaceRenderTarget(
-                                _pDxgiSurface, &rtp, pRenderTarget));
-                    } catch (Exception e) {
-                        result.exc = e;
-                        throw;
-                    }
-                }
-
-                DoObtain();
-
-                if (result.exc is not null)
-                    throw LastException = result.exc;
-
-                return _pRenderTarget;
-            }
+            if (_pRenderTarget2D is not null)
+                return _pRenderTarget2D;
+            
+            SetUpRenderTargets();
+            return _pRenderTarget2D;
+            
         }
     }
 
+    protected ID3D11RenderTargetView* RenderTarget3D {
+        get {
+            if (_pRenderTarget3D is not null)
+                return _pRenderTarget3D;
+            
+            SetUpRenderTargets();
+            return _pRenderTarget3D;
+            
+        }
+    }
+
+    private void SetUpRenderTargets() {
+        lock (_renderTargetObtainLock) {
+            if (_pRenderTarget2D is not null && _pRenderTarget3D is not null)
+                return;
+
+            SafeRelease(ref _pDxgiSurface);
+            SafeRelease(ref _pRenderTarget2D);
+            SafeRelease(ref _pRenderTarget3D);
+
+            try {
+                if (_pDxgiSwapChain is null) {
+                    var desc = new SwapChainDesc {
+                        BufferDesc = new() {
+                            Width = 0,
+                            Height = 0,
+                            Format = Format.FormatB8G8R8A8Unorm,
+                            RefreshRate = new(1, 60),
+                            Scaling = ModeScaling.Centered,
+                        },
+                        SampleDesc = new() {
+                            Count = 1,
+                            Quality = 0,
+                        },
+                        BufferCount = 2,
+                        BufferUsage = DXGI.UsageRenderTargetOutput,
+                        SwapEffect = SwapEffect.FlipSequential,
+                        OutputWindow = _controlHandle,
+                        Windowed = true,
+                    };
+
+                    SafeRelease(ref _pDxgiSwapChain);
+                    SafeRelease(ref _pD3dContext);
+                    fixed (IDXGISwapChain** ppSwapChain = &_pDxgiSwapChain)
+                        ThrowH(DxgiFactory->CreateSwapChain(
+                            (IUnknown*) SharedD3D11Device,
+                            &desc,
+                            ppSwapChain));
+                }
+
+                ThrowH(_pDxgiSwapChain->ResizeBuffers(0, 0, 0, Format.FormatUnknown, 0));
+
+                fixed (void* ppNewSurface = &_pDxgiSurface)
+                fixed (Guid* g = &IDXGISurface.Guid)
+                    ThrowH(_pDxgiSwapChain->GetBuffer(0, g, (void**) ppNewSurface));
+
+                var rtp = new RenderTargetProperties {
+                    Type = RenderTargetType.Default,
+                    PixelFormat = new() {
+                        AlphaMode = AlphaMode.Premultiplied,
+                        Format = Format.FormatUnknown,
+                    },
+                    DpiX = Control.DeviceDpi,
+                    DpiY = Control.DeviceDpi,
+                };
+
+                fixed (ID2D1RenderTarget** ppRenderTarget = &_pRenderTarget2D)
+                    ThrowH(D2DFactory->CreateDxgiSurfaceRenderTarget(
+                        _pDxgiSurface, &rtp, ppRenderTarget));
+
+                fixed (ID3D11RenderTargetView** ppRenderTarget = &_pRenderTarget3D) {
+                    using var qi = _pDxgiSurface->QueryInterface<ID3D11Resource>();
+                    ThrowH(SharedD3D11Device->CreateRenderTargetView(qi.Handle, null, ppRenderTarget));
+                }
+            } catch (Exception e) {
+                throw LastException = e;
+            }
+        }
+    }
+    
     private void ControlOnForeColorChanged(object? sender, EventArgs e) => SafeRelease(ref _pForeColorBrush);
 
     private void ControlOnBackColorChanged(object? sender, EventArgs e) => SafeRelease(ref _pBackColorBrush);
@@ -161,20 +176,33 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
     private void ControlOnFontChanged(object? sender, EventArgs e) => SafeRelease(ref _pFontTextFormat);
 
     private void ControlOnResize(object? sender, EventArgs e) {
-        SafeRelease(ref _pRenderTarget);
+        SafeRelease(ref _pRenderTarget2D);
+        SafeRelease(ref _pRenderTarget3D);
         SafeRelease(ref _pDxgiSurface);
     }
 
-    protected abstract void DrawInternal();
+    protected abstract void Draw3D(ID3D11RenderTargetView* pRenderTarget);
 
-    public virtual bool Draw(PaintEventArgs _) {
+    protected abstract void Draw2D(ID2D1RenderTarget* pRenderTarget);
+
+    public virtual bool Draw(PaintEventArgs eventArgs) {
         try {
             if (Control.Width != 0 && Control.Height != 0) {
-                var pRenderTarget = RenderTarget;
+                var viewport = new Viewport {
+                    TopLeftX = eventArgs.ClipRectangle.X,
+                    TopLeftY = eventArgs.ClipRectangle.Y,
+                    Width = eventArgs.ClipRectangle.Width,
+                    Height = eventArgs.ClipRectangle.Height,
+                    MinDepth = 0f,
+                    MaxDepth = 1f,
+                };
+                SharedD3D11Context->RSSetViewports(1, viewport);
+                Draw3D(RenderTarget3D);
+                var pRenderTarget = RenderTarget2D;
                 pRenderTarget->BeginDraw();
                 var errorPending = false;
                 try {
-                    DrawInternal();
+                    Draw2D(pRenderTarget);
                 } catch (Exception) {
                     errorPending = true;
                     throw;
@@ -276,7 +304,7 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
         shadowBrush->SetOpacity(opacity);
         textBrush->SetOpacity(opacity);
 
-        var pRenderTarget = RenderTarget;
+        var pRenderTarget = RenderTarget2D;
 
         var box = rectangle.ToSilkFloat();
         fixed (char* pString = @string.AsSpan()) {
@@ -310,7 +338,7 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
 
     protected ID2D1Brush* CreateSolidColorBrush(Color color) {
         ID2D1Brush* pBrush = null;
-        ThrowH(RenderTarget->CreateSolidColorBrush(
+        ThrowH(RenderTarget2D->CreateSolidColorBrush(
             new D3Dcolorvalue(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f),
             null,
             (ID2D1SolidColorBrush**) &pBrush));
@@ -328,7 +356,7 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
         if (wicBitmapSource is null)
             pBitmap = null;
         else
-            ThrowH(RenderTarget->CreateBitmapFromWicBitmap(
+            ThrowH(RenderTarget2D->CreateBitmapFromWicBitmap(
                 (IWICBitmapSource*) wicBitmapSource.ComObject.GetInterfacePointer<DirectN.IWICBitmapSource>(),
                 null,
                 &pBitmap));

@@ -302,7 +302,7 @@ public partial class TextureViewer : Form {
 
     private async Task<bool> FindAndSelectFirstTexFile(int index, int step, CancellationToken cancellationToken,
         bool cycle = true) {
-        if (_vfs is not { } tree)
+        if (_vfs is not { } tree || !_playlist.Any())
             return false;
 
         var invalidIndices = new List<int>();
