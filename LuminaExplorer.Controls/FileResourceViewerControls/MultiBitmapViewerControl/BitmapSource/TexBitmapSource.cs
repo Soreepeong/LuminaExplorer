@@ -202,8 +202,7 @@ public sealed class TexBitmapSource : IBitmapSource {
     public void WriteTexFile(Stream stream) => stream.Write(_texFile.Data);
 
     public void WriteDdsFile(Stream stream) {
-        using var ms = new DdsFile(Path.GetFileNameWithoutExtension(_texFile.FilePath.Path) + ".dds", _texFile)
-            .CreateStream();
+        using var ms = _texFile.ToDdsFile().CreateStream();
         ms.CopyTo(stream);
     }
 

@@ -1,20 +1,22 @@
 ﻿using System;
 using System.Diagnostics;
 
-namespace LuminaExplorer.Core.Util.DdsStructs.PixelFormats;
+namespace LuminaExplorer.Core.Util.DdsStructs.PixelFormats.Channels;
 
-public class ColorChannelDefinition {
+public class ChannelDefinition : IEquatable<ChannelDefinition> {
+    public static readonly ChannelDefinition Empty = new();
+    
     public readonly ValueType Type;
     public readonly byte Shift;
     public readonly byte Bits;
     public readonly uint Mask;
 
-    public ColorChannelDefinition() {
+    public ChannelDefinition() {
         Type = ValueType.Unknown;
         Mask = Shift = Bits = 0;
     }
 
-    public ColorChannelDefinition(ValueType type, int shift, int bits, uint? mask = default) {
+    public ChannelDefinition(ValueType type, int shift, int bits, uint? mask = default) {
         mask ??= bits switch {
             32 => uint.MaxValue,
             _ => (1u << bits) - 1u,
@@ -36,6 +38,8 @@ public class ColorChannelDefinition {
                 break;
         }
     }
+
+    public bool IsEmpty => Bits == 0;
 
     public float DecodeValueAsFloat(ulong data) {
         if (Bits == 0)
@@ -110,9 +114,9 @@ public class ColorChannelDefinition {
         }
     }
 
-    public static ColorChannelDefinition FromMask(ValueType valueType, uint mask) {
+    public static ChannelDefinition FromMask(ValueType valueType, uint mask) {
         if (mask == 0)
-            return new();
+            return Empty;
 
         var shift = 0;
         var bits = 0;
@@ -129,4 +133,16 @@ public class ColorChannelDefinition {
 
         return new(valueType, shift, bits);
     }
+
+    public override string ToString() => $"{(ulong) Mask << Shift:X} ({Type})";
+
+    public bool Equals(ChannelDefinition? other) {
+        if (ReferenceEquals(null, other)) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return Type == other.Type && Shift == other.Shift && Bits == other.Bits && Mask == other.Mask;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as ChannelDefinition);
+
+    public override int GetHashCode() => HashCode.Combine((int) Type, Shift, Bits, Mask);
 }

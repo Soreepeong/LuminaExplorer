@@ -1,11 +1,13 @@
 ﻿using System;
+using LuminaExplorer.Core.Util.DdsStructs.PixelFormats.Channels;
 
 namespace LuminaExplorer.Core.Util.DdsStructs.PixelFormats;
 
-public interface IPixelFormat {
+public interface IPixFmt {
+    AlphaType Alpha { get; }
     int Bpp { get; }
-    DxgiFormat DxgiFormat => PixelFormatResolver.GetDxgiFormat(this);
-    DdsFourCc FourCc => PixelFormatResolver.GetFourCc(this);
+    DxgiFormat DxgiFormat => PixFmtResolver.GetDxgiFormat(this);
+    DdsFourCc FourCc => PixFmtResolver.GetFourCc(this);
 
     void ToB8G8R8A8(
         Span<byte> target,

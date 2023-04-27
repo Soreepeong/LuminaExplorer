@@ -1,4 +1,4 @@
-﻿namespace LuminaExplorer.Core.Util.DdsStructs.PixelFormats;
+﻿namespace LuminaExplorer.Core.Util.DdsStructs.PixelFormats.Channels;
 
 public enum ValueType : byte {
     Unknown,

@@ -1,17 +1,15 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Drawing;
 using BCnEncoder.Shared;
+using LuminaExplorer.Core.Util.DdsStructs.PixelFormats.Channels;
+using ValueType = LuminaExplorer.Core.Util.DdsStructs.PixelFormats.Channels.ValueType;
 
 namespace LuminaExplorer.Core.Util.DdsStructs.PixelFormats;
 
-public readonly struct BcPixelFormat : IPixelFormat {
+public class BcPixFmt : IPixFmt, IEquatable<BcPixFmt> {
     public readonly ValueType Type;
-    public readonly AlphaType Alpha;
     public readonly byte Version;
 
-    public BcPixelFormat(
+    public BcPixFmt(
         ValueType type = ValueType.Unknown,
         AlphaType alpha = AlphaType.Straight,
         byte version = 0) {
@@ -21,19 +19,20 @@ public readonly struct BcPixelFormat : IPixelFormat {
         Type = type;
         Alpha = alpha;
         Version = version;
-        Bpp = version is 1 or 4 ? 4 : 8;
-        BlockSize = version is 1 or 4 ? 8 : 16;
     }
 
-    public int Bpp { get; }
+    public AlphaType Alpha { get; }
+    
+    public int Bpp => Version is 1 or 4 ? 4 : 8;
 
-    public int BlockSize { get; }
+    public int BlockSize => Version is 1 or 4 ? 8 : 16;
 
     public void ToB8G8R8A8(Span<byte> target, int targetStride, ReadOnlySpan<byte> source, int sourceStride, int width,
         int height) {
         if (sourceStride * 2 != (width + 3) / 4 * 4 * Bpp)
             throw new ArgumentException("No padding is allowed for stride.", nameof(sourceStride));
 
+        var blockSize = BlockSize;
         var decoder = new BCnEncoder.Decoder.BcDecoder();
         if (Version == 6) {
             var block = new ColorRgbFloat[4, 4];
@@ -43,8 +42,8 @@ public readonly struct BcPixelFormat : IPixelFormat {
                 case ValueType.Sf16:
                     for (var y = 0; y < height; y += 4) {
                         for (var x = 0; x < width; x += 4) {
-                            decoder.DecodeBlockHdr(source[isrc..(isrc + 16)], CompressionFormat.Bc6S, block);
-                            isrc += 16;
+                            decoder.DecodeBlockHdr(source[isrc..(isrc + blockSize)], CompressionFormat.Bc6S, block);
+                            isrc += blockSize;
                             var yn = Math.Min(4, height - y);
                             var xn = Math.Min(4, width - x);
                             for (var y1 = 0; y1 < yn; y1++) {
@@ -63,8 +62,8 @@ public readonly struct BcPixelFormat : IPixelFormat {
                 case ValueType.Uf16:
                     for (var y = 0; y < height; y += 4) {
                         for (var x = 0; x < width; x += 4) {
-                            decoder.DecodeBlockHdr(source[isrc..(isrc + 16)], CompressionFormat.Bc6U, block);
-                            isrc += 16;
+                            decoder.DecodeBlockHdr(source[isrc..(isrc + blockSize)], CompressionFormat.Bc6U, block);
+                            isrc += blockSize;
                             var yn = Math.Min(4, height - y);
                             var xn = Math.Min(4, width - x);
                             for (var y1 = 0; y1 < yn; y1++) {
@@ -97,8 +96,8 @@ public readonly struct BcPixelFormat : IPixelFormat {
             var isrc = 0;
             for (var y = 0; y < height; y += 4) {
                 for (var x = 0; x < width; x += 4) {
-                    decoder.DecodeBlock(source[isrc..(isrc + BlockSize)], fmt, block);
-                    isrc += BlockSize;
+                    decoder.DecodeBlock(source[isrc..(isrc + blockSize)], fmt, block);
+                    isrc += blockSize;
                     var yn = Math.Min(4, height - y);
                     var xn = Math.Min(4, width - x);
                     for (var y1 = 0; y1 < yn; y1++) {
@@ -114,4 +113,14 @@ public readonly struct BcPixelFormat : IPixelFormat {
             }
         }
     }
+
+    public bool Equals(BcPixFmt? other) {
+        if (ReferenceEquals(null, other)) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return Type == other.Type && Version == other.Version && Alpha == other.Alpha;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as BcPixFmt);
+
+    public override int GetHashCode() => HashCode.Combine((int) Type, Version, (int) Alpha);
 }

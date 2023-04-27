@@ -1,24 +1,31 @@
 ﻿using System;
 using System.Linq;
+using LuminaExplorer.Core.Util.DdsStructs.PixelFormats.Channels;
 
 namespace LuminaExplorer.Core.Util.DdsStructs.PixelFormats;
 
-public readonly struct LuminancePixelFormat : IPixelFormat {
-    public readonly ColorChannelDefinition L;
-    public readonly AlphaChannelDefinition A;
-    public readonly ColorChannelDefinition X;
-
-    public LuminancePixelFormat(
-        ColorChannelDefinition? l = null,
-        AlphaChannelDefinition? a = null,
-        ColorChannelDefinition? x = null) {
+public class LumiPixFmt : IPixFmt, IEquatable<LumiPixFmt> {
+    public LumiPixFmt(
+        AlphaType alphaType,
+        ChannelDefinition? l = null,
+        ChannelDefinition? a = null,
+        ChannelDefinition? x = null) {
         L = l ?? new();
         A = a ?? new();
         X = x ?? new();
+        Alpha = alphaType;
 
         Bpp = new[] {L.Bits + L.Shift, A.Bits + A.Shift, X.Bits + X.Shift}.Max();
     }
 
+    public ChannelDefinition L {get;}
+    
+    public ChannelDefinition A {get;}
+    
+    public ChannelDefinition X {get;}
+
+    public AlphaType Alpha { get; }
+    
     public int Bpp { get; }
 
     public void ToB8G8R8A8(Span<byte> target, int targetStride, ReadOnlySpan<byte> source, int sourceStride, int width,
@@ -46,4 +53,14 @@ public readonly struct LuminancePixelFormat : IPixelFormat {
             }
         }
     }
+
+    public bool Equals(LumiPixFmt? other) {
+        if (ReferenceEquals(null, other)) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return L.Equals(other.L) && A.Equals(other.A) && X.Equals(other.X) && Alpha == other.Alpha;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as LumiPixFmt);
+
+    public override int GetHashCode() => HashCode.Combine(L, A, X, (int) Alpha);
 }

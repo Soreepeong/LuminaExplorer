@@ -19,7 +19,7 @@ public static class WicNetExtensions {
             TexFile.TextureFormat.BC2 or
             TexFile.TextureFormat.BC3) {
             using var decoder = WICImagingFactory.CreateDecoderFromStream(
-                new DdsFile(Path.GetFileName(texFile.FilePath.Path), texFile).CreateStream(),
+                texFile.ToDdsFileFollowGameDx11Conversion().CreateStream(),
                 WicImagingComponent.CLSID_WICDdsDecoder);
             using var ddsDecoder = decoder.AsComObject<IWICDdsDecoder>();
 
@@ -101,7 +101,7 @@ public static class WicNetExtensions {
                 unsafe {
                     var sliceData = ddsFile.SliceOrFaceData(imageIndex, mipIndex, slice);
                     var outData = new Span<byte>((void*) wbl.DataPointer, (int)wbl.DataSize);
-                    ddsFile.PixelFormat.ToB8G8R8A8(
+                    ddsFile.PixFmt.ToB8G8R8A8(
                         outData,
                         wbl.Stride,
                         sliceData,

@@ -128,14 +128,14 @@ public partial class MultiBitmapViewerControl : AbstractFileResourceViewerContro
 
     protected override void OnMouseMove(MouseEventArgs e) {
         base.OnMouseMove(e);
-        if (!_autoDescriptionBeingHovered) {
-            if (AutoDescriptionRectangle.Contains(e.Location)) {
-                _autoDescriptionBeingHovered = true;
+        
+        var nowHovers = AutoDescriptionRectangle.Contains(e.Location);
+        if (_autoDescriptionBeingHovered != nowHovers) {
+            _autoDescriptionBeingHovered = nowHovers;
+            if (nowHovers)
                 Invalidate(AutoDescriptionRectangle);
-            }
-        } else {
-            _autoDescriptionBeingHovered = false;
-            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
+            else
+                ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
         }
     }
 

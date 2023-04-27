@@ -242,7 +242,7 @@ public sealed class DdsBitmapSource : IBitmapSource {
             var c4 = (char) Math.Clamp((uival >> 24) & 0xFF, 0x20, 0x7F);
             sb.AppendLine($"FourCC=0x{uival:X08}({c1}{c2}{c3}{c4})");
         } else {
-            var inferredFourCc = _ddsFile.PixelFormat.FourCc;
+            var inferredFourCc = _ddsFile.PixFmt.FourCc;
             if (inferredFourCc != _ddsFile.Header.PixelFormat.FourCc && inferredFourCc != DdsFourCc.Unknown) {
                 var uival = (uint) inferredFourCc;
                 var c1 = (char) Math.Clamp((uival >> 0) & 0xFF, 0x20, 0x7F);
@@ -256,7 +256,7 @@ public sealed class DdsBitmapSource : IBitmapSource {
         if (_ddsFile.UseDxt10Header)
             sb.AppendLine($"DxgiFormat={_ddsFile.Dxt10Header.DxgiFormat} ({(int) _ddsFile.Dxt10Header.DxgiFormat})");
         else {
-            var inferredDxgiFormat = _ddsFile.PixelFormat.DxgiFormat;
+            var inferredDxgiFormat = _ddsFile.PixFmt.DxgiFormat;
             if (inferredDxgiFormat != DxgiFormat.Unknown &&
                 (!_ddsFile.UseDxt10Header || inferredDxgiFormat != _ddsFile.Dxt10Header.DxgiFormat)) {
                 sb.AppendLine($"DxgiFormat(Inferred)={inferredDxgiFormat} ({(int) inferredDxgiFormat})");

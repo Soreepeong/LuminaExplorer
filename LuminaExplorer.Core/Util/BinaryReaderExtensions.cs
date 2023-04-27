@@ -298,7 +298,7 @@ public static class BinaryReaderExtensions {
             dxt10Header = s.ReadStructure<DdsHeaderDxt10>();
         }
         
-        var ddsFile = new DdsFile("", legacyHeader, dxt10Header);
+        var ddsFile = new DdsFile("", legacyHeader, dxt10Header, null!);
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -316,7 +316,7 @@ public static class BinaryReaderExtensions {
         var bmp = new Bitmap(ddsFile.Width(level), ddsFile.Height(level), PixelFormat.Format32bppArgb);
         try {
             var lb = bmp.LockBits(new(Point.Empty, bmp.Size), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
-            ddsFile.PixelFormat.ToB8G8R8A8(
+            ddsFile.PixFmt.ToB8G8R8A8(
                 lb.Scan0,
                 lb.Height * lb.Stride,
                 lb.Stride,
