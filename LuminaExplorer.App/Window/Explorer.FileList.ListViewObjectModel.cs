@@ -264,8 +264,11 @@ public partial class Explorer {
 
         public int Count => _objects.Count;
 
-        public bool TryGetThumbnail(VirtualObject virtualObject, [MaybeNullWhen(false)] out Bitmap bitmap) =>
-            _previewCache.TryGetBitmap(virtualObject, out bitmap);
+        public bool TryGetThumbnail(
+            VirtualObject virtualObject,
+            [MaybeNullWhen(false)] out Bitmap bitmap,
+            out bool isAssociationIcon) =>
+            _previewCache.TryGetBitmap(virtualObject, out bitmap, out isAssociationIcon);
 
         private void PreviewImageLoaded(VirtualObject arg1, IVirtualFile arg2, Bitmap arg3) =>
             listView.BeginInvoke(() => listView.RefreshObject(arg1));

@@ -436,7 +436,8 @@ public partial class Explorer {
                 var imageWidth = olv.View == View.LargeIcon ? 32 : 16;
                 var imageHeight = olv.View == View.LargeIcon ? 32 : 16;
                 var thumbnailSize = source.ImageThumbnailSize;
-                if (thumbnailSize != 0 && source.TryGetThumbnail(virtualObject, out bitmap)) {
+                var isAssoc = true;
+                if (thumbnailSize != 0 && source.TryGetThumbnail(virtualObject, out bitmap, out isAssoc)) {
                     try {
                         (imageWidth, imageHeight) = (bitmap.Width, bitmap.Height);
                         if (imageWidth > thumbnailSize)
@@ -454,8 +455,11 @@ public partial class Explorer {
                 if (bitmap is not null) {
                     try {
                         g.DrawImage(bitmap, x, y, imageWidth, imageHeight);
-                        using var pen = new Pen(Color.LightGray);
-                        g.DrawRectangle(pen, x - 1, y - 1, imageWidth + 1, imageHeight + 1);
+                        if (!isAssoc) {
+                            using var pen = new Pen(Color.LightGray);
+                            g.DrawRectangle(pen, x - 1, y - 1, imageWidth + 1, imageHeight + 1);
+                        }
+
                         return;
                     } catch (Exception) {
                         // pass

@@ -12,6 +12,7 @@ using Lumina.Data.Structs;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.VirtualFileSystem;
+using LuminaExplorer.Core.VirtualFileSystem.Physical;
 
 namespace LuminaExplorer.App.Window;
 
@@ -132,8 +133,12 @@ public partial class Explorer {
             }
         }
 
-        public bool TryGetBitmap(VirtualObject virtualObject, [MaybeNullWhen(false)] out Bitmap bitmap) {
+        public bool TryGetBitmap(
+            VirtualObject virtualObject,
+            [MaybeNullWhen(false)] out Bitmap bitmap,
+            out bool isAssociationIcon) {
             bitmap = null!;
+            isAssociationIcon = false;
 
             if (virtualObject.IsFolder)
                 return false;
@@ -142,8 +147,10 @@ public partial class Explorer {
                 return false;
 
             lock (_syncRoot) {
-                if (_previews.TryGet(virtualObject.File, out var task))
+                if (_previews.TryGet(virtualObject.File, out var task)) {
                     bitmap = task.Bitmap;
+                    isAssociationIcon = task.IsAssociationIcon;
+                }
 
                 if (task?.ShouldReload is not false && !_requests.Contains(virtualObject)) {
                     _requests.Add(virtualObject);
@@ -202,7 +209,7 @@ public partial class Explorer {
                     var definitelyTexture = false;
                     definitelyTexture |= lookup.Type == FileType.Texture;
                     definitelyTexture |= Path.GetExtension(vfile.Name).ToLowerInvariant() is ".tex" or ".atex";
-                    
+
                     var mightBeTexture = false;
                     mightBeTexture |= definitelyTexture;
                     mightBeTexture |= ImagingExtensions.ThumbnailSupportedExtensions.Any(
@@ -210,30 +217,42 @@ public partial class Explorer {
                     // may be an .atex file
                     mightBeTexture |= !vfile.NameResolved && lookup is {Type: FileType.Standard, Size: > 256};
 
-                    if (!mightBeTexture)
+                    if (!mightBeTexture) {
+                        if (vfile is PhysicalFile pf) {
+                            var icon = Icon.ExtractAssociatedIcon(pf.FileInfo.FullName);
+                            if (icon != null) {
+                                using (icon)
+                                    item.Bitmap = icon.ToBitmap();
+                                item.IsAssociationIcon = true;
+                            }
+                        }
+
+                        item.CompletionSource.SetResult();
                         continue;
+                    }
 
                     var w = Width;
                     var h = Height;
                     await using var stream = lookup.CreateStream();
-                    
+
                     if (definitelyTexture)
                         sourceBitmap = await stream.ExtractMipmapOfSizeAtLeastForTex(
                             Math.Max(w, h),
                             virtualObject.PlatformId,
                             _disposing.Token);
-                    else 
+                    else
                         sourceBitmap = await stream.ExtractMipmapOfSizeAtLeast(
-                        Math.Max(w, h),
-                        virtualObject.PlatformId,
-                        _disposing.Token);
+                            Math.Max(w, h),
+                            virtualObject.PlatformId,
+                            _disposing.Token);
 
                     if (_disposing.IsCancellationRequested)
                         return;
 
                     if (sourceBitmap.Width <= w && sourceBitmap.Height <= w) {
-                        item.CompletionSource.SetResult(new(sourceBitmap));
+                        item.Bitmap = sourceBitmap;
                         sourceBitmap = null;
+                        item.CompletionSource.SetResult();
                         continue;
                     }
 
@@ -268,8 +287,9 @@ public partial class Explorer {
                     g.InterpolationMode = _interpolationMode;
                     g.DrawImage(sourceBitmap, new Rectangle(0, 0, w, h), srcRect, GraphicsUnit.Pixel);
 
-                    item.CompletionSource.SetResult(targetBitmap);
+                    item.Bitmap = targetBitmap;
                     targetBitmap = null;
+                    item.CompletionSource.SetResult();
                 } catch (Exception e) {
                     item.CompletionSource.SetException(e);
                 } finally {
@@ -281,7 +301,7 @@ public partial class Explorer {
                             // did any of the configuration get changed while the process?
                             if (configurationGenerationOnTaking == _configurationGeneration) {
                                 if (item.TaskStatus == TaskStatus.Created)
-                                    item.CompletionSource.SetResult(null);
+                                    item.CompletionSource.SetResult();
                                 else
                                     _previews.Add(vfile, item);
                                 if (item.Bitmap is { } b)
@@ -305,23 +325,21 @@ public partial class Explorer {
         }
 
         private sealed class PendingItem : IDisposable {
-            public readonly TaskCompletionSource<Bitmap?> CompletionSource = new();
+            public TaskCompletionSource CompletionSource = new();
 
             public TaskStatus TaskStatus => CompletionSource.Task.Status;
 
             public bool ShouldReload;
 
-            public Bitmap? Bitmap =>
-                CompletionSource.Task.IsCompletedSuccessfully ? CompletionSource.Task.Result : null;
+            public Bitmap? Bitmap;
+
+            public bool IsAssociationIcon;
 
             public void Dispose() {
                 if (CompletionSource.Task.Status == TaskStatus.Created)
                     return;
 
-                CompletionSource.Task.ContinueWith(result => {
-                    if (result.IsCompletedSuccessfully)
-                        result.Result?.Dispose();
-                });
+                CompletionSource.Task.ContinueWith(_ => { Bitmap?.Dispose(); });
             }
         }
     }
