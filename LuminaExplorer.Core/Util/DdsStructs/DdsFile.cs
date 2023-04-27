@@ -88,6 +88,12 @@ public class DdsFile {
 
     public int Bpp => PixFmt.Bpp;
 
+    public bool Is1D => !IsCubeMap && (Header.Flags & DdsHeaderFlags.DimensionMask) == DdsHeaderFlags.Dimension1;
+    
+    public bool Is2D => !IsCubeMap && (Header.Flags & DdsHeaderFlags.DimensionMask) == DdsHeaderFlags.Dimension2;
+    
+    public bool Is3D => !IsCubeMap && (Header.Flags & DdsHeaderFlags.DimensionMask) == DdsHeaderFlags.Dimension3;
+
     public bool IsCubeMap => Header.Caps2.HasFlag(DdsCaps2.Cubemap);
 
     public int Width(int mipmapIndex) =>

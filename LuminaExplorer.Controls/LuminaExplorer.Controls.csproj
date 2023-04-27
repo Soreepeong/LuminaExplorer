@@ -9,6 +9,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Util\tex2d_ps.hlsl" />
+    <None Remove="Util\tex2d_vs.hlsl" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Shaders\tex2d.hlsl" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Update="CoreVirtualObjectListView.cs">
       <SubType>Component</SubType>
     </Compile>
@@ -25,10 +34,10 @@
 
   <ItemGroup>
     <PackageReference Include="Lumina" Version="3.10.2" />
-    <PackageReference Include="Microsoft.HLSL.CSharpVB" Version="1.0.2" />
     <PackageReference Include="ObjectListView.Official" Version="2.9.2-alpha2" />
     <PackageReference Include="Silk.NET.Core" Version="2.17.1" />
     <PackageReference Include="Silk.NET.Direct2D" Version="2.17.1" />
+    <PackageReference Include="Silk.NET.Direct3D.Compilers" Version="2.17.1" />
     <PackageReference Include="Silk.NET.Direct3D11" Version="2.17.1" />
     <PackageReference Include="WicNet" Version="1.6.4.1" />
   </ItemGroup>

@@ -28,6 +28,8 @@ public partial class MultiBitmapViewerControl {
 
     public RectangleF ImageRect => Viewport.EffectiveRect;
 
+    public SizeF EffectiveSize => Viewport.EffectiveSize;
+
     public float EffectiveZoom => Viewport.EffectiveZoom;
 
     public IBitmapSource? PreviousBitmapSource => _bitmapSourceTaskPrevious?.IsCompletedSuccessfully is true

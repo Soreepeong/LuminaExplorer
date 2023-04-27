@@ -1,20 +1,25 @@
-using System;
+﻿using System;
 using System.Buffers;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
+using LuminaExplorer.Controls.Shaders;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
+using LuminaExplorer.Core.Util.DdsStructs;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.Direct3D11;
 using Silk.NET.DirectWrite;
+using Silk.NET.DXGI;
 using Silk.NET.Maths;
+using Filter = Silk.NET.Direct3D11.Filter;
 using FontStyle = Silk.NET.DirectWrite.FontStyle;
 using IDWriteTextFormat = Silk.NET.DirectWrite.IDWriteTextFormat;
 using Rectangle = System.Drawing.Rectangle;
@@ -32,6 +37,10 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
     private RectangleF? _autoDescriptionRectangle;
 
+    private Tex2DShader? _tex2DShader;
+    private ConstantBufferWrapper<Tex2DShader.Tex2DConstantBuffer>? _tex2DConstantBuffer;
+    private TextureShaderResource? _texRes;
+
     private readonly SourceSet?[] _sourceSets = new SourceSet?[2];
 
     public D2DTexRenderer(MultiBitmapViewerControl control) : base(control) {
@@ -43,14 +52,8 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         Control.TransparencyCellColor1Changed += ControlOnTransparencyCellColor1Changed;
         Control.TransparencyCellColor2Changed += ControlOnTransparencyCellColor2Changed;
         Control.PixelGridLineColorChanged += ControlOnPixelGridLineColorChanged;
-    }
 
-    private void ControlOnFontSizeStepLevelChanged(object? sender, EventArgs e) {
-        SafeRelease(ref _pScalingFontTextFormat);
-    }
-
-    private void ControlOnResize(object? sender, EventArgs e) {
-        SafeRelease(ref _pScalingFontTextFormat);
+        _tex2DShader = new(SharedD3D11Device);
     }
 
     private IDWriteTextFormat* ScalingFontTextFormat {
@@ -133,6 +136,10 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         SafeRelease(ref _pTransparencyCellColor2Brush);
         SafeRelease(ref _pPixelGridLineColorBrush);
         SafeRelease(ref _pScalingFontTextFormat);
+
+        SafeDispose.One(ref _tex2DShader);
+        SafeDispose.One(ref _texRes);
+        SafeDispose.One(ref _tex2DConstantBuffer);
 
         base.Dispose(disposing);
     }
@@ -239,8 +246,180 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             colors[3] = 1f * color.A / 255;
 
             context->ClearRenderTargetView(pRenderTarget, ref colors[0]);
+
+            if (_texRes is null && SourceCurrent?.SourceTask.IsCompletedSuccessfully is true) {
+                var dds = new MemoryStream();
+                SourceCurrent.SourceTask.Result.WriteDdsFile(dds);
+                _texRes = new(SharedD3D11Device, new("test.dds", dds.ToArray()));
+                _tex2DConstantBuffer = new(SharedD3D11Device);
+            }
+
+            if (_texRes is not null && _tex2DConstantBuffer is not null) {
+                context->IASetInputLayout(_tex2DShader!.InputLayoutVertexShader);
+                context->IASetVertexBuffers(0, 1, _tex2DShader.VertexBuffer, (uint) _tex2DShader.Stride, 0);
+                context->IASetIndexBuffer(_tex2DShader.IndexBuffer, Format.FormatR16Uint, 0);
+                context->IASetPrimitiveTopology(D3DPrimitiveTopology.D3D11PrimitiveTopologyTrianglelist);
+
+                var cbuf = new Tex2DShader.Tex2DConstantBuffer {
+                    ImageSize = Control.EffectiveSize,
+                    RotateM11 = 1,
+                    RotateM12 = 0,
+                    RotateM21 = 0,
+                    RotateM22 = 1,
+                    Pan = Control.Pan with {Y = -Control.Pan.Y},
+                    ClientSize = Control.ClientSize,
+                };
+
+                context->VSSetShader(_tex2DShader.VertexShader, null, 0);
+                context->UpdateSubresource((ID3D11Resource*) _tex2DConstantBuffer.Buffer, 0, null, &cbuf, 0, 0);
+                context->VSSetConstantBuffers(0, 1, _tex2DConstantBuffer.Buffer);
+
+                context->PSSetShader(_tex2DShader.PixelShader, null, 0);
+                context->PSSetShaderResources(0, 1, _texRes.ShaderResourceView);
+                context->PSSetSamplers(0, 1, _texRes.Sampler);
+
+                context->DrawIndexed((uint) _tex2DShader.NumIndices, 0, 0);
+            }
         } finally {
             ArrayPool<float>.Shared.Return(colors);
+        }
+    }
+
+    private sealed class ConstantBufferWrapper<T> : IDisposable where T : unmanaged {
+        private ID3D11Buffer* _buffer;
+
+        public ConstantBufferWrapper(ID3D11Device* pDevice) {
+            try {
+                fixed (ID3D11Buffer** ppBuffer = &_buffer) {
+                    var bufferDesc = new BufferDesc((uint) ((Unsafe.SizeOf<T>() + 15) / 16 * 16), Usage.Default,
+                        (uint) BindFlag.ConstantBuffer, 0, 0, 0);
+                    ThrowH(pDevice->CreateBuffer(&bufferDesc, null, ppBuffer));
+                }
+            } catch (Exception) {
+                Dispose();
+                throw;
+            }
+        }
+
+        public ID3D11Buffer* Buffer => _buffer;
+
+        public void Dispose() => SafeRelease(ref _buffer);
+    }
+
+    private sealed class TextureShaderResource : IDisposable {
+        private ID3D11Texture2D* _pTexture2D;
+        private ID3D11ShaderResourceView* _pShaderResourceView;
+        private ID3D11SamplerState* _pSampler;
+
+        public TextureShaderResource(ID3D11Device* pDevice, DdsFile dds) {
+            try {
+                var textureDesc = new Texture2DDesc {
+                    Width = (uint) dds.Width(0),
+                    Height = (uint) dds.Height(0),
+                    MipLevels = (uint) dds.NumMipmaps,
+                    ArraySize = (uint) dds.NumImages,
+                    Format = (Format) dds.PixFmt.DxgiFormat,
+                    SampleDesc = new(1, 0),
+                    Usage = Usage.Default,
+                    BindFlags = (uint) BindFlag.ShaderResource,
+                    CPUAccessFlags = 0,
+                    MiscFlags = dds.IsCubeMap ? (uint) ResourceMiscFlag.Texturecube : 0u,
+                };
+                var subresources = new SubresourceData[textureDesc.MipLevels * textureDesc.ArraySize];
+                fixed (void* b = dds.Data)
+                fixed (ID3D11Texture2D** ppTexture2D = &_pTexture2D)
+                fixed (SubresourceData* pSubresources = subresources) {
+                    for (var i = 0; i < textureDesc.ArraySize; i++) {
+                        for (var j = 0; j < textureDesc.MipLevels; j++) {
+                            subresources[i * textureDesc.ArraySize + j] = new SubresourceData(
+                                pSysMem: (byte*) b + dds.MipmapDataOffset(i, 0, j, out _) - dds.DataOffset,
+                                sysMemPitch: (uint) dds.Pitch(j),
+                                sysMemSlicePitch: (uint) dds.SliceSize(j));
+                        }
+                    }
+
+                    ThrowH(pDevice->CreateTexture2D(&textureDesc, pSubresources, ppTexture2D));
+                }
+
+                var shaderViewDesc = new ShaderResourceViewDesc {
+                    Format = textureDesc.Format,
+                    ViewDimension = dds.IsCubeMap
+                        ? D3DSrvDimension.D3D11SrvDimensionTexturecube
+                        : dds.Depth(0) != 1
+                            ? D3DSrvDimension.D3D11SrvDimensionTexture3D
+                            : dds.Height(0) != 1
+                                ? D3DSrvDimension.D3D11SrvDimensionTexture2D
+                                : D3DSrvDimension.D3D11SrvDimensionTexture1D,
+                    Anonymous = new(
+                    )
+                };
+                if (dds.NumImages != 1)
+                    throw new NotSupportedException();
+                if (dds.Is1D) {
+                    shaderViewDesc.ViewDimension = D3DSrvDimension.D3D11SrvDimensionTexture1D;
+                    shaderViewDesc.Anonymous = new() {
+                        Texture1D = new() {
+                            MipLevels = textureDesc.MipLevels,
+                            MostDetailedMip = 0,
+                        }
+                    };
+                } else if (dds.Is2D) {
+                    shaderViewDesc.ViewDimension = D3DSrvDimension.D3D11SrvDimensionTexture2D;
+                    shaderViewDesc.Anonymous = new() {
+                        Texture2D = new() {
+                            MipLevels = textureDesc.MipLevels,
+                            MostDetailedMip = 0,
+                        }
+                    };
+                } else if (dds.Is3D) {
+                    shaderViewDesc.ViewDimension = D3DSrvDimension.D3D11SrvDimensionTexture3D;
+                    shaderViewDesc.Anonymous = new() {
+                        Texture3D = new() {
+                            MipLevels = textureDesc.MipLevels,
+                            MostDetailedMip = 0,
+                        }
+                    };
+                } else if (dds.IsCubeMap) {
+                    shaderViewDesc.ViewDimension = D3DSrvDimension.D3D11SrvDimensionTexturecube;
+                    shaderViewDesc.Anonymous = new() {
+                        TextureCube = new() {
+                            MipLevels = textureDesc.MipLevels,
+                            MostDetailedMip = 0,
+                        }
+                    };
+                } else {
+                    throw new NotSupportedException();
+                }
+
+                fixed (ID3D11ShaderResourceView** pView = &_pShaderResourceView)
+                    ThrowH(pDevice->CreateShaderResourceView((ID3D11Resource*) _pTexture2D, &shaderViewDesc, pView));
+
+                var samplerDesc = new SamplerDesc {
+                    Filter = Filter.MinMagMipLinear,
+                    MaxAnisotropy = 0,
+                    AddressU = TextureAddressMode.Wrap,
+                    AddressV = TextureAddressMode.Wrap,
+                    AddressW = TextureAddressMode.Wrap,
+                    MipLODBias = 0f,
+                    MinLOD = 0,
+                    MaxLOD = float.MaxValue,
+                    ComparisonFunc = ComparisonFunc.Never,
+                };
+                fixed (ID3D11SamplerState** pState = &_pSampler)
+                    ThrowH(pDevice->CreateSamplerState(&samplerDesc, pState));
+            } catch (Exception) {
+                Dispose();
+                throw;
+            }
+        }
+
+        public ID3D11ShaderResourceView* ShaderResourceView => _pShaderResourceView;
+        public ID3D11SamplerState* Sampler => _pSampler;
+
+        public void Dispose() {
+            SafeRelease(ref _pTexture2D);
+            SafeRelease(ref _pShaderResourceView);
+            SafeRelease(ref _pSampler);
         }
     }
 
@@ -282,6 +461,8 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                             sliceCell,
                             out _,
                             out bitmapExceptions[sliceCell.CellIndex]);
+
+                    continue;
 
                     // 1. Draw transparency grids
                     foreach (var sliceCell in source.Layout) {
@@ -365,7 +546,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
                         if (bitmapLoaded[sliceCell.CellIndex] is not LoadState.Error and LoadState.Loading)
                             continue;
-                        
+
                         var isError = bitmapLoaded[sliceCell.CellIndex] == LoadState.Error;
                         string msg;
                         if (isError) {
@@ -503,6 +684,11 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             SafeRelease(ref textLayout);
         }
     }
+
+    private void ControlOnFontSizeStepLevelChanged(object? sender, EventArgs e) =>
+        SafeRelease(ref _pScalingFontTextFormat);
+
+    private void ControlOnResize(object? sender, EventArgs e) => SafeRelease(ref _pScalingFontTextFormat);
 
     private void ControlOnForeColorWhenLoadedChanged(object? sender, EventArgs e) =>
         SafeRelease(ref _pForeColorWhenLoadedBrush);

@@ -27,4 +27,9 @@ public enum DdsHeaderFlags {
 
     /// <summary>Required in a depth texture</summary> 
     Depth = 0x800000,
+    
+    Dimension1 = Width,
+    Dimension2 = Width | Height,
+    Dimension3 = Width | Height | Depth,
+    DimensionMask = Width | Height | Depth,
 }

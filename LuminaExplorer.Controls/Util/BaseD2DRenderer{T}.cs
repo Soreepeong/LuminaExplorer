@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
 using Silk.NET.Core.Native;
@@ -189,15 +189,21 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
         try {
             if (Control.Width != 0 && Control.Height != 0) {
                 var viewport = new Viewport {
-                    TopLeftX = eventArgs.ClipRectangle.X,
-                    TopLeftY = eventArgs.ClipRectangle.Y,
-                    Width = eventArgs.ClipRectangle.Width,
-                    Height = eventArgs.ClipRectangle.Height,
+                    //TopLeftX = eventArgs.ClipRectangle.X,
+                    //TopLeftY = eventArgs.ClipRectangle.Y,
+                    //Width = eventArgs.ClipRectangle.Width,
+                    //Height = eventArgs.ClipRectangle.Height,
+                    TopLeftX = 0,
+                    TopLeftY = 0,
+                    Width = Control.Width,
+                    Height = Control.Height,
                     MinDepth = 0f,
                     MaxDepth = 1f,
                 };
                 SharedD3D11Context->RSSetViewports(1, viewport);
+                SharedD3D11Context->OMSetRenderTargets(1, RenderTarget3D, null);
                 Draw3D(RenderTarget3D);
+
                 var pRenderTarget = RenderTarget2D;
                 pRenderTarget->BeginDraw();
                 var errorPending = false;

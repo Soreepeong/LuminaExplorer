@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using LuminaExplorer.Controls.Shaders;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
@@ -26,6 +27,9 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
 
     private static ID3D11Device* _pSharedD3D11Device;
     private static ID3D11DeviceContext* _pSharedD3D11Context;
+
+    private static ID3D11PixelShader* _pTex2DPixelShader;
+    private static ID3D11VertexShader* _pTex2DVertexShader;
 
     protected static void TryInitializeApis() {
         if (_apiInitializationException is not null)
@@ -64,8 +68,21 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
                 .TakeContext(out _pSharedD3D11Context)
                 .Dispose();
 
+            fixed (ID3D11PixelShader** p2 = &_pTex2DPixelShader) {
+                var ps = DxShaders.Tex2DPixelShader;
+                fixed (void* p = ps)
+                    ThrowH(SharedD3D11Device->CreatePixelShader(p, (nuint) ps.Length, null, p2));
+            }
+
+            fixed (ID3D11VertexShader** p2 = &_pTex2DVertexShader) {
+                var ps = DxShaders.Tex2DVertexShader;
+                fixed (void* p = ps)
+                    ThrowH(SharedD3D11Device->CreateVertexShader(p, (nuint) ps.Length, null, p2));
+            }
+
             using var dxgiDevice = SharedD3D11Device->QueryInterface<IDXGIDevice2>();
             dxgiDevice.SetMaximumFrameLatency(1);
+            
         } catch (Exception e) {
             _apiInitializationException = e;
             throw;
