@@ -8,6 +8,7 @@ using LuminaExplorer.App.Window;
 using LuminaExplorer.App.Window.FileViewers;
 using LuminaExplorer.Core.SqPackPath;
 using LuminaExplorer.Core.VirtualFileSystem.Physical;
+using LuminaExplorer.Core.VirtualFileSystem.Shell;
 using LuminaExplorer.Core.VirtualFileSystem.Sqpack;
 
 namespace LuminaExplorer.App;
@@ -53,7 +54,8 @@ static class Program {
         var hashdb = new HashDatabase(hashCacheFile);
         using var fs = new SqpackFileSystem(hashdb, gameData);
         //*/
-        using var fs = new PhysicalFileSystem();
+        // using var fs = new PhysicalFileSystem();
+        using var fs = new ShellFileSystem();
         
         using var mainExplorer = new Explorer(appConfig, fs);
         

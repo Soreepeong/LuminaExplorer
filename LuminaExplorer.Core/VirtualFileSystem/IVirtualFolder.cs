@@ -10,6 +10,4 @@ public interface IVirtualFolder : IEquatable<IVirtualFolder> {
     public uint? PathHash { get; }
 
     public string Name { get; }
-
-    public void Refresh();
 }
