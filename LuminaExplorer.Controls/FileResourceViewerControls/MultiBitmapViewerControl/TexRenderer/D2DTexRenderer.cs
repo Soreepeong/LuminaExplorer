@@ -1,18 +1,17 @@
 ﻿using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
-using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using LuminaExplorer.Controls.DirectXStuff;
+using LuminaExplorer.Controls.DirectXStuff.Shaders;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
-using LuminaExplorer.Controls.Shaders;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
-using LuminaExplorer.Core.Util.DdsStructs;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.Direct3D11;
@@ -38,12 +37,15 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
     private RectangleF? _autoDescriptionRectangle;
 
     private Tex2DShader? _tex2DShader;
-    private ConstantBufferWrapper<Tex2DShader.Tex2DConstantBuffer>? _tex2DConstantBuffer;
-    private TextureShaderResource? _texRes;
+    private ID3D11SamplerState* _pSampler;
 
     private readonly SourceSet?[] _sourceSets = new SourceSet?[2];
 
-    public D2DTexRenderer(MultiBitmapViewerControl control) : base(control) {
+    // ReSharper disable once IntroduceOptionalParameters.Global
+    public D2DTexRenderer(MultiBitmapViewerControl control) : this(control, null, null) { }
+
+    public D2DTexRenderer(MultiBitmapViewerControl control, ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext)
+        : base(control, pDevice, pDeviceContext) {
         Control.Resize += ControlOnResize;
         Control.FontSizeStepLevelChanged += ControlOnFontSizeStepLevelChanged;
         Control.ForeColorWhenLoadedChanged += ControlOnForeColorWhenLoadedChanged;
@@ -53,8 +55,77 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         Control.TransparencyCellColor2Changed += ControlOnTransparencyCellColor2Changed;
         Control.PixelGridLineColorChanged += ControlOnPixelGridLineColorChanged;
 
-        _tex2DShader = new(SharedD3D11Device);
+        _tex2DShader = new(Device);
     }
+
+    protected override void Dispose(bool disposing) {
+        if (disposing) {
+            Control.Resize -= ControlOnResize;
+            Control.FontSizeStepLevelChanged -= ControlOnFontSizeStepLevelChanged;
+            Control.ForeColorWhenLoadedChanged -= ControlOnForeColorWhenLoadedChanged;
+            Control.BackColorWhenLoadedChanged -= ControlOnBackColorWhenLoadedChanged;
+            Control.BorderColorChanged -= ControlOnBorderColorChanged;
+            Control.TransparencyCellColor1Changed -= ControlOnTransparencyCellColor1Changed;
+            Control.TransparencyCellColor2Changed -= ControlOnTransparencyCellColor2Changed;
+            Control.PixelGridLineColorChanged -= ControlOnPixelGridLineColorChanged;
+        }
+
+        UpdateBitmapSource(null, null);
+        SafeRelease(ref _pForeColorWhenLoadedBrush);
+        SafeRelease(ref _pBackColorWhenLoadedBrush);
+        SafeRelease(ref _pBorderColorBrush);
+        SafeRelease(ref _pTransparencyCellColor1Brush);
+        SafeRelease(ref _pTransparencyCellColor2Brush);
+        SafeRelease(ref _pPixelGridLineColorBrush);
+        SafeRelease(ref _pScalingFontTextFormat);
+
+        SafeDispose.One(ref _tex2DShader);
+        SafeRelease(ref _pSampler);
+
+        base.Dispose(disposing);
+    }
+
+    public event Action<Task<IBitmapSource>>? AnyBitmapSourceSliceLoadAttemptFinished;
+
+    public event Action<Task<IBitmapSource>>? AllBitmapSourceSliceLoadAttemptFinished;
+
+    private SourceSet? SourcePrevious {
+        get => _sourceSets[0];
+        set => _sourceSets[0] = value;
+    }
+
+    private SourceSet? SourceCurrent {
+        get => _sourceSets[1];
+        set => _sourceSets[1] = value;
+    }
+
+    public Task<IBitmapSource>? PreviousSourceTask {
+        get => SourcePrevious?.SourceTask;
+        set => UpdateBitmapSource(value, CurrentSourceTask);
+    }
+
+    public Task<IBitmapSource>? CurrentSourceTask {
+        get => SourceCurrent?.SourceTask;
+        set => UpdateBitmapSource(PreviousSourceTask, value);
+    }
+
+    private ID2D1Brush* BackColorWhenLoadedBrush =>
+        GetOrCreateSolidColorBrush(ref _pBackColorWhenLoadedBrush, Control.BackColorWhenLoaded);
+
+    private ID2D1Brush* ForeColorWhenLoadedBrush =>
+        GetOrCreateSolidColorBrush(ref _pForeColorWhenLoadedBrush, Control.ForeColorWhenLoaded);
+
+    private ID2D1Brush* ContentBorderColorBrush =>
+        GetOrCreateSolidColorBrush(ref _pBorderColorBrush, Control.ContentBorderColor);
+
+    private ID2D1Brush* TransparencyCellColor1Brush =>
+        GetOrCreateSolidColorBrush(ref _pTransparencyCellColor1Brush, Control.TransparencyCellColor1);
+
+    private ID2D1Brush* TransparencyCellColor2Brush =>
+        GetOrCreateSolidColorBrush(ref _pTransparencyCellColor2Brush, Control.TransparencyCellColor2);
+
+    private ID2D1Brush* PixelGridLineColorBrush =>
+        GetOrCreateSolidColorBrush(ref _pPixelGridLineColorBrush, Control.PixelGridLineColor);
 
     private IDWriteTextFormat* ScalingFontTextFormat {
         get {
@@ -106,75 +177,27 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         set => _autoDescriptionRectangle = value;
     }
 
-    public Task<IBitmapSource>? PreviousSourceTask {
-        get => SourcePrevious?.SourceTask;
-        set => UpdateBitmapSource(value, CurrentSourceTask);
-    }
+    private ID3D11SamplerState* Sampler {
+        get {
+            if (_pSampler is null) {
+                var samplerDesc = new SamplerDesc {
+                    Filter = Filter.MinMagMipLinear,
+                    MaxAnisotropy = 0,
+                    AddressU = TextureAddressMode.Wrap,
+                    AddressV = TextureAddressMode.Wrap,
+                    AddressW = TextureAddressMode.Wrap,
+                    MipLODBias = 0f,
+                    MinLOD = 0,
+                    MaxLOD = float.MaxValue,
+                    ComparisonFunc = ComparisonFunc.Never,
+                };
+                fixed (ID3D11SamplerState** pState = &_pSampler)
+                    ThrowH(Device->CreateSamplerState(&samplerDesc, pState));
+            }
 
-    public Task<IBitmapSource>? CurrentSourceTask {
-        get => SourceCurrent?.SourceTask;
-        set => UpdateBitmapSource(PreviousSourceTask, value);
-    }
-
-    protected override void Dispose(bool disposing) {
-        if (disposing) {
-            Control.Resize -= ControlOnResize;
-            Control.FontSizeStepLevelChanged -= ControlOnFontSizeStepLevelChanged;
-            Control.ForeColorWhenLoadedChanged -= ControlOnForeColorWhenLoadedChanged;
-            Control.BackColorWhenLoadedChanged -= ControlOnBackColorWhenLoadedChanged;
-            Control.BorderColorChanged -= ControlOnBorderColorChanged;
-            Control.TransparencyCellColor1Changed -= ControlOnTransparencyCellColor1Changed;
-            Control.TransparencyCellColor2Changed -= ControlOnTransparencyCellColor2Changed;
-            Control.PixelGridLineColorChanged -= ControlOnPixelGridLineColorChanged;
+            return _pSampler;
         }
-
-        UpdateBitmapSource(null, null);
-        SafeRelease(ref _pForeColorWhenLoadedBrush);
-        SafeRelease(ref _pBackColorWhenLoadedBrush);
-        SafeRelease(ref _pBorderColorBrush);
-        SafeRelease(ref _pTransparencyCellColor1Brush);
-        SafeRelease(ref _pTransparencyCellColor2Brush);
-        SafeRelease(ref _pPixelGridLineColorBrush);
-        SafeRelease(ref _pScalingFontTextFormat);
-
-        SafeDispose.One(ref _tex2DShader);
-        SafeDispose.One(ref _texRes);
-        SafeDispose.One(ref _tex2DConstantBuffer);
-
-        base.Dispose(disposing);
     }
-
-    private SourceSet? SourcePrevious {
-        get => _sourceSets[0];
-        set => _sourceSets[0] = value;
-    }
-
-    private SourceSet? SourceCurrent {
-        get => _sourceSets[1];
-        set => _sourceSets[1] = value;
-    }
-
-    public event Action<Task<IBitmapSource>>? AnyBitmapSourceSliceLoadAttemptFinished;
-
-    public event Action<Task<IBitmapSource>>? AllBitmapSourceSliceLoadAttemptFinished;
-
-    private ID2D1Brush* BackColorWhenLoadedBrush =>
-        GetOrCreateSolidColorBrush(ref _pBackColorWhenLoadedBrush, Control.BackColorWhenLoaded);
-
-    private ID2D1Brush* ForeColorWhenLoadedBrush =>
-        GetOrCreateSolidColorBrush(ref _pForeColorWhenLoadedBrush, Control.ForeColorWhenLoaded);
-
-    private ID2D1Brush* ContentBorderColorBrush =>
-        GetOrCreateSolidColorBrush(ref _pBorderColorBrush, Control.ContentBorderColor);
-
-    private ID2D1Brush* TransparencyCellColor1Brush =>
-        GetOrCreateSolidColorBrush(ref _pTransparencyCellColor1Brush, Control.TransparencyCellColor1);
-
-    private ID2D1Brush* TransparencyCellColor2Brush =>
-        GetOrCreateSolidColorBrush(ref _pTransparencyCellColor2Brush, Control.TransparencyCellColor2);
-
-    private ID2D1Brush* PixelGridLineColorBrush =>
-        GetOrCreateSolidColorBrush(ref _pPixelGridLineColorBrush, Control.PixelGridLineColor);
 
     public bool UpdateBitmapSource(Task<IBitmapSource>? previous, Task<IBitmapSource>? current) {
         LastException = null;
@@ -227,7 +250,6 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             (bitmapSourceTask == SourcePrevious?.SourceTask && SourcePrevious.IsEveryVisibleSliceReadyForDrawing()));
 
     protected override void Draw3D(ID3D11RenderTargetView* pRenderTarget) {
-        var context = SharedD3D11Context;
         var colors = ArrayPool<float>.Shared.Rent(4);
         try {
             Color color;
@@ -245,186 +267,66 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             colors[2] = 1f * color.B / 255;
             colors[3] = 1f * color.A / 255;
 
-            context->ClearRenderTargetView(pRenderTarget, ref colors[0]);
+            DeviceContext->ClearRenderTargetView(pRenderTarget, ref colors[0]);
 
-            if (_texRes is null && SourceCurrent?.SourceTask.IsCompletedSuccessfully is true) {
-                var dds = new MemoryStream();
-                SourceCurrent.SourceTask.Result.WriteDdsFile(dds);
-                _texRes = new(SharedD3D11Device, new("test.dds", dds.ToArray()));
-                _tex2DConstantBuffer = new(SharedD3D11Device);
-            }
+            if (_tex2DShader is null)
+                return;
 
-            if (_texRes is not null && _tex2DConstantBuffer is not null) {
-                context->IASetInputLayout(_tex2DShader!.InputLayoutVertexShader);
-                context->IASetVertexBuffers(0, 1, _tex2DShader.VertexBuffer, (uint) _tex2DShader.Stride, 0);
-                context->IASetIndexBuffer(_tex2DShader.IndexBuffer, Format.FormatR16Uint, 0);
-                context->IASetPrimitiveTopology(D3DPrimitiveTopology.D3D11PrimitiveTopologyTrianglelist);
+            var currentSourceFullyAvailable = SourceCurrent?.IsEveryVisibleSliceReadyForDrawing() is true;
+            foreach (var sourceSet in _sourceSets) {
+                if (sourceSet is null)
+                    continue;
+                if (currentSourceFullyAvailable && SourcePrevious == sourceSet) {
+                    Debug.Assert(SourcePrevious != SourceCurrent);
+                    continue;
+                }
 
-                var cbuf = new Tex2DShader.Tex2DConstantBuffer {
-                    ImageSize = Control.EffectiveSize,
-                    RotateM11 = 1,
-                    RotateM12 = 0,
-                    RotateM21 = 0,
-                    RotateM22 = 1,
-                    Pan = Control.Pan with {Y = -Control.Pan.Y},
-                    ClientSize = Control.ClientSize,
-                };
+                if (sourceSet.SourceTask.IsCompletedSuccessfully) {
+                    var source = sourceSet.SourceTask.Result;
 
-                context->VSSetShader(_tex2DShader.VertexShader, null, 0);
-                context->UpdateSubresource((ID3D11Resource*) _tex2DConstantBuffer.Buffer, 0, null, &cbuf, 0, 0);
-                context->VSSetConstantBuffers(0, 1, _tex2DConstantBuffer.Buffer);
+                    foreach (var cell in source.Layout) {
+                        if (!sourceSet.TryGetBitmapAt(
+                                cell,
+                                out _,
+                                out var res,
+                                out _))
+                            continue;
+                        if (!sourceSet.TryGetCbuffer(cell, out var cbuffer))
+                            continue;
 
-                context->PSSetShader(_tex2DShader.PixelShader, null, 0);
-                context->PSSetShaderResources(0, 1, _texRes.ShaderResourceView);
-                context->PSSetSamplers(0, 1, _texRes.Sampler);
+                        fixed (ID3D11Buffer** ppBuffers = _tex2DShader.InputBuffers)
+                        fixed (uint* pStrides = Tex2DShader.InputStrides)
+                        fixed (uint* pOffsets = _tex2DShader.InputOffsets)
+                            DeviceContext->IASetVertexBuffers(0u,
+                                (uint) _tex2DShader.InputBuffers.Length,
+                                ppBuffers,
+                                pStrides,
+                                pOffsets);
+                        DeviceContext->IASetInputLayout(_tex2DShader!.InputLayout);
+                        DeviceContext->IASetIndexBuffer(_tex2DShader.IndexBuffer, Format.FormatR16Uint, 0);
+                        DeviceContext->IASetPrimitiveTopology(D3DPrimitiveTopology.D3D11PrimitiveTopologyTrianglelist);
 
-                context->DrawIndexed((uint) _tex2DShader.NumIndices, 0, 0);
+                        DeviceContext->VSSetShader(_tex2DShader.VertexShader, null, 0);
+                        DeviceContext->VSSetConstantBuffers(0, 1, cbuffer.Buffer);
+
+                        DeviceContext->PSSetShader(_tex2DShader.PixelShader, null, 0);
+                        DeviceContext->PSSetShaderResources(0, 1, res.ShaderResourceView);
+                        DeviceContext->PSSetSamplers(0, 1, Sampler);
+
+                        DeviceContext->DrawIndexed((uint) _tex2DShader.NumIndices, 0, 0);
+
+                        // 4. Draw pixel grids
+                        // TODO
+                    }
+                }
             }
         } finally {
             ArrayPool<float>.Shared.Return(colors);
         }
     }
 
-    private sealed class ConstantBufferWrapper<T> : IDisposable where T : unmanaged {
-        private ID3D11Buffer* _buffer;
-
-        public ConstantBufferWrapper(ID3D11Device* pDevice) {
-            try {
-                fixed (ID3D11Buffer** ppBuffer = &_buffer) {
-                    var bufferDesc = new BufferDesc((uint) ((Unsafe.SizeOf<T>() + 15) / 16 * 16), Usage.Default,
-                        (uint) BindFlag.ConstantBuffer, 0, 0, 0);
-                    ThrowH(pDevice->CreateBuffer(&bufferDesc, null, ppBuffer));
-                }
-            } catch (Exception) {
-                Dispose();
-                throw;
-            }
-        }
-
-        public ID3D11Buffer* Buffer => _buffer;
-
-        public void Dispose() => SafeRelease(ref _buffer);
-    }
-
-    private sealed class TextureShaderResource : IDisposable {
-        private ID3D11Texture2D* _pTexture2D;
-        private ID3D11ShaderResourceView* _pShaderResourceView;
-        private ID3D11SamplerState* _pSampler;
-
-        public TextureShaderResource(ID3D11Device* pDevice, DdsFile dds) {
-            try {
-                var textureDesc = new Texture2DDesc {
-                    Width = (uint) dds.Width(0),
-                    Height = (uint) dds.Height(0),
-                    MipLevels = (uint) dds.NumMipmaps,
-                    ArraySize = (uint) dds.NumImages,
-                    Format = (Format) dds.PixFmt.DxgiFormat,
-                    SampleDesc = new(1, 0),
-                    Usage = Usage.Default,
-                    BindFlags = (uint) BindFlag.ShaderResource,
-                    CPUAccessFlags = 0,
-                    MiscFlags = dds.IsCubeMap ? (uint) ResourceMiscFlag.Texturecube : 0u,
-                };
-                var subresources = new SubresourceData[textureDesc.MipLevels * textureDesc.ArraySize];
-                fixed (void* b = dds.Data)
-                fixed (ID3D11Texture2D** ppTexture2D = &_pTexture2D)
-                fixed (SubresourceData* pSubresources = subresources) {
-                    for (var i = 0; i < textureDesc.ArraySize; i++) {
-                        for (var j = 0; j < textureDesc.MipLevels; j++) {
-                            subresources[i * textureDesc.ArraySize + j] = new SubresourceData(
-                                pSysMem: (byte*) b + dds.MipmapDataOffset(i, 0, j, out _) - dds.DataOffset,
-                                sysMemPitch: (uint) dds.Pitch(j),
-                                sysMemSlicePitch: (uint) dds.SliceSize(j));
-                        }
-                    }
-
-                    ThrowH(pDevice->CreateTexture2D(&textureDesc, pSubresources, ppTexture2D));
-                }
-
-                var shaderViewDesc = new ShaderResourceViewDesc {
-                    Format = textureDesc.Format,
-                    ViewDimension = dds.IsCubeMap
-                        ? D3DSrvDimension.D3D11SrvDimensionTexturecube
-                        : dds.Depth(0) != 1
-                            ? D3DSrvDimension.D3D11SrvDimensionTexture3D
-                            : dds.Height(0) != 1
-                                ? D3DSrvDimension.D3D11SrvDimensionTexture2D
-                                : D3DSrvDimension.D3D11SrvDimensionTexture1D,
-                    Anonymous = new(
-                    )
-                };
-                if (dds.NumImages != 1)
-                    throw new NotSupportedException();
-                if (dds.Is1D) {
-                    shaderViewDesc.ViewDimension = D3DSrvDimension.D3D11SrvDimensionTexture1D;
-                    shaderViewDesc.Anonymous = new() {
-                        Texture1D = new() {
-                            MipLevels = textureDesc.MipLevels,
-                            MostDetailedMip = 0,
-                        }
-                    };
-                } else if (dds.Is2D) {
-                    shaderViewDesc.ViewDimension = D3DSrvDimension.D3D11SrvDimensionTexture2D;
-                    shaderViewDesc.Anonymous = new() {
-                        Texture2D = new() {
-                            MipLevels = textureDesc.MipLevels,
-                            MostDetailedMip = 0,
-                        }
-                    };
-                } else if (dds.Is3D) {
-                    shaderViewDesc.ViewDimension = D3DSrvDimension.D3D11SrvDimensionTexture3D;
-                    shaderViewDesc.Anonymous = new() {
-                        Texture3D = new() {
-                            MipLevels = textureDesc.MipLevels,
-                            MostDetailedMip = 0,
-                        }
-                    };
-                } else if (dds.IsCubeMap) {
-                    shaderViewDesc.ViewDimension = D3DSrvDimension.D3D11SrvDimensionTexturecube;
-                    shaderViewDesc.Anonymous = new() {
-                        TextureCube = new() {
-                            MipLevels = textureDesc.MipLevels,
-                            MostDetailedMip = 0,
-                        }
-                    };
-                } else {
-                    throw new NotSupportedException();
-                }
-
-                fixed (ID3D11ShaderResourceView** pView = &_pShaderResourceView)
-                    ThrowH(pDevice->CreateShaderResourceView((ID3D11Resource*) _pTexture2D, &shaderViewDesc, pView));
-
-                var samplerDesc = new SamplerDesc {
-                    Filter = Filter.MinMagMipLinear,
-                    MaxAnisotropy = 0,
-                    AddressU = TextureAddressMode.Wrap,
-                    AddressV = TextureAddressMode.Wrap,
-                    AddressW = TextureAddressMode.Wrap,
-                    MipLODBias = 0f,
-                    MinLOD = 0,
-                    MaxLOD = float.MaxValue,
-                    ComparisonFunc = ComparisonFunc.Never,
-                };
-                fixed (ID3D11SamplerState** pState = &_pSampler)
-                    ThrowH(pDevice->CreateSamplerState(&samplerDesc, pState));
-            } catch (Exception) {
-                Dispose();
-                throw;
-            }
-        }
-
-        public ID3D11ShaderResourceView* ShaderResourceView => _pShaderResourceView;
-        public ID3D11SamplerState* Sampler => _pSampler;
-
-        public void Dispose() {
-            SafeRelease(ref _pTexture2D);
-            SafeRelease(ref _pShaderResourceView);
-            SafeRelease(ref _pSampler);
-        }
-    }
-
     protected override void Draw2D(ID2D1RenderTarget* pRenderTarget) {
-        var imageRect = Rectangle.Truncate(Control.ImageRect);
+        var imageRect = Rectangle.Truncate(Control.EffectiveRect);
         var clientSize = Control.ClientSize;
         var overlayRect = new Rectangle(
             Control.Padding.Left + Control.Margin.Left,
@@ -457,52 +359,11 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                 var bitmapExceptions = ArrayPool<Exception?>.Shared.Rent(source.Layout.Count);
                 try {
                     foreach (var sliceCell in source.Layout)
-                        bitmapLoaded[sliceCell.CellIndex] = sourceSet.TryGetBitmapAt(
+                        _ = sourceSet.TryGetBitmapAt(
                             sliceCell,
+                            out bitmapLoaded[sliceCell.CellIndex],
                             out _,
                             out bitmapExceptions[sliceCell.CellIndex]);
-
-                    continue;
-
-                    // 1. Draw transparency grids
-                    foreach (var sliceCell in source.Layout) {
-                        if (bitmapLoaded[sliceCell.CellIndex] != LoadState.Loaded)
-                            continue;
-
-                        var cellRect = source.Layout.RectOf(sliceCell, imageRect);
-                        if (Control.ShouldDrawTransparencyGrid(
-                                cellRect,
-                                Control.ClientRectangle,
-                                out var multiplier,
-                                out var minX,
-                                out var minY,
-                                out var dx,
-                                out var dy)) {
-                            var yLim = Math.Min(cellRect.Bottom, clientSize.Height);
-                            var xLim = Math.Min(cellRect.Right, clientSize.Width);
-                            TransparencyCellColor1Brush->SetOpacity(1f);
-                            TransparencyCellColor2Brush->SetOpacity(1f);
-                            for (var y = minY;; y++) {
-                                box.Min.Y = y * multiplier + dy;
-                                box.Max.Y = box.Min.Y + Math.Min(multiplier, yLim - box.Min.Y);
-                                if (box.Min.Y >= box.Max.Y)
-                                    break;
-
-                                for (var x = minX;; x++) {
-                                    box.Min.X = x * multiplier + dx;
-                                    box.Max.X = box.Min.X + Math.Min(multiplier, xLim - box.Min.X);
-                                    if (box.Min.X >= box.Max.X)
-                                        break;
-
-                                    pRenderTarget->FillRectangle(
-                                        &box,
-                                        (x + y) % 2 == 0
-                                            ? TransparencyCellColor1Brush
-                                            : TransparencyCellColor2Brush);
-                                }
-                            }
-                        }
-                    }
 
                     // 2. Draw cell borders
                     if (Control.ContentBorderWidth > 0) {
@@ -525,26 +386,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                         var rc = source.Layout.RectOf(sliceCell, imageRect);
                         box = rc.ToSilkFloat();
 
-                        if (bitmapLoaded[sliceCell.CellIndex] == LoadState.Loaded) {
-                            bitmapLoaded[sliceCell.CellIndex] =
-                                sourceSet.TryGetBitmapAt(
-                                    sliceCell,
-                                    out var pBitmap,
-                                    out bitmapExceptions[sliceCell.CellIndex]);
-                            if (bitmapLoaded[sliceCell.CellIndex] == LoadState.Loaded) {
-                                pRenderTarget->DrawBitmap(
-                                    pBitmap,
-                                    &box,
-                                    1f, // opacity
-                                    Control.NearestNeighborMinimumZoom <= Control.EffectiveZoom
-                                        ? BitmapInterpolationMode.NearestNeighbor
-                                        : BitmapInterpolationMode.Linear,
-                                    null);
-                                continue;
-                            }
-                        }
-
-                        if (bitmapLoaded[sliceCell.CellIndex] is not LoadState.Error and LoadState.Loading)
+                        if (bitmapLoaded[sliceCell.CellIndex] is not LoadState.Error and not LoadState.Loading)
                             continue;
 
                         var isError = bitmapLoaded[sliceCell.CellIndex] == LoadState.Error;
@@ -561,7 +403,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                         DrawText(
                             msg,
                             rc,
-                            wordWrapping: WordWrapping.EmergencyBreak,
+                            wordWrapping: WordWrapping.NoWrap,
                             textAlignment: TextAlignment.Center,
                             paragraphAlignment: ParagraphAlignment.Center,
                             textFormat: ScalingFontTextFormat,
@@ -712,10 +554,13 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         private readonly CancellationTokenSource _cancellationTokenSource = new();
         public readonly Task<IBitmapSource> SourceTask;
 
-        private TaskWrappingIUnknown<ID2D1Bitmap>?[ /* Image */][ /* Mip */][ /* Slice */]? _pBitmaps;
+        private ResultDisposingTask<Texture2DShaderResource>?[ /* Image */][ /* Mip */][ /* Slice */]? _pBitmaps;
+        private ConstantBufferResource<Tex2DShader.Cbuffer>?[]? _cbuffer;
+        private ulong _viewportVersion;
 
         public SourceSet(D2DTexRenderer renderer, Task<IBitmapSource> sourceTask) {
             _renderer = renderer;
+            _renderer.Control.ViewportChanged += ControlOnViewportChanged;
             SourceTask = sourceTask;
             SourceTask.ContinueWith(r => {
                 if (!r.IsCompletedSuccessfully)
@@ -724,11 +569,12 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                 var source = r.Result;
                 _ = SafeDispose.EnumerableAsync(ref _pBitmaps);
 
-                _pBitmaps = new TaskWrappingIUnknown<ID2D1Bitmap>[source.ImageCount][][];
+                _pBitmaps = new ResultDisposingTask<Texture2DShaderResource>[source.ImageCount][][];
                 for (var i = 0; i < _pBitmaps.Length; i++) {
-                    var a1 = _pBitmaps[i] = new TaskWrappingIUnknown<ID2D1Bitmap>[source.NumberOfMipmaps(i)][];
+                    var a1 = _pBitmaps[i] =
+                        new ResultDisposingTask<Texture2DShaderResource>[source.NumberOfMipmaps(i)][];
                     for (var j = 0; j < a1.Length; j++)
-                        a1[j] = new TaskWrappingIUnknown<ID2D1Bitmap>[source.NumSlicesOfMipmap(i, j)];
+                        a1[j] = new ResultDisposingTask<Texture2DShaderResource>[source.NumSlicesOfMipmap(i, j)];
                 }
 
                 r.Result.LayoutChanged += SourceTaskOnLayoutChanged;
@@ -737,8 +583,10 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         }
 
         public void Dispose() {
+            _renderer.Control.ViewportChanged -= ControlOnViewportChanged;
             _cancellationTokenSource.Cancel();
             _ = SafeDispose.EnumerableAsync(ref _pBitmaps);
+            _ = SafeDispose.EnumerableAsync(ref _cbuffer);
             SourceTask.ContinueWith(r => {
                 if (r.IsCompletedSuccessfully)
                     r.Result.LayoutChanged -= SourceTaskOnLayoutChanged;
@@ -749,6 +597,8 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             _cancellationTokenSource.Cancel();
             return new(Task.Run(Dispose));
         }
+
+        public IGridLayout? Layout => SourceTask.IsCompletedSuccessfully ? SourceTask.Result.Layout : null;
 
         public bool IsAnyVisibleSliceReadyForDrawing() =>
             SourceTask.IsCompletedSuccessfully &&
@@ -762,7 +612,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
         private LoadState TryGetBitmapWrapperTaskAt(
             GridLayoutCell cell,
-            out TaskWrappingIUnknown<ID2D1Bitmap>? wrapperTask,
+            out ResultDisposingTask<Texture2DShaderResource>? wrapperTask,
             out Exception? exception) {
             wrapperTask = null;
             exception = null;
@@ -785,19 +635,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                 wrapperTask = pBitmaps[cell.ImageIndex][cell.Mipmap][cell.Slice];
                 if (wrapperTask is null) {
                     wrapperTask = pBitmaps[cell.ImageIndex][cell.Mipmap][cell.Slice] = new(Task.Run(
-                        () => {
-                            var ptr = new ComPtr<ID2D1Bitmap>();
-                            // do NOT merge into constructor, or it will do AddRef, which we do not want.
-
-                            if (task.Result.ConvertPixelFormatIfDifferent(out var after,
-                                    WicNet.WicPixelFormat.GUID_WICPixelFormat32bppPBGRA, false)) {
-                                using (after)
-                                    _renderer.GetOrCreateFromWicBitmap(ref ptr.Handle, after);
-                            } else
-                                _renderer.GetOrCreateFromWicBitmap(ref ptr.Handle, task.Result);
-
-                            return ptr;
-                        },
+                        () => Texture2DShaderResource.FromWicBitmap(_renderer.Device, task.Result),
                         _cancellationTokenSource.Token));
                     wrapperTask.Task.ContinueWith(_ => _renderer.Control.Invalidate());
                 }
@@ -816,24 +654,56 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             return exception is null ? LoadState.Loading : LoadState.Error;
         }
 
-        public LoadState TryGetBitmapAt(
+        public bool TryGetBitmapAt(
             GridLayoutCell cell,
-            out ID2D1Bitmap* pBitmap,
-            out Exception? exception) {
-            var state = TryGetBitmapWrapperTaskAt(cell, out var task, out exception);
-            pBitmap = state == LoadState.Loaded ? task!.Result : null;
-            return state;
+            out LoadState state,
+            [MaybeNullWhen(false)] out Texture2DShaderResource resource,
+            [MaybeNullWhen(true)] out Exception exception) {
+            state = TryGetBitmapWrapperTaskAt(cell, out var task, out exception);
+            resource = state == LoadState.Loaded ? task!.Result : null;
+            return resource is not null;
         }
+
+        public bool TryGetCbuffer(
+            GridLayoutCell cell,
+            [MaybeNullWhen(false)] out ConstantBufferResource<Tex2DShader.Cbuffer> cbuffer) {
+            cbuffer = null!;
+            if (_cbuffer is null || cell.CellIndex >= _cbuffer.Length || cell.CellIndex < 0)
+                return false;
+            cbuffer = _cbuffer[cell.CellIndex] ??= new(_renderer.Device);
+            if (cbuffer.DataVersion != _viewportVersion) {
+                cbuffer.UpdateData(_renderer.DeviceContext, _viewportVersion, new() {
+                    RotateM11 = 1,
+                    RotateM12 = 0,
+                    RotateM21 = 0,
+                    RotateM22 = 1,
+                    Pan = _renderer.Control.Pan,
+                    EffectiveSize = _renderer.Control.EffectiveSize,
+                    ClientSize = _renderer.Control.ClientSize,
+                    CellRectScale = SourceTask.Result.Layout.ScaleOf(cell),
+                    TransparencyCellColor1 = _renderer.Control.TransparencyCellColor1.ToD3Dcolorvalue(),
+                    TransparencyCellColor2 = _renderer.Control.TransparencyCellColor2.ToD3Dcolorvalue(),
+                    TransparencyCellSize = _renderer.Control.TransparencyCellSize,
+                });
+            }
+
+            return true;
+        }
+
+        private void ControlOnViewportChanged(object? sender, EventArgs e) => _viewportVersion++;
 
         private void SourceTaskOnLayoutChanged() {
             var layout = SourceTask.Result.Layout;
             var bitmapSource = SourceTask.Result;
+            _ = SafeDispose.EnumerableAsync(ref _cbuffer);
+
+            _cbuffer = new ConstantBufferResource<Tex2DShader.Cbuffer>[layout.Count];
 
             var allTasks = layout
                 .Select(cell => bitmapSource.GetWicBitmapSourceAsync(cell)
                     .ContinueWith(result => {
                         if (this != _renderer.SourceCurrent || layout != bitmapSource.Layout)
-                            return new(Task.FromCanceled<ComPtr<ID2D1Bitmap>>(default));
+                            return new(Task.FromCanceled<Texture2DShaderResource>(default));
 
                         if (!result.IsCompletedSuccessfully)
                             throw result.Exception!;
@@ -859,36 +729,5 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                         _renderer.AllBitmapSourceSliceLoadAttemptFinished?.Invoke(SourceTask);
                 }, _cancellationTokenSource.Token);
         }
-    }
-
-    private sealed class TaskWrappingIUnknown<T> : IDisposable, IAsyncDisposable
-        where T : unmanaged, IComVtbl<T> {
-        public readonly Task<ComPtr<T>> Task;
-
-        public TaskWrappingIUnknown(Task<ComPtr<T>> task) {
-            Task = task;
-        }
-
-        public bool IsCompletedSuccessfully => Task.IsCompletedSuccessfully;
-        public bool IsCompleted => Task.IsCompleted;
-        public bool IsCanceled => Task.IsCanceled;
-        public bool IsFaulted => Task.IsFaulted;
-        public TaskStatus Status => Task.Status;
-        public T* Result => Task.Result.Handle;
-
-        // ReSharper disable once UnusedMember.Local
-        public ConfiguredTaskAwaitable<ComPtr<T>> ConfigureAwait(bool continueOnCapturedContext) =>
-            Task.ConfigureAwait(continueOnCapturedContext);
-
-        public void Dispose() => Task.ContinueWith(result => {
-            if (result.IsCompletedSuccessfully)
-                result.Result.Release();
-        });
-
-        public ValueTask DisposeAsync() => new(Task.ContinueWith(result => {
-            if (result.IsCompletedSuccessfully)
-                result.Result.Release();
-            return ValueTask.CompletedTask;
-        }));
     }
 }

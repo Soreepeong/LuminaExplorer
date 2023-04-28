@@ -1,6 +1,9 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using LuminaExplorer.Core.Util.DdsStructs.PixelFormats.Channels;
+using WicNet;
+using ValueType = LuminaExplorer.Core.Util.DdsStructs.PixelFormats.Channels.ValueType;
 
 namespace LuminaExplorer.Core.Util.DdsStructs.PixelFormats;
 
@@ -9,6 +12,8 @@ public static class PixFmtResolver {
 
     public static readonly IReadOnlyDictionary<AlphaType, IReadOnlyDictionary<DxgiFormat, IPixFmt>>
         DxgiFormatToPixelFormat;
+
+    public static readonly IReadOnlyDictionary<Guid, IPixFmt> WicToPixelFormat;
 
     static PixFmtResolver() {
         FourCcToPixelFormat = new Dictionary<DdsFourCc, IPixFmt> {

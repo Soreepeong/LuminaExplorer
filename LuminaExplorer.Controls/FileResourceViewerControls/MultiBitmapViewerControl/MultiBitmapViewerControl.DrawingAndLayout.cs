@@ -43,6 +43,8 @@ public partial class MultiBitmapViewerControl {
         Tuple.Create(new Size(2560, 1440), 36f),
         Tuple.Create(new Size(3840, 2160), 60f),
     };
+    
+    public event EventHandler? ViewportChanged;
 
     public event EventHandler? FontSizeStepLevelChanged;
 
@@ -276,6 +278,30 @@ public partial class MultiBitmapViewerControl {
             
             return Rectangle.Empty;
         }
+    }
+    
+    private PanZoomTracker Viewport { get; }
+
+    public PointF Pan {
+        get => Viewport.Pan;
+        set {
+            if (Viewport.Pan != value)
+                return;
+            Viewport.Pan = value;
+            Invalidate();
+        }
+    }
+
+    public RectangleF EffectiveRect => Viewport.EffectiveRect;
+
+    public SizeF EffectiveSize => Viewport.EffectiveSize;
+
+    public float EffectiveZoom => Viewport.EffectiveZoom;
+
+    private void OnViewportChanged() {
+        ViewportChanged?.Invoke(this, EventArgs.Empty);
+        ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
+        Invalidate();
     }
 
     internal bool ShouldDrawTransparencyGrid(

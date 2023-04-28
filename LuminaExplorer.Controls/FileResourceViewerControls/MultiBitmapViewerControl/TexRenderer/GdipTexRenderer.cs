@@ -182,7 +182,7 @@ internal sealed class GdipTexRenderer : ITexRenderer {
 
                 if (sourceTask.IsCompletedSuccessfully) {
                     var source = sourceTask.Result;
-                    var imageRect = Control.ImageRect;
+                    var imageRect = Control.EffectiveRect;
                     var clientSize = Control.ClientSize;
                     var overlayRect = new Rectangle(
                         Control.Padding.Left + Control.Margin.Left,

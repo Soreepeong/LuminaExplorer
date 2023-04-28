@@ -14,10 +14,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Shaders\tex2d.hlsl" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Compile Update="CoreVirtualObjectListView.cs">
       <SubType>Component</SubType>
     </Compile>
@@ -49,6 +45,10 @@
   <ItemGroup>
     <ProjectReference Include="..\lib\Be.HexEditor-1.6.0\sources\Be.Windows.Forms.HexBox\Be.Windows.Forms.HexBox.csproj" />
     <ProjectReference Include="..\LuminaExplorer.Core\LuminaExplorer.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="DirectXStuff\Shaders\Tex2d.hlsl" />
   </ItemGroup>
 
 </Project>

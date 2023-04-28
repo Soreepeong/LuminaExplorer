@@ -1,15 +1,14 @@
-﻿using System.Diagnostics;
-using System.Reflection;
+﻿using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D.Compilers;
 
-namespace LuminaExplorer.Controls.Shaders;
+namespace LuminaExplorer.Controls.DirectXStuff.Shaders;
 
 public static unsafe class DxShaders {
-    public static byte[] Tex2DPixelShader => CompileShader("tex2d", "ps_4_0", "main_ps");
-    public static byte[] Tex2DVertexShader => CompileShader("tex2d", "vs_4_0", "main_vs");
+    public static byte[] Tex2DPixelShader => CompileShader("Tex2d", "ps_4_0", "main_ps");
+    public static byte[] Tex2DVertexShader => CompileShader("Tex2d", "vs_4_0", "main_vs");
 
     private static byte[] CompileShader(string name, string target, string entrypointName = "main") {
         byte[] buffer;

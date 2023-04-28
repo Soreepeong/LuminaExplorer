@@ -39,7 +39,7 @@ static class Program {
 
         appConfig ??= new();
 
-        /*
+        //*
         var gameData = new Lumina.GameData(appConfig.SqPackRootDirectoryPath);
         var hashCacheFile = new FileInfo(Path.Combine(baseDir, appConfig.CacheFilePath));
         if (!hashCacheFile.Exists || hashCacheFile.Length == 0) {
@@ -52,8 +52,9 @@ static class Program {
 
         var hashdb = new HashDatabase(hashCacheFile);
         using var fs = new SqpackFileSystem(hashdb, gameData);
-        //*/
+        /*/
         using var fs = new PhysicalFileSystem();
+        //*/
         
         using var mainExplorer = new Explorer(appConfig, fs);
         

@@ -14,24 +14,6 @@ using WicNet;
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
 
 public partial class MultiBitmapViewerControl {
-    private PanZoomTracker Viewport { get; }
-
-    public PointF Pan {
-        get => Viewport.Pan;
-        set {
-            if (Viewport.Pan != value)
-                return;
-            Viewport.Pan = value;
-            Invalidate();
-        }
-    }
-
-    public RectangleF ImageRect => Viewport.EffectiveRect;
-
-    public SizeF EffectiveSize => Viewport.EffectiveSize;
-
-    public float EffectiveZoom => Viewport.EffectiveZoom;
-
     public IBitmapSource? PreviousBitmapSource => _bitmapSourceTaskPrevious?.IsCompletedSuccessfully is true
         ? _bitmapSourceTaskPrevious.Result
         : null;

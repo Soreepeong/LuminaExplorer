@@ -29,10 +29,7 @@ public partial class MultiBitmapViewerControl : AbstractFileResourceViewerContro
         MouseActivity.Enabled = false;
         Viewport = new(MouseActivity);
         Viewport.PanExtraRange = new(_transparencyCellSize * 2);
-        Viewport.ViewportChanged += () => {
-            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
-            Invalidate();
-        };
+        Viewport.ViewportChanged += OnViewportChanged;
 
         _timer = new();
         _timer.Enabled = false;

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
+using LuminaExplorer.Controls.Util;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.Direct3D11;
@@ -11,9 +12,9 @@ using FontStyle = Silk.NET.DirectWrite.FontStyle;
 using IDWriteTextFormat = Silk.NET.DirectWrite.IDWriteTextFormat;
 using IDWriteTextLayout = Silk.NET.DirectWrite.IDWriteTextLayout;
 
-namespace LuminaExplorer.Controls.Util;
+namespace LuminaExplorer.Controls.DirectXStuff;
 
-public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Control {
+public abstract unsafe class BaseD2DRenderer<T> : DirectXBaseObject where T : Control {
     private readonly object _renderTargetObtainLock = new();
 
     private IDXGISwapChain* _pDxgiSwapChain;
@@ -28,10 +29,12 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
 
     private nint _controlHandle;
 
-    protected BaseD2DRenderer(T control) {
+    protected BaseD2DRenderer(T control, ID3D11Device* pDevice = null, ID3D11DeviceContext* pDeviceContext = null) {
         Control = control;
         try {
             TryInitializeApis();
+            Device = pDevice is not null ? pDevice : SharedD3D11Device;
+            DeviceContext = pDeviceContext is not null ? pDeviceContext : SharedD3D11DeviceContext;
         } catch (Exception e) {
             LastException = e;
         }
@@ -69,6 +72,10 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
     }
 
     public T Control { get; }
+
+    public ID3D11Device* Device { get; }
+
+    public ID3D11DeviceContext* DeviceContext { get; }
 
     public Exception? LastException { get; protected set; }
 
@@ -133,10 +140,7 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
                     SafeRelease(ref _pDxgiSwapChain);
                     SafeRelease(ref _pD3dContext);
                     fixed (IDXGISwapChain** ppSwapChain = &_pDxgiSwapChain)
-                        ThrowH(DxgiFactory->CreateSwapChain(
-                            (IUnknown*) SharedD3D11Device,
-                            &desc,
-                            ppSwapChain));
+                        ThrowH(DxgiFactory->CreateSwapChain((IUnknown*) Device, &desc, ppSwapChain));
                 }
 
                 ThrowH(_pDxgiSwapChain->ResizeBuffers(0, 0, 0, Format.FormatUnknown, 0));
@@ -161,7 +165,7 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
 
                 fixed (ID3D11RenderTargetView** ppRenderTarget = &_pRenderTarget3D) {
                     using var qi = _pDxgiSurface->QueryInterface<ID3D11Resource>();
-                    ThrowH(SharedD3D11Device->CreateRenderTargetView(qi.Handle, null, ppRenderTarget));
+                    ThrowH(Device->CreateRenderTargetView(qi.Handle, null, ppRenderTarget));
                 }
             } catch (Exception e) {
                 throw LastException = e;
@@ -200,8 +204,8 @@ public abstract unsafe class BaseD2DRenderer<T> : BaseD2DRenderer where T : Cont
                     MinDepth = 0f,
                     MaxDepth = 1f,
                 };
-                SharedD3D11Context->RSSetViewports(1, viewport);
-                SharedD3D11Context->OMSetRenderTargets(1, RenderTarget3D, null);
+                SharedD3D11DeviceContext->RSSetViewports(1, viewport);
+                SharedD3D11DeviceContext->OMSetRenderTargets(1, RenderTarget3D, null);
                 Draw3D(RenderTarget3D);
 
                 var pRenderTarget = RenderTarget2D;

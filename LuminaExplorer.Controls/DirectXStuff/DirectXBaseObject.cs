@@ -2,7 +2,7 @@
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using LuminaExplorer.Controls.Shaders;
+using LuminaExplorer.Controls.DirectXStuff.Shaders;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
@@ -11,9 +11,9 @@ using Silk.NET.DirectWrite;
 using Silk.NET.DXGI;
 using IDWriteFactory = Silk.NET.DirectWrite.IDWriteFactory;
 
-namespace LuminaExplorer.Controls.Util;
+namespace LuminaExplorer.Controls.DirectXStuff;
 
-public abstract unsafe class BaseD2DRenderer : IDisposable {
+public abstract unsafe class DirectXBaseObject : IDisposable {
     private static Exception? _apiInitializationException;
 
     private static DXGI? _dxgiApi;
@@ -96,7 +96,7 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
         GC.SuppressFinalize(this);
     }
 
-    ~BaseD2DRenderer() {
+    ~DirectXBaseObject() {
         Dispose(false);
     }
 
@@ -121,7 +121,7 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
         ? _pSharedD3D11Device
         : throw InitializationException;
 
-    protected static ID3D11DeviceContext* SharedD3D11Context => _pSharedD3D11Context is not null
+    protected static ID3D11DeviceContext* SharedD3D11DeviceContext => _pSharedD3D11Context is not null
         ? _pSharedD3D11Context
         : throw InitializationException;
 
@@ -165,54 +165,6 @@ public abstract unsafe class BaseD2DRenderer : IDisposable {
         if (u is not null)
             ((IUnknown*) u)->Release();
         u = null;
-    }
-
-    protected static void SafeReleaseArray<T>(ref T*[]?[]?[]? array) where T : unmanaged {
-        if (array is null)
-            return;
-        for (var i = 0; i < array.Length; i++)
-            SafeReleaseArray(ref array[i]);
-        array = null;
-    }
-
-    protected static void SafeReleaseArray<T>(ref T*[]?[]? array) where T : unmanaged {
-        if (array is null)
-            return;
-        for (var i = 0; i < array.Length; i++)
-            SafeReleaseArray(ref array[i]);
-        array = null;
-    }
-
-    protected static void SafeReleaseArray<T>(ref T*[]? array) where T : unmanaged {
-        if (array is null)
-            return;
-        for (var i = 0; i < array.Length; i++)
-            SafeRelease(ref array[i]);
-        array = null;
-    }
-
-    protected static void SafeReleaseArray<T>(ref ComPtr<T>[]?[]?[]? array) where T : unmanaged , IComVtbl<T>{
-        if (array is null)
-            return;
-        for (var i = 0; i < array.Length; i++)
-            SafeReleaseArray(ref array[i]);
-        array = null;
-    }
-
-    protected static void SafeReleaseArray<T>(ref ComPtr<T>[]?[]? array) where T : unmanaged , IComVtbl<T>{
-        if (array is null)
-            return;
-        for (var i = 0; i < array.Length; i++)
-            SafeReleaseArray(ref array[i]);
-        array = null;
-    }
-
-    protected static void SafeReleaseArray<T>(ref ComPtr<T>[]? array) where T : unmanaged, IComVtbl<T> {
-        if (array is null)
-            return;
-        for (var i = 0; i < array.Length; i++)
-            array[i].Release();
-        array = null;
     }
 
     protected sealed class Direct3DDeviceBuilder : IDisposable {

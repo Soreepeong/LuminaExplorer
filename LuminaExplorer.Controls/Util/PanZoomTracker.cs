@@ -256,7 +256,9 @@ public sealed class PanZoomTracker : IDisposable {
         xrem = MathF.Ceiling(xrem);
         yrem = MathF.Ceiling(yrem);
 
-        if (scaled.Width <= ControlBodyWidth)
+        xrange = yrange = 10000;
+
+        if (scaled.Width <= ControlBodyWidth && false)
             desiredPan.X = 0;
         else {
             var minX = -xrange - xrem - PanExtraRange.Right;
@@ -264,7 +266,7 @@ public sealed class PanZoomTracker : IDisposable {
             desiredPan.X = Math.Clamp(desiredPan.X, minX, maxX);
         }
 
-        if (scaled.Height <= ControlBodyHeight)
+        if (scaled.Height <= ControlBodyHeight && false)
             desiredPan.Y = 0;
         else {
             var minY = -yrange - yrem - PanExtraRange.Bottom;
