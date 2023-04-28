@@ -10,6 +10,8 @@ cbuffer Tex2DConstantbuffer : register(b0) {
 	float4 cellRectScale;
 	float4 transparencyCellColor1;
 	float4 transparencyCellColor2;
+	int channelFilter;
+	bool disableAlphaChannel;
 }
 
 struct VertexShaderInput {
@@ -43,11 +45,30 @@ PixelShaderInput main_vs(VertexShaderInput input) {
 }
 
 float4 main_ps(PixelShaderInput input) : SV_TARGET {
-	const float2 unitOffset = floor(input.xy * effectiveSize / transparencyCellSize);
-	const float gridColorChoice = (unitOffset.x + unitOffset.y) % 2;
-	const float4 bg = lerp(transparencyCellColor1, transparencyCellColor2, gridColorChoice);
-	const float4 fg = GTexture.Sample(GSampler, input.uv);
-	float4 newW = float4(0, 0, 0, (1 - fg.w) * bg.w + fg.w);
-	newW.xyz = ((1 - fg.w) * bg.w * bg.xyz + fg.w * fg.xyz) / newW.w;
-	return newW;
+	float4 fg = GTexture.Sample(GSampler, input.uv);
+	if (channelFilter == 4) {
+		return float4(fg.w, fg.w, fg.w, 1);
+	} else if (disableAlphaChannel) {
+		if (channelFilter == 1)
+			return float4(fg.x, fg.x, fg.x, 1);
+		else if (channelFilter == 2)
+			return float4(fg.y, fg.y, fg.y, 1);
+		else if (channelFilter == 3)
+			return float4(fg.z, fg.z, fg.z, 1);
+		else
+			return float4(fg.xyz, 1);
+	} else {
+		if (channelFilter == 1)
+			fg.y = fg.z = fg.x;
+		else if (channelFilter == 2)
+			fg.x = fg.z = fg.y;
+		else if (channelFilter == 3)
+			fg.x = fg.y = fg.z;
+
+		const float2 unitOffset = floor(input.xy * effectiveSize / transparencyCellSize);
+		const float gridColorChoice = (unitOffset.x + unitOffset.y) % 2;
+		const float4 bg = lerp(transparencyCellColor1, transparencyCellColor2, gridColorChoice);
+		const float newA = (1 - fg.w) * bg.w + fg.w;
+		return float4(((1 - fg.w) * bg.w * bg.xyz + fg.w * fg.xyz) / newA, newA);
+	}
 }

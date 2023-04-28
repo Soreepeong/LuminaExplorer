@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using LuminaExplorer.Controls.DirectXStuff.Shaders;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.TexRenderer;
 using LuminaExplorer.Controls.Util;
@@ -32,7 +33,7 @@ public partial class MultiBitmapViewerControl {
     private float _pixelGridMinimumZoom = 5f;
     private float _overlayBackgroundOpacity = 0.7f;
     private Size _sliceSpacing = new(16, 16);
-    private VisibleColorChannelTypes _visibleColorChannel;
+    private Tex2DShader.VisibleColorChannelTypes _visibleColorChannel;
     private bool _useAlphaChannel;
     private float _rotation;
     private IReadOnlyList<Tuple<Size, float>> _fontSizeStepLevel = new[] {
@@ -77,7 +78,7 @@ public partial class MultiBitmapViewerControl {
     }
 
     // TODO: use this
-    public VisibleColorChannelTypes VisibleColorChannel {
+    public Tex2DShader.VisibleColorChannelTypes VisibleColorChannel {
         get => _visibleColorChannel;
         set {
             if (_visibleColorChannel == value)

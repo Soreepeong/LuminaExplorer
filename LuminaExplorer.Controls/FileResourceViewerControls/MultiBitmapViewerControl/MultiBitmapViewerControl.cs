@@ -171,12 +171,4 @@ public partial class MultiBitmapViewerControl : AbstractFileResourceViewerContro
         base.OnPaddingChanged(e);
         Invalidate();
     }
-
-    public enum VisibleColorChannelTypes {
-        All,
-        Red,
-        Green,
-        Blue,
-        Alpha,
-    }
 }

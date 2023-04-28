@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
+using LuminaExplorer.Controls.DirectXStuff.Shaders;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 using LuminaExplorer.Controls.Util.ScaleMode;
 using LuminaExplorer.Core.Util;
@@ -181,24 +182,24 @@ public partial class MultiBitmapViewerControl {
                     UseAlphaChannel = !UseAlphaChannel;
                     break;
                 case Keys.R: // Show red channel only, or back to showing all channels
-                    VisibleColorChannel = VisibleColorChannel == VisibleColorChannelTypes.Red
-                        ? VisibleColorChannelTypes.All
-                        : VisibleColorChannelTypes.Red;
+                    VisibleColorChannel = VisibleColorChannel == Tex2DShader.VisibleColorChannelTypes.Red
+                        ? Tex2DShader.VisibleColorChannelTypes.All
+                        : Tex2DShader.VisibleColorChannelTypes.Red;
                     break;
                 case Keys.G: // Show green channel only, or back to showing all channels
-                    VisibleColorChannel = VisibleColorChannel == VisibleColorChannelTypes.Green
-                        ? VisibleColorChannelTypes.All
-                        : VisibleColorChannelTypes.Green;
+                    VisibleColorChannel = VisibleColorChannel == Tex2DShader.VisibleColorChannelTypes.Green
+                        ? Tex2DShader.VisibleColorChannelTypes.All
+                        : Tex2DShader.VisibleColorChannelTypes.Green;
                     break;
                 case Keys.B: // Show blue channel only, or back to showing all channels
-                    VisibleColorChannel = VisibleColorChannel == VisibleColorChannelTypes.Blue
-                        ? VisibleColorChannelTypes.All
-                        : VisibleColorChannelTypes.Blue;
+                    VisibleColorChannel = VisibleColorChannel == Tex2DShader.VisibleColorChannelTypes.Blue
+                        ? Tex2DShader.VisibleColorChannelTypes.All
+                        : Tex2DShader.VisibleColorChannelTypes.Blue;
                     break;
                 case Keys.A: // Show alpha channel only, or back to showing all channels
-                    VisibleColorChannel = VisibleColorChannel == VisibleColorChannelTypes.Alpha
-                        ? VisibleColorChannelTypes.All
-                        : VisibleColorChannelTypes.Alpha;
+                    VisibleColorChannel = VisibleColorChannel == Tex2DShader.VisibleColorChannelTypes.Alpha
+                        ? Tex2DShader.VisibleColorChannelTypes.All
+                        : Tex2DShader.VisibleColorChannelTypes.Alpha;
                     break;
             }
         }
