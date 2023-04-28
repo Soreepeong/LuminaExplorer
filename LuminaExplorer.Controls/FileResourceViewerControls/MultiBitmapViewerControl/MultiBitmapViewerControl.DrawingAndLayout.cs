@@ -44,6 +44,8 @@ public partial class MultiBitmapViewerControl {
         Tuple.Create(new Size(3840, 2160), 60f),
     };
     
+    public event EventHandler? RotationChanged;
+    
     public event EventHandler? ViewportChanged;
 
     public event EventHandler? FontSizeStepLevelChanged;
@@ -57,6 +59,9 @@ public partial class MultiBitmapViewerControl {
     public event EventHandler? TransparencyCellColor1Changed;
 
     public event EventHandler? TransparencyCellColor2Changed;
+
+    public event EventHandler? TransparencyCellSizeChanged;
+
 
     public event EventHandler? PixelGridLineColorChanged;
 
@@ -82,13 +87,14 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
-    // TODO: use this
+    // TODO: apply this to adjust viewport size too
     public float Rotation {
         get => _rotation;
         set {
-            if (!Equals(_rotation, value))
+            if (Equals(_rotation, value))
                 return;
             _rotation = value;
+            RotationChanged?.Invoke(this, EventArgs.Empty);
             Invalidate();
         }
     }
@@ -175,6 +181,7 @@ public partial class MultiBitmapViewerControl {
             if (_transparencyCellSize == value)
                 return;
             _transparencyCellSize = value;
+            TransparencyCellSizeChanged?.Invoke(this, EventArgs.Empty);
             Invalidate();
         }
     }

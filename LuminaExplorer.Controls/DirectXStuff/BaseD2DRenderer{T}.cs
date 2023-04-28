@@ -18,7 +18,6 @@ public abstract unsafe class BaseD2DRenderer<T> : DirectXBaseObject where T : Co
     private readonly object _renderTargetObtainLock = new();
 
     private IDXGISwapChain* _pDxgiSwapChain;
-    private ID3D11DeviceContext* _pD3dContext;
     private IDXGISurface* _pDxgiSurface;
     private ID2D1RenderTarget* _pRenderTarget2D;
     private ID3D11RenderTargetView* _pRenderTarget3D;
@@ -63,7 +62,6 @@ public abstract unsafe class BaseD2DRenderer<T> : DirectXBaseObject where T : Co
         SafeRelease(ref _pForeColorBrush);
         SafeRelease(ref _pBackColorBrush);
         SafeRelease(ref _pDxgiSwapChain);
-        SafeRelease(ref _pD3dContext);
         SafeRelease(ref _pRenderTarget2D);
         SafeRelease(ref _pRenderTarget3D);
         SafeRelease(ref _pDxgiSurface);
@@ -138,7 +136,6 @@ public abstract unsafe class BaseD2DRenderer<T> : DirectXBaseObject where T : Co
                     };
 
                     SafeRelease(ref _pDxgiSwapChain);
-                    SafeRelease(ref _pD3dContext);
                     fixed (IDXGISwapChain** ppSwapChain = &_pDxgiSwapChain)
                         ThrowH(DxgiFactory->CreateSwapChain((IUnknown*) Device, &desc, ppSwapChain));
                 }
@@ -204,8 +201,8 @@ public abstract unsafe class BaseD2DRenderer<T> : DirectXBaseObject where T : Co
                     MinDepth = 0f,
                     MaxDepth = 1f,
                 };
-                SharedD3D11DeviceContext->RSSetViewports(1, viewport);
-                SharedD3D11DeviceContext->OMSetRenderTargets(1, RenderTarget3D, null);
+                DeviceContext->RSSetViewports(1, viewport);
+                DeviceContext->OMSetRenderTargets(1, RenderTarget3D, null);
                 Draw3D(RenderTarget3D);
 
                 var pRenderTarget = RenderTarget2D;

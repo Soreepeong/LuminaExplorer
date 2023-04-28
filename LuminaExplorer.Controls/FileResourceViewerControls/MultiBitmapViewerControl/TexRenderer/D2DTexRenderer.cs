@@ -21,7 +21,6 @@ using Silk.NET.Maths;
 using Filter = Silk.NET.Direct3D11.Filter;
 using FontStyle = Silk.NET.DirectWrite.FontStyle;
 using IDWriteTextFormat = Silk.NET.DirectWrite.IDWriteTextFormat;
-using Rectangle = System.Drawing.Rectangle;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.TexRenderer;
 
@@ -29,8 +28,6 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
     private ID2D1Brush* _pForeColorWhenLoadedBrush;
     private ID2D1Brush* _pBackColorWhenLoadedBrush;
     private ID2D1Brush* _pBorderColorBrush;
-    private ID2D1Brush* _pTransparencyCellColor1Brush;
-    private ID2D1Brush* _pTransparencyCellColor2Brush;
     private ID2D1Brush* _pPixelGridLineColorBrush;
     private IDWriteTextFormat* _pScalingFontTextFormat;
 
@@ -51,8 +48,6 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         Control.ForeColorWhenLoadedChanged += ControlOnForeColorWhenLoadedChanged;
         Control.BackColorWhenLoadedChanged += ControlOnBackColorWhenLoadedChanged;
         Control.BorderColorChanged += ControlOnBorderColorChanged;
-        Control.TransparencyCellColor1Changed += ControlOnTransparencyCellColor1Changed;
-        Control.TransparencyCellColor2Changed += ControlOnTransparencyCellColor2Changed;
         Control.PixelGridLineColorChanged += ControlOnPixelGridLineColorChanged;
 
         _tex2DShader = new(Device);
@@ -65,8 +60,6 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             Control.ForeColorWhenLoadedChanged -= ControlOnForeColorWhenLoadedChanged;
             Control.BackColorWhenLoadedChanged -= ControlOnBackColorWhenLoadedChanged;
             Control.BorderColorChanged -= ControlOnBorderColorChanged;
-            Control.TransparencyCellColor1Changed -= ControlOnTransparencyCellColor1Changed;
-            Control.TransparencyCellColor2Changed -= ControlOnTransparencyCellColor2Changed;
             Control.PixelGridLineColorChanged -= ControlOnPixelGridLineColorChanged;
         }
 
@@ -74,8 +67,6 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         SafeRelease(ref _pForeColorWhenLoadedBrush);
         SafeRelease(ref _pBackColorWhenLoadedBrush);
         SafeRelease(ref _pBorderColorBrush);
-        SafeRelease(ref _pTransparencyCellColor1Brush);
-        SafeRelease(ref _pTransparencyCellColor2Brush);
         SafeRelease(ref _pPixelGridLineColorBrush);
         SafeRelease(ref _pScalingFontTextFormat);
 
@@ -117,12 +108,6 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
     private ID2D1Brush* ContentBorderColorBrush =>
         GetOrCreateSolidColorBrush(ref _pBorderColorBrush, Control.ContentBorderColor);
-
-    private ID2D1Brush* TransparencyCellColor1Brush =>
-        GetOrCreateSolidColorBrush(ref _pTransparencyCellColor1Brush, Control.TransparencyCellColor1);
-
-    private ID2D1Brush* TransparencyCellColor2Brush =>
-        GetOrCreateSolidColorBrush(ref _pTransparencyCellColor2Brush, Control.TransparencyCellColor2);
 
     private ID2D1Brush* PixelGridLineColorBrush =>
         GetOrCreateSolidColorBrush(ref _pPixelGridLineColorBrush, Control.PixelGridLineColor);
@@ -312,6 +297,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                         DeviceContext->PSSetShader(_tex2DShader.PixelShader, null, 0);
                         DeviceContext->PSSetShaderResources(0, 1, res.ShaderResourceView);
                         DeviceContext->PSSetSamplers(0, 1, Sampler);
+                        DeviceContext->PSSetConstantBuffers(0, 1, cbuffer.Buffer);
 
                         DeviceContext->DrawIndexed((uint) _tex2DShader.NumIndices, 0, 0);
 
@@ -326,9 +312,9 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
     }
 
     protected override void Draw2D(ID2D1RenderTarget* pRenderTarget) {
-        var imageRect = Rectangle.Truncate(Control.EffectiveRect);
+        var imageRect = Control.EffectiveRect;
         var clientSize = Control.ClientSize;
-        var overlayRect = new Rectangle(
+        var overlayRect = new RectangleF(
             Control.Padding.Left + Control.Margin.Left,
             Control.Padding.Top + Control.Margin.Top,
             clientSize.Width - Control.Padding.Horizontal - Control.Margin.Horizontal,
@@ -540,12 +526,6 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
     private void ControlOnBorderColorChanged(object? sender, EventArgs e) => SafeRelease(ref _pBorderColorBrush);
 
-    private void ControlOnTransparencyCellColor1Changed(object? sender, EventArgs e) =>
-        SafeRelease(ref _pTransparencyCellColor1Brush);
-
-    private void ControlOnTransparencyCellColor2Changed(object? sender, EventArgs e) =>
-        SafeRelease(ref _pTransparencyCellColor2Brush);
-
     private void ControlOnPixelGridLineColorChanged(object? sender, EventArgs e) =>
         SafeRelease(ref _pPixelGridLineColorBrush);
 
@@ -560,7 +540,11 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
         public SourceSet(D2DTexRenderer renderer, Task<IBitmapSource> sourceTask) {
             _renderer = renderer;
-            _renderer.Control.ViewportChanged += ControlOnViewportChanged;
+            _renderer.Control.RotationChanged += MarkCbufferChanged;
+            _renderer.Control.ViewportChanged += MarkCbufferChanged;
+            _renderer.Control.TransparencyCellColor1Changed += MarkCbufferChanged;
+            _renderer.Control.TransparencyCellColor2Changed += MarkCbufferChanged;
+            _renderer.Control.TransparencyCellSizeChanged += MarkCbufferChanged;
             SourceTask = sourceTask;
             SourceTask.ContinueWith(r => {
                 if (!r.IsCompletedSuccessfully)
@@ -583,7 +567,11 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         }
 
         public void Dispose() {
-            _renderer.Control.ViewportChanged -= ControlOnViewportChanged;
+            _renderer.Control.RotationChanged -= MarkCbufferChanged;
+            _renderer.Control.ViewportChanged -= MarkCbufferChanged;
+            _renderer.Control.TransparencyCellColor1Changed -= MarkCbufferChanged;
+            _renderer.Control.TransparencyCellColor2Changed -= MarkCbufferChanged;
+            _renderer.Control.TransparencyCellSizeChanged -= MarkCbufferChanged;
             _cancellationTokenSource.Cancel();
             _ = SafeDispose.EnumerableAsync(ref _pBitmaps);
             _ = SafeDispose.EnumerableAsync(ref _cbuffer);
@@ -597,8 +585,6 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             _cancellationTokenSource.Cancel();
             return new(Task.Run(Dispose));
         }
-
-        public IGridLayout? Layout => SourceTask.IsCompletedSuccessfully ? SourceTask.Result.Layout : null;
 
         public bool IsAnyVisibleSliceReadyForDrawing() =>
             SourceTask.IsCompletedSuccessfully &&
@@ -673,24 +659,27 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             cbuffer = _cbuffer[cell.CellIndex] ??= new(_renderer.Device);
             if (cbuffer.DataVersion != _viewportVersion) {
                 cbuffer.UpdateData(_renderer.DeviceContext, _viewportVersion, new() {
-                    RotateM11 = 1,
-                    RotateM12 = 0,
-                    RotateM21 = 0,
-                    RotateM22 = 1,
+                    Rotation = _renderer.Control.Rotation,
                     Pan = _renderer.Control.Pan,
                     EffectiveSize = _renderer.Control.EffectiveSize,
                     ClientSize = _renderer.Control.ClientSize,
                     CellRectScale = SourceTask.Result.Layout.ScaleOf(cell),
-                    TransparencyCellColor1 = _renderer.Control.TransparencyCellColor1.ToD3Dcolorvalue(),
-                    TransparencyCellColor2 = _renderer.Control.TransparencyCellColor2.ToD3Dcolorvalue(),
-                    TransparencyCellSize = _renderer.Control.TransparencyCellSize,
+                    TransparencyCellColor1 = _renderer.Control.TransparencyCellSize > 0
+                        ? _renderer.Control.TransparencyCellColor1.ToD3Dcolorvalue()
+                        : new(),
+                    TransparencyCellColor2 = _renderer.Control.TransparencyCellSize > 0
+                        ? _renderer.Control.TransparencyCellColor2.ToD3Dcolorvalue()
+                        : new(),
+                    TransparencyCellSize = _renderer.Control.TransparencyCellSize > 0
+                        ? _renderer.Control.TransparencyCellSize
+                        : 1, // Prevent division by zero
                 });
             }
 
             return true;
         }
 
-        private void ControlOnViewportChanged(object? sender, EventArgs e) => _viewportVersion++;
+        private void MarkCbufferChanged(object? sender, EventArgs e) => _viewportVersion++;
 
         private void SourceTaskOnLayoutChanged() {
             var layout = SourceTask.Result.Layout;

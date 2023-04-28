@@ -11,10 +11,10 @@ namespace LuminaExplorer.Controls.DirectXStuff.Shaders;
 public sealed unsafe class Tex2DShader : IDisposable {
     private static readonly float[,,] VerticesAndTexCoords = {
         // { { x, y }, { u, v } }
-        {{0, 0}, {0, 1}},
-        {{0, 1}, {0, 0}},
-        {{1, 0}, {1, 1}},
-        {{1, 1}, {1, 0}},
+        {{0, 0}, {0, 0}},
+        {{0, 1}, {0, 1}},
+        {{1, 0}, {1, 0}},
+        {{1, 1}, {1, 1}},
     };
 
     private static readonly ushort[,] Indices = {
@@ -107,18 +107,13 @@ public sealed unsafe class Tex2DShader : IDisposable {
 
     [StructLayout(LayoutKind.Sequential)]
     public struct Cbuffer {
-        public float RotateM11; // c0.x
-        public float RotateM12; // c0.y
-        public float PaddingC0Z; // c0.z
-        public float PaddingC0W; // c0.w
-        public float RotateM21; // c1.x
-        public float RotateM22; // c1.y
-        public PointF Pan; // c1.z
-        public SizeF EffectiveSize; // c2.x
-        public SizeF ClientSize; // c2.z
-        public RectangleF CellRectScale; // c3.x
-        public D3Dcolorvalue TransparencyCellColor1; // c4
-        public D3Dcolorvalue TransparencyCellColor2; // c5
-        public float TransparencyCellSize; // c6.z
+        public float Rotation;
+        public float TransparencyCellSize;
+        public PointF Pan;
+        public SizeF EffectiveSize;
+        public SizeF ClientSize;
+        public RectangleF CellRectScale;
+        public D3Dcolorvalue TransparencyCellColor1;
+        public D3Dcolorvalue TransparencyCellColor2;
     }
 }
