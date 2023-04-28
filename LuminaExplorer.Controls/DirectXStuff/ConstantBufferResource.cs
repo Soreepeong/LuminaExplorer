@@ -5,7 +5,6 @@ using Silk.NET.Direct3D11;
 namespace LuminaExplorer.Controls.DirectXStuff;
 
 public sealed unsafe class ConstantBufferResource<T> : D3D11Resource where T : unmanaged {
-    private ulong _dataVersion = 0;
     private ID3D11Buffer* _buffer;
 
     public ConstantBufferResource(ID3D11Device* pDevice) {
@@ -28,16 +27,16 @@ public sealed unsafe class ConstantBufferResource<T> : D3D11Resource where T : u
         }
     }
 
-    public ulong DataVersion => _dataVersion;
+    public ulong? DataVersion { get; private set; }
 
     public ID3D11Buffer* Buffer => _buffer;
 
     public void UpdateData(ID3D11DeviceContext* pContext, ulong dataVersion, T data) {
-        if (dataVersion == _dataVersion)
+        if (dataVersion == DataVersion)
             return;
         
         pContext->UpdateSubresource(Resource, 0, null, &data, 0, 0);
-        _dataVersion = dataVersion;
+        DataVersion = dataVersion;
     }
 
     protected override void Dispose(bool disposing) {

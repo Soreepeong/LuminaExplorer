@@ -15,6 +15,7 @@ public static class PixFmtResolver {
 
     public static readonly IReadOnlyDictionary<Guid, IPixFmt> WicToPixelFormat;
 
+    // https://learn.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-resources-data-conversion
     static PixFmtResolver() {
         FourCcToPixelFormat = new Dictionary<DdsFourCc, IPixFmt> {
             {DdsFourCc.Dxt1, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 1)},
@@ -275,6 +276,119 @@ public static class PixFmtResolver {
                     }
                 }
             };
+
+        // https://learn.microsoft.com/en-us/windows/win32/wic/-wic-codec-native-pixel-formats#packed-bit-pixel-formats
+        // Note: below list might got byte orders wrong (Bgr/Rgb)
+        WicToPixelFormat = new Dictionary<Guid, IPixFmt> {
+            // Packed Bit Pixel Formats
+            {
+                WicPixelFormat.GUID_WICPixelFormat16bppBGR555,
+                RgbaPixFmt.NewBgr(5, 5, 5, 1, 0, ValueType.Unorm, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat16bppBGR565,
+                RgbaPixFmt.NewBgr(5, 6, 5, 0, 0, ValueType.Unorm, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat16bppBGRA5551,
+                RgbaPixFmt.NewBgra(5, 5, 5, 1, 0, 0, ValueType.Unorm, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat32bppBGR101010,
+                RgbaPixFmt.NewBgr(10, 10, 10, 2, 0, ValueType.Unorm, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat32bppRGBA1010102,
+                RgbaPixFmt.NewRgba(10, 10, 10, 2, 0, 0, ValueType.Unorm, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat32bppR10G10B10A2,
+                RgbaPixFmt.NewBgra(10, 10, 10, 2, 0, 0, ValueType.Unorm, AlphaType.None)
+            },
+
+            // Grayscale Pixel Formats
+            {WicPixelFormat.GUID_WICPixelFormatBlackWhite, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 1))},
+            {WicPixelFormat.GUID_WICPixelFormat2bppGray, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 2))},
+            {WicPixelFormat.GUID_WICPixelFormat4bppGray, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 4))},
+            {WicPixelFormat.GUID_WICPixelFormat8bppGray, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 8))},
+            {WicPixelFormat.GUID_WICPixelFormat16bppGray, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 16))}, {
+                WicPixelFormat.GUID_WICPixelFormat16bppGrayHalf,
+                new LumiPixFmt(AlphaType.None, new(ValueType.Half, 0, 16))
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat32bppGrayFloat,
+                new LumiPixFmt(AlphaType.None, new(ValueType.Float, 0, 32))
+            },
+
+            // RGB/BGR Pixel formats
+            {
+                WicPixelFormat.GUID_WICPixelFormat24bppRGB,
+                RgbaPixFmt.NewRgb(8, 8, 8, 0, 0, ValueType.Unorm, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat24bppBGR,
+                RgbaPixFmt.NewBgr(8, 8, 8, 0, 0, ValueType.Unorm, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat32bppBGR,
+                RgbaPixFmt.NewBgr(8, 8, 8, 8, 0, ValueType.Unorm, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat32bppRGBA,
+                RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Unorm, AlphaType.Straight)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat32bppBGRA,
+                RgbaPixFmt.NewBgra(8, 8, 8, 8, 0, 0, ValueType.Unorm, AlphaType.Straight)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat32bppPRGBA,
+                RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat32bppPBGRA,
+                RgbaPixFmt.NewBgra(8, 8, 8, 8, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat48bppRGB,
+                RgbaPixFmt.NewRgba(16, 16, 16, 0, 0, 0, ValueType.Unorm, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat48bppBGR,
+                RgbaPixFmt.NewBgra(16, 16, 16, 0, 0, 0, ValueType.Unorm, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat48bppRGBHalf,
+                RgbaPixFmt.NewRgba(16, 16, 16, 0, 0, 0, ValueType.Half, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat64bppRGBA,
+                RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Unorm, AlphaType.Straight)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat64bppBGRA,
+                RgbaPixFmt.NewBgra(16, 16, 16, 16, 0, 0, ValueType.Unorm, AlphaType.Straight)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat64bppPRGBA,
+                RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat64bppPBGRA,
+                RgbaPixFmt.NewBgra(16, 16, 16, 16, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat64bppRGBHalf,
+                RgbaPixFmt.NewRgb(16, 16, 16, 16, 0, ValueType.Half, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat64bppRGBAHalf,
+                RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Half, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat128bppRGBFloat,
+                RgbaPixFmt.NewRgb(32, 32, 32, 32, 0, ValueType.Float, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat128bppRGBAFloat,
+                RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Float, AlphaType.Straight)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat128bppPRGBAFloat,
+                RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Float, AlphaType.Premultiplied)
+            },
+
+            // RGB/BGR Pixel formats (Windows 8 & Platform Update for Windows 7)
+            {
+                WicPixelFormat.GUID_WICPixelFormat32bppRGB,
+                RgbaPixFmt.NewRgb(8, 8, 8, 8, 0, ValueType.Unorm, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat64bppRGB,
+                RgbaPixFmt.NewRgb(16, 16, 16, 16, 0, ValueType.Unorm, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat96bppRGBFloat,
+                RgbaPixFmt.NewRgb(32, 32, 32, 0, 0, ValueType.Float, AlphaType.None)
+            }, {
+                WicPixelFormat.GUID_WICPixelFormat64bppPRGBAHalf,
+                RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Half, AlphaType.Premultiplied)
+            },
+        };
     }
 
     public static IPixFmt GetPixelFormat(DdsFourCc fourCc) =>
@@ -287,6 +401,9 @@ public static class PixFmtResolver {
                 : UnknownPixFmt.Instance
             : UnknownPixFmt.Instance;
 
+    public static IPixFmt GetPixelFormat(Guid pixelFormatGuid) =>
+        WicToPixelFormat.TryGetValue(pixelFormatGuid, out var v) ? v : UnknownPixFmt.Instance;
+
     public static DdsFourCc GetFourCc(IPixFmt pf) =>
         FourCcToPixelFormat.FirstOrDefault(x => Equals(x.Value, pf)).Key;
 
@@ -294,4 +411,9 @@ public static class PixFmtResolver {
         DxgiFormatToPixelFormat.TryGetValue(pf.Alpha, out var d1)
             ? d1.FirstOrDefault(x => Equals(x.Value, pf)).Key
             : DxgiFormat.Unknown;
+
+    public static Guid GetWicPixelFormat(IPixFmt pf) {
+        var r = WicToPixelFormat.FirstOrDefault(x => Equals(x.Value, pf)).Key;
+        return r == Guid.Empty ? WicPixelFormat.GUID_WICPixelFormatUndefined : r;
+    }
 }

@@ -208,7 +208,6 @@ public class DdsFile {
         ? SliceData(imageIndex, sliceIndex, mipmapIndex, 0)
         : SliceData(imageIndex, 0, mipmapIndex, sliceIndex);
 
-    // https://learn.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-resources-data-conversion
     public IPixFmt PixFmt {
         get {
             var pf = Header.PixelFormat;

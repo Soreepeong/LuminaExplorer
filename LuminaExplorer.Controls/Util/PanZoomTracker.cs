@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Windows.Forms;
@@ -20,6 +20,7 @@ public sealed class PanZoomTracker : IDisposable {
     private Padding _panExtraRange;
     private IScaleMode _defaultScaleMode;
     private IScaleMode? _scaleMode;
+    private float _lastKnownZoom;
 
     public PanZoomTracker(MouseActivityTracker mouseActivityTracker, IScaleMode? scaleModeDefault = null) {
         _defaultScaleMode = scaleModeDefault ?? new FitInClientScaleMode(false);
@@ -188,18 +189,24 @@ public sealed class PanZoomTracker : IDisposable {
                 _scaleMode = scaleMode;
                 return false;
             }
-        } else if (_scaleMode is null)
-            return false;
+        } else if (_scaleMode is null) {
+            if (Equals(_lastKnownZoom, EffectiveZoom))
+                return false;
+            
+            ViewportChanged?.Invoke();
+            return true;
+        }
 
         var old = new PointF(
             (cursor.X - Control.Width / 2f - Pan.X) / EffectiveZoom,
             (cursor.Y - Control.Height / 2f - Pan.Y) / EffectiveZoom);
 
         _scaleMode = scaleMode;
-        
+
+        _lastKnownZoom = EffectiveZoom;
         if (!UpdatePan(new(
-                cursor.X - Control.Width / 2f - old.X * EffectiveZoom,
-                cursor.Y - Control.Height / 2f - old.Y * EffectiveZoom)))
+                cursor.X - Control.Width / 2f - old.X * _lastKnownZoom,
+                cursor.Y - Control.Height / 2f - old.Y * _lastKnownZoom)))
             ViewportChanged?.Invoke();
         return true;
     }

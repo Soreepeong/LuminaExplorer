@@ -43,8 +43,8 @@ public class LumiPixFmt : IPixFmt, IEquatable<LumiPixFmt> {
                 availBits += 8;
                 
                 for (; availBits >= Bpp && x < width; x++, availBits -= Bpp) {
-                    var l = (byte) L.DecodeValueAsInt(bits, 8);
-                    var a = (byte) (A.Bits == 0 ? 255 : A.DecodeValueAsInt(bits, 8));
+                    var l = (byte) L.DecodeValueAsUnorm(bits, 8);
+                    var a = (byte) (A.Bits == 0 ? 255 : A.DecodeValueAsUnorm(bits, 8));
                     target[outOffset++] = a;
                     target[outOffset++] = l;
                     target[outOffset++] = l;

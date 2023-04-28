@@ -8,6 +8,7 @@ public interface IPixFmt {
     int Bpp { get; }
     DxgiFormat DxgiFormat => PixFmtResolver.GetDxgiFormat(this);
     DdsFourCc FourCc => PixFmtResolver.GetFourCc(this);
+    Guid WicFormat => PixFmtResolver.GetWicPixelFormat(this);
 
     void ToB8G8R8A8(
         Span<byte> target,

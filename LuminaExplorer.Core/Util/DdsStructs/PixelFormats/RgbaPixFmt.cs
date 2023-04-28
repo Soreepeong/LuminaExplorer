@@ -55,10 +55,10 @@ public class RgbaPixFmt : IPixFmt, IEquatable<RgbaPixFmt> {
                 bits = (bits << 8) | source[inOffset];
                 availBits += 8;
                 for (; availBits >= Bpp && x < width; x++, availBits -= Bpp) {
-                    target[outOffset++] = (byte) (A.Bits == 0 ? 255 : A.DecodeValueAsInt(bits, 8));
-                    target[outOffset++] = (byte) R.DecodeValueAsInt(bits, 8);
-                    target[outOffset++] = (byte) G.DecodeValueAsInt(bits, 8);
-                    target[outOffset++] = (byte) B.DecodeValueAsInt(bits, 8);
+                    target[outOffset++] = (byte) (A.Bits == 0 ? 255 : A.DecodeValueAsUnorm(bits, 8));
+                    target[outOffset++] = (byte) R.DecodeValueAsUnorm(bits, 8);
+                    target[outOffset++] = (byte) G.DecodeValueAsUnorm(bits, 8);
+                    target[outOffset++] = (byte) B.DecodeValueAsUnorm(bits, 8);
                 }
             }
         }

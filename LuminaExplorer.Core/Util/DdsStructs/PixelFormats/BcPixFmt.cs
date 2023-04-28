@@ -10,7 +10,7 @@ public class BcPixFmt : IPixFmt, IEquatable<BcPixFmt> {
     public readonly byte Version;
 
     public BcPixFmt(
-        ValueType type = ValueType.Unknown,
+        ValueType type = ValueType.Typeless,
         AlphaType alpha = AlphaType.Straight,
         byte version = 0) {
         if (version is < 1 or > 7)

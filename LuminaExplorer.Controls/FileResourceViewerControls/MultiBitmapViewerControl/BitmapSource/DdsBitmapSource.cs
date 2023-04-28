@@ -277,7 +277,7 @@ public sealed class DdsBitmapSource : IBitmapSource {
                 var c2 = (char) Math.Clamp((uival >> 8) & 0xFF, 0x20, 0x7F);
                 var c3 = (char) Math.Clamp((uival >> 16) & 0xFF, 0x20, 0x7F);
                 var c4 = (char) Math.Clamp((uival >> 24) & 0xFF, 0x20, 0x7F);
-                sb.AppendLine($"FourCC(Inferred)=0x{uival:X08}({c1}{c2}{c3}{c4})");
+                sb.AppendLine($"FourCC(inferred)=0x{uival:X08}({c1}{c2}{c3}{c4})");
             }
         }
 
@@ -287,8 +287,14 @@ public sealed class DdsBitmapSource : IBitmapSource {
             var inferredDxgiFormat = _ddsFile.PixFmt.DxgiFormat;
             if (inferredDxgiFormat != DxgiFormat.Unknown &&
                 (!_ddsFile.UseDxt10Header || inferredDxgiFormat != _ddsFile.Dxt10Header.DxgiFormat)) {
-                sb.AppendLine($"DxgiFormat(Inferred)={inferredDxgiFormat} ({(int) inferredDxgiFormat})");
+                sb.AppendLine($"DxgiFormat(inferred)={inferredDxgiFormat} ({(int) inferredDxgiFormat})");
             }
+        }
+
+        var inferredWicPixelFormat = _ddsFile.PixFmt.WicFormat;
+        if (inferredWicPixelFormat != WicPixelFormat.GUID_WICPixelFormatUndefined) {
+            var x = WicPixelFormat.FromClsid(inferredWicPixelFormat);
+            sb.AppendLine($"WicPixelFormat(inferred)={x.FriendlyName}");
         }
 
         var useW = _ddsFile.Header.Flags.HasFlag(DdsHeaderFlags.Width);

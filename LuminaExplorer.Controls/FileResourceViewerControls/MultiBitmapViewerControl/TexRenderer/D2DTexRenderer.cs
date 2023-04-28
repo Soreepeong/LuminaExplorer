@@ -34,7 +34,8 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
     private RectangleF? _autoDescriptionRectangle;
 
     private Tex2DShader? _tex2DShader;
-    private ID3D11SamplerState* _pSampler;
+    private ID3D11SamplerState* _pLinearSampler;
+    private ID3D11SamplerState* _pPointSampler;
 
     private readonly SourceSet?[] _sourceSets = new SourceSet?[2];
 
@@ -71,7 +72,8 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         SafeRelease(ref _pScalingFontTextFormat);
 
         SafeDispose.One(ref _tex2DShader);
-        SafeRelease(ref _pSampler);
+        SafeRelease(ref _pLinearSampler);
+        SafeRelease(ref _pPointSampler);
 
         base.Dispose(disposing);
     }
@@ -162,9 +164,9 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         set => _autoDescriptionRectangle = value;
     }
 
-    private ID3D11SamplerState* Sampler {
+    private ID3D11SamplerState* LinearSampler {
         get {
-            if (_pSampler is null) {
+            if (_pLinearSampler is null) {
                 var samplerDesc = new SamplerDesc {
                     Filter = Filter.MinMagMipLinear,
                     MaxAnisotropy = 0,
@@ -176,11 +178,33 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                     MaxLOD = float.MaxValue,
                     ComparisonFunc = ComparisonFunc.Never,
                 };
-                fixed (ID3D11SamplerState** pState = &_pSampler)
+                fixed (ID3D11SamplerState** pState = &_pLinearSampler)
                     ThrowH(Device->CreateSamplerState(&samplerDesc, pState));
             }
 
-            return _pSampler;
+            return _pLinearSampler;
+        }
+    }
+
+    private ID3D11SamplerState* PointSampler {
+        get {
+            if (_pPointSampler is null) {
+                var samplerDesc = new SamplerDesc {
+                    Filter = Filter.MinMagMipPoint,
+                    MaxAnisotropy = 0,
+                    AddressU = TextureAddressMode.Wrap,
+                    AddressV = TextureAddressMode.Wrap,
+                    AddressW = TextureAddressMode.Wrap,
+                    MipLODBias = 0f,
+                    MinLOD = 0,
+                    MaxLOD = float.MaxValue,
+                    ComparisonFunc = ComparisonFunc.Never,
+                };
+                fixed (ID3D11SamplerState** pState = &_pPointSampler)
+                    ThrowH(Device->CreateSamplerState(&samplerDesc, pState));
+            }
+
+            return _pPointSampler;
         }
     }
 
@@ -258,6 +282,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                 return;
 
             var currentSourceFullyAvailable = SourceCurrent?.IsEveryVisibleSliceReadyForDrawing() is true;
+            var zoom = Control.EffectiveZoom;
             foreach (var sourceSet in _sourceSets) {
                 if (sourceSet is null)
                     continue;
@@ -296,7 +321,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
                         DeviceContext->PSSetShader(_tex2DShader.PixelShader, null, 0);
                         DeviceContext->PSSetShaderResources(0, 1, res.ShaderResourceView);
-                        DeviceContext->PSSetSamplers(0, 1, Sampler);
+                        DeviceContext->PSSetSamplers(0, 1, zoom >= 2 ? PointSampler : LinearSampler);
                         DeviceContext->PSSetConstantBuffers(0, 1, cbuffer.Buffer);
 
                         DeviceContext->DrawIndexed((uint) _tex2DShader.NumIndices, 0, 0);
@@ -550,19 +575,21 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                 if (!r.IsCompletedSuccessfully)
                     return;
 
-                var source = r.Result;
-                _ = SafeDispose.EnumerableAsync(ref _pBitmaps);
+                renderer.Control.Invoke(() => {
+                    var source = r.Result;
+                    _ = SafeDispose.EnumerableAsync(ref _pBitmaps);
 
-                _pBitmaps = new ResultDisposingTask<Texture2DShaderResource>[source.ImageCount][][];
-                for (var i = 0; i < _pBitmaps.Length; i++) {
-                    var a1 = _pBitmaps[i] =
-                        new ResultDisposingTask<Texture2DShaderResource>[source.NumberOfMipmaps(i)][];
-                    for (var j = 0; j < a1.Length; j++)
-                        a1[j] = new ResultDisposingTask<Texture2DShaderResource>[source.NumSlicesOfMipmap(i, j)];
-                }
+                    _pBitmaps = new ResultDisposingTask<Texture2DShaderResource>[source.ImageCount][][];
+                    for (var i = 0; i < _pBitmaps.Length; i++) {
+                        var a1 = _pBitmaps[i] =
+                            new ResultDisposingTask<Texture2DShaderResource>[source.NumberOfMipmaps(i)][];
+                        for (var j = 0; j < a1.Length; j++)
+                            a1[j] = new ResultDisposingTask<Texture2DShaderResource>[source.NumSlicesOfMipmap(i, j)];
+                    }
 
-                r.Result.LayoutChanged += SourceTaskOnLayoutChanged;
-                SourceTaskOnLayoutChanged();
+                    r.Result.LayoutChanged += SourceTaskOnLayoutChanged;
+                    SourceTaskOnLayoutChanged();
+                });
             });
         }
 
@@ -618,13 +645,9 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             }
 
             if (task.IsCompleted && _pBitmaps is { } pBitmaps) {
-                wrapperTask = pBitmaps[cell.ImageIndex][cell.Mipmap][cell.Slice];
-                if (wrapperTask is null) {
-                    wrapperTask = pBitmaps[cell.ImageIndex][cell.Mipmap][cell.Slice] = new(Task.Run(
-                        () => Texture2DShaderResource.FromWicBitmap(_renderer.Device, task.Result),
-                        _cancellationTokenSource.Token));
-                    wrapperTask.Task.ContinueWith(_ => _renderer.Control.Invalidate());
-                }
+                wrapperTask = pBitmaps[cell.ImageIndex][cell.Mipmap][cell.Slice] ??= new(Task.Run(
+                    () => Texture2DShaderResource.FromWicBitmap(_renderer.Device, task.Result),
+                    _cancellationTokenSource.Token));
 
                 if (wrapperTask.IsCompletedSuccessfully)
                     return LoadState.Loaded;
@@ -681,7 +704,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
         private void MarkCbufferChanged(object? sender, EventArgs e) => _viewportVersion++;
 
-        private void SourceTaskOnLayoutChanged() {
+        private void SourceTaskOnLayoutChanged() => _renderer.Control.Invoke(() => {
             var layout = SourceTask.Result.Layout;
             var bitmapSource = SourceTask.Result;
             _ = SafeDispose.EnumerableAsync(ref _cbuffer);
@@ -717,6 +740,6 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                     if (this == _renderer.SourceCurrent && layout == bitmapSource.Layout)
                         _renderer.AllBitmapSourceSliceLoadAttemptFinished?.Invoke(SourceTask);
                 }, _cancellationTokenSource.Token);
-        }
+        });
     }
 }

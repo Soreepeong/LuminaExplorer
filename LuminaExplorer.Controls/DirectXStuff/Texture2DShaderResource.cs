@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Runtime.InteropServices;
 using DirectN;
 using Lumina.Data.Files;
 using LuminaExplorer.Core.Util.DdsStructs;
+using LuminaExplorer.Core.Util.DdsStructs.PixelFormats;
 using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;
 using WicNet;
@@ -46,20 +48,33 @@ public sealed unsafe class Texture2DShaderResource : D3D11Resource {
         WicBitmapSource? bitmapSource = null;
         IComObject<IWICBitmap>? wicBitmap = null;
         try {
-            bitmapSource = bitmap.Clone();
-            bitmapSource.ConvertTo(WicPixelFormat.GUID_WICPixelFormat128bppRGBAFloat);
-            wicBitmap = bitmapSource.AsBitmap(false);
-            if (wicBitmap is null) {
-                var btemp = bitmapSource.Clone();
-                bitmapSource.Dispose();
-                bitmapSource = btemp;
-                wicBitmap = bitmapSource.AsBitmap();
+            var format = (Format) PixFmtResolver.GetDxgiFormat(PixFmtResolver.GetPixelFormat(bitmap.PixelFormat));
+            if (format == 0) {
+                // format = Format.FormatR32G32B32A32Float;
+                format = Format.FormatR8G8B8A8Unorm;
+                var pConverter = WICImagingFactory.WithFactory(x => {
+                    x.CreateFormatConverter(out var pConverterInner).ThrowOnError();
+                    return pConverterInner;
+                });
+                try {
+                    pConverter.Initialize(
+                            bitmap.ComObject.Object,
+                            // WicPixelFormat.GUID_WICPixelFormat128bppRGBAFloat,
+                            WicPixelFormat.GUID_WICPixelFormat32bppRGBA,
+                            WICBitmapDitherType.WICBitmapDitherTypeNone,
+                            null,
+                            0f,
+                            WICBitmapPaletteType.WICBitmapPaletteTypeCustom)
+                        .ThrowOnError();
+                    bitmapSource = new(WICImagingFactory.CreateBitmapFromSource(new ComObject<IWICBitmapSource>(pConverter)));
+                } finally {
+                    Marshal.ReleaseComObject(pConverter);
+                }
+            } else {
+                bitmapSource = bitmap.Clone();
             }
-
-            var format = wicBitmap.GetPixelFormat() switch {
-                var x when x == WicPixelFormat.GUID_WICPixelFormat128bppRGBAFloat => Format.FormatR32G32B32A32Float,
-                _ => throw new NotSupportedException(),
-            };
+            
+            wicBitmap = bitmapSource.AsBitmap();
             
             using var lb = wicBitmap.Lock(WICBitmapLockFlags.WICBitmapLockRead);
             lb.Object.GetSize(out var width, out var height).ThrowOnError();

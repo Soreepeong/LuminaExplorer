@@ -364,15 +364,13 @@ public partial class MultiBitmapViewerControl {
                 _renderers = null;
             _renderers ??= RunOnUiThreadAfter(Task.Run(() => new ITexRenderer[] {
                 new D2DTexRenderer(this),
-                new GdipTexRenderer(this),
+                // new GdipTexRenderer(this),
             }), r => {
                 Invalidate();
                 foreach (var renderer in r.Result) {
                     renderer.UiThreadInitialize();
                     renderer.AnyBitmapSourceSliceLoadAttemptFinished +=
                         RendererOnAnyBitmapSourceSliceLoadAttemptFinished;
-                    renderer.AllBitmapSourceSliceLoadAttemptFinished +=
-                        RendererOnAllBitmapSourceSliceLoadAttemptFinished;
                 }
 
                 return r.Result;
@@ -382,25 +380,21 @@ public partial class MultiBitmapViewerControl {
         return false;
     }
 
-    private void RendererOnAllBitmapSourceSliceLoadAttemptFinished(Task<IBitmapSource> obj) {
-        if (_bitmapSourceTaskPrevious is not null) {
-            if (TryGetRenderers(out var renderers))
-                foreach (var r in renderers)
-                    r.PreviousSourceTask = null;
-            SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
-        }
-    }
-
     private void RendererOnAnyBitmapSourceSliceLoadAttemptFinished(Task<IBitmapSource> task) {
         if (_bitmapSourceTaskCurrent?.Task != task)
             return;
-        BeginInvoke(() => {
-            if (TryGetRenderers(out var renderers)) {
-                MouseActivity.Enabled = true;
-                foreach (var r in renderers)
-                    if (r.LastException is null)
-                        Viewport.Reset(task.Result.Layout.GridSize);
+        
+        Invoke(() => {
+            if (_bitmapSourceTaskPrevious is not null) {
+                if (TryGetRenderers(out var renderers))
+                    foreach (var r in renderers)
+                        r.PreviousSourceTask = null;
+                SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
             }
+            
+            MouseActivity.Enabled = true;
+            Viewport.Reset(task.Result.Layout.GridSize);
+            Invalidate();
         });
     }
 }
