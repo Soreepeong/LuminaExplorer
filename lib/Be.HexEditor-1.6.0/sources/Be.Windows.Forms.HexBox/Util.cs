@@ -15,7 +15,7 @@ namespace Be.Windows.Forms
         static Util()
         {
             // design mode is true if host process is: Visual Studio, Visual Studio Express Versions (C#, VB, C++) or SharpDevelop
-            var designerHosts = new List<string>() { "devenv", "vcsexpress", "vbexpress", "vcexpress", "sharpdevelop" };
+            var designerHosts = new List<string> { "devenv", "vcsexpress", "vbexpress", "vcexpress", "sharpdevelop" };
             using (var process = System.Diagnostics.Process.GetCurrentProcess())
             {
                 var processName = process.ProcessName.ToLower();

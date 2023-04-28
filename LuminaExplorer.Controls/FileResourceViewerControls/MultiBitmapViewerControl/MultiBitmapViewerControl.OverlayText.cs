@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Text;
+using LuminaExplorer.Controls.DirectXStuff.Shaders;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
 
@@ -7,7 +8,6 @@ public partial class MultiBitmapViewerControl {
     private long _autoDescriptionShowUntilTicks;
     private bool _autoDescriptionBeingHovered;
     private string? _autoDescriptionCached;
-    private float _autoDescriptionSourceZoom = float.NaN;
 
     private string? _overlayCustomString;
     private long _overlayShowUntilTicks;
@@ -33,17 +33,35 @@ public partial class MultiBitmapViewerControl {
             if (BitmapSource is not { } source)
                 return "";
 
-            var effectiveZoom = Viewport.EffectiveZoom;
-            if (_autoDescriptionCached is not null &&
-                Equals(effectiveZoom, _autoDescriptionSourceZoom))
+            if (_autoDescriptionCached is not null)
                 return _autoDescriptionCached;
 
             var sb = new StringBuilder();
-            _autoDescriptionSourceZoom = effectiveZoom;
             sb.Append(source.FileName);
-            if (!Equals(effectiveZoom, 1f))
-                sb.Append($" ({effectiveZoom * 100:0.00}%)");
-            sb.AppendLine();
+            sb.Append($" ({Viewport.EffectiveZoom * 100:0.00}%");
+            switch (ChannelFilter) {
+                case Tex2DShader.VisibleColorChannelTypes.Red:
+                    sb.Append("; red");
+                    goto case Tex2DShader.VisibleColorChannelTypes.All;
+                case Tex2DShader.VisibleColorChannelTypes.Green:
+                    sb.Append("; green");
+                    goto case Tex2DShader.VisibleColorChannelTypes.All;
+                case Tex2DShader.VisibleColorChannelTypes.Blue:
+                    sb.Append("; blue");
+                    goto case Tex2DShader.VisibleColorChannelTypes.All;
+                case Tex2DShader.VisibleColorChannelTypes.Alpha:
+                    sb.Append("; alpha");
+                    break;
+                case Tex2DShader.VisibleColorChannelTypes.All:
+                    if (!UseAlphaChannel)
+                        sb.Append("; alpha channel hidden");
+                    break;
+            }
+
+            if (Rotation != 0)
+                sb.Append($"; cw {MathF.Round((360 + 180 * Rotation / MathF.PI) % 360)} degrees");
+
+            sb.AppendLine(")");
 
             source.DescribeImage(sb);
 

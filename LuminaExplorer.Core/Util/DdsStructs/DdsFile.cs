@@ -146,7 +146,6 @@ public class DdsFile {
         return (Width(mipmapIndex) * pf.Bpp + 7) / 8 * Height(mipmapIndex);
     }
 
-    // TODO: are mipmap sizes aligned?
     public int MipmapSize(int mipmapIndex) => SliceSize(mipmapIndex) * Depth(mipmapIndex);
 
     public int FaceSize => Enumerable.Range(0, NumMipmaps).Sum(MipmapSize);

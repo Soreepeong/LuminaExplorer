@@ -287,7 +287,7 @@ public static class ImagingExtensions {
             1,
             new[] {length},
             buffer,
-            platformId);
+            platformId).Filter(format: TexFile.TextureFormat.B8G8R8A8);
 
         var bmp = new Bitmap(tbuf.Width, tbuf.Height, PixelFormat.Format32bppArgb);
         try {

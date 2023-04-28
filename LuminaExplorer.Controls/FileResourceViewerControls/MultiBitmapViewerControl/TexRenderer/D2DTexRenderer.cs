@@ -25,19 +25,17 @@ using IDWriteTextFormat = Silk.NET.DirectWrite.IDWriteTextFormat;
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.TexRenderer;
 
 internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerControl>, ITexRenderer {
+    private readonly SourceSet?[] _sourceSets = new SourceSet?[2];
+
     private ID2D1Brush* _pForeColorWhenLoadedBrush;
     private ID2D1Brush* _pBackColorWhenLoadedBrush;
-    private ID2D1Brush* _pBorderColorBrush;
-    private ID2D1Brush* _pPixelGridLineColorBrush;
     private IDWriteTextFormat* _pScalingFontTextFormat;
+    private ID3D11SamplerState* _pLinearSampler;
+    private ID3D11SamplerState* _pPointSampler;
 
     private RectangleF? _autoDescriptionRectangle;
 
     private Tex2DShader? _tex2DShader;
-    private ID3D11SamplerState* _pLinearSampler;
-    private ID3D11SamplerState* _pPointSampler;
-
-    private readonly SourceSet?[] _sourceSets = new SourceSet?[2];
 
     // ReSharper disable once IntroduceOptionalParameters.Global
     public D2DTexRenderer(MultiBitmapViewerControl control) : this(control, null, null) { }
@@ -48,8 +46,6 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         Control.FontSizeStepLevelChanged += ControlOnFontSizeStepLevelChanged;
         Control.ForeColorWhenLoadedChanged += ControlOnForeColorWhenLoadedChanged;
         Control.BackColorWhenLoadedChanged += ControlOnBackColorWhenLoadedChanged;
-        Control.BorderColorChanged += ControlOnBorderColorChanged;
-        Control.PixelGridLineColorChanged += ControlOnPixelGridLineColorChanged;
 
         _tex2DShader = new(Device);
     }
@@ -60,18 +56,14 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             Control.FontSizeStepLevelChanged -= ControlOnFontSizeStepLevelChanged;
             Control.ForeColorWhenLoadedChanged -= ControlOnForeColorWhenLoadedChanged;
             Control.BackColorWhenLoadedChanged -= ControlOnBackColorWhenLoadedChanged;
-            Control.BorderColorChanged -= ControlOnBorderColorChanged;
-            Control.PixelGridLineColorChanged -= ControlOnPixelGridLineColorChanged;
+
+            UpdateBitmapSource(null, null);
+            SafeDispose.One(ref _tex2DShader);
         }
 
-        UpdateBitmapSource(null, null);
         SafeRelease(ref _pForeColorWhenLoadedBrush);
         SafeRelease(ref _pBackColorWhenLoadedBrush);
-        SafeRelease(ref _pBorderColorBrush);
-        SafeRelease(ref _pPixelGridLineColorBrush);
         SafeRelease(ref _pScalingFontTextFormat);
-
-        SafeDispose.One(ref _tex2DShader);
         SafeRelease(ref _pLinearSampler);
         SafeRelease(ref _pPointSampler);
 
@@ -108,15 +100,9 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
     private ID2D1Brush* ForeColorWhenLoadedBrush =>
         GetOrCreateSolidColorBrush(ref _pForeColorWhenLoadedBrush, Control.ForeColorWhenLoaded);
 
-    private ID2D1Brush* ContentBorderColorBrush =>
-        GetOrCreateSolidColorBrush(ref _pBorderColorBrush, Control.ContentBorderColor);
-
-    private ID2D1Brush* PixelGridLineColorBrush =>
-        GetOrCreateSolidColorBrush(ref _pPixelGridLineColorBrush, Control.PixelGridLineColor);
-
     private IDWriteTextFormat* ScalingFontTextFormat {
         get {
-            if (_pScalingFontTextFormat is null)
+            if (_pScalingFontTextFormat is null) {
                 fixed (char* pName = Control.Font.Name.AsSpan())
                 fixed (char* pEmpty = "\0".AsSpan())
                 fixed (IDWriteTextFormat** ppFontTextFormat = &_pScalingFontTextFormat)
@@ -129,6 +115,10 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                         Control.EffectiveFontSizeInPoints * 4 / 3,
                         pEmpty,
                         ppFontTextFormat));
+
+                _autoDescriptionRectangle = null;
+            }
+
             return _pScalingFontTextFormat;
         }
     }
@@ -325,9 +315,6 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                         DeviceContext->PSSetConstantBuffers(0, 1, cbuffer.Buffer);
 
                         DeviceContext->DrawIndexed((uint) _tex2DShader.NumIndices, 0, 0);
-
-                        // 4. Draw pixel grids
-                        // TODO
                     }
                 }
             }
@@ -344,7 +331,6 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             Control.Padding.Top + Control.Margin.Top,
             clientSize.Width - Control.Padding.Horizontal - Control.Margin.Horizontal,
             clientSize.Height - Control.Padding.Vertical - Control.Margin.Vertical);
-        var box = Control.ClientRectangle.ToSilkFloat();
 
         if (!Control.TryGetEffectiveOverlayInformation(
                 out var overlayString,
@@ -366,109 +352,34 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             if (sourceSet.SourceTask.IsCompletedSuccessfully) {
                 var source = sourceSet.SourceTask.Result;
 
-                var bitmapLoaded = ArrayPool<LoadState>.Shared.Rent(source.Layout.Count);
-                var bitmapExceptions = ArrayPool<Exception?>.Shared.Rent(source.Layout.Count);
-                try {
-                    foreach (var sliceCell in source.Layout)
-                        _ = sourceSet.TryGetBitmapAt(
+                foreach (var sliceCell in source.Layout) {
+                    if (sourceSet.TryGetBitmapAt(
                             sliceCell,
-                            out bitmapLoaded[sliceCell.CellIndex],
+                            out var state,
                             out _,
-                            out bitmapExceptions[sliceCell.CellIndex]);
+                            out var exc))
+                        continue;
 
-                    // 2. Draw cell borders
-                    if (Control.ContentBorderWidth > 0) {
-                        ContentBorderColorBrush->SetOpacity(1f);
-                        foreach (var sliceCell in source.Layout) {
-                            if (bitmapLoaded[sliceCell.CellIndex] != LoadState.Loaded)
-                                continue;
+                    var isError = state == LoadState.Error;
+                    string msg;
+                    if (isError)
+                        msg = $"Error\n({sliceCell.ImageIndex}, {sliceCell.Mipmap}, {sliceCell.Slice})\n{exc}";
+                    else if (Control.IsLoadingBoxDelayed)
+                        continue;
+                    else
+                        msg = "Loading...";
 
-                            box = RectangleF.Inflate(
-                                source.Layout.RectOf(sliceCell, imageRect),
-                                Control.ContentBorderWidth / 2f,
-                                Control.ContentBorderWidth / 2f).ToSilkFloat();
-                            pRenderTarget->DrawRectangle(&box, ContentBorderColorBrush, Control.ContentBorderWidth,
-                                null);
-                        }
-                    }
-
-                    // 3. Draw bitmaps
-                    foreach (var sliceCell in source.Layout) {
-                        var rc = source.Layout.RectOf(sliceCell, imageRect);
-                        box = rc.ToSilkFloat();
-
-                        if (bitmapLoaded[sliceCell.CellIndex] is not LoadState.Error and not LoadState.Loading)
-                            continue;
-
-                        var isError = bitmapLoaded[sliceCell.CellIndex] == LoadState.Error;
-                        string msg;
-                        if (isError) {
-                            BackColorBrush->SetOpacity(Control.OverlayBackgroundOpacity);
-                            pRenderTarget->FillRectangle(&box, BackColorBrush);
-                            msg = $"Error\n({sliceCell.ImageIndex}, {sliceCell.Mipmap}, {sliceCell.Slice})\n";
-                        } else if (Control.IsLoadingBoxDelayed)
-                            continue;
-                        else
-                            msg = "Loading...";
-
-                        DrawText(
-                            msg,
-                            rc,
-                            wordWrapping: WordWrapping.NoWrap,
-                            textAlignment: TextAlignment.Center,
-                            paragraphAlignment: ParagraphAlignment.Center,
-                            textFormat: ScalingFontTextFormat,
-                            textBrush: ForeColorBrush,
-                            shadowBrush: BackColorBrush,
-                            opacity: 1f,
-                            borderWidth: 2);
-                    }
-
-                    // 4. Draw pixel grids
-                    if (Control.PixelGridMinimumZoom <= Control.EffectiveZoom) {
-                        var p1 = new Vector2D<float>();
-                        var p2 = new Vector2D<float>();
-
-                        foreach (var sliceCell in source.Layout) {
-                            if (bitmapLoaded[sliceCell.CellIndex] != LoadState.Loaded)
-                                continue;
-
-                            var cellRectUnscaled = source.Layout.RectOf(sliceCell);
-                            var cellRect = source.Layout.RectOf(sliceCell, imageRect);
-
-                            // 0 <= cellTop + j * cellHeight / sliceHeight < clientHeight
-                            // -cellTop <= j * cellHeight / sliceHeight < clientHeight - cellTop
-                            // -cellTop * sliceHeight / cellHeight <= j < (clientHeight - cellTop) * sliceHeight / cellHeight
-                            // 0 <= j < cellRectUnscaled + 1
-
-                            p1.X = cellRect.Left + 0.5f;
-                            p2.X = cellRect.Right - 0.5f;
-                            var rangeMin = Math.Max(0, (int) Math.Floor(1f *
-                                -cellRect.Top * cellRectUnscaled.Height / cellRect.Height));
-                            var rangeMax = Math.Min(cellRectUnscaled.Height + 1, (int) Math.Ceiling(1f *
-                                (clientSize.Height - cellRect.Top) * cellRectUnscaled.Height / cellRect.Height));
-                            for (var j = rangeMin; j < rangeMax; j++) {
-                                var y = cellRect.Top + j * cellRect.Height / cellRectUnscaled.Height;
-                                p1.Y = p2.Y = y + 0.5f;
-                                pRenderTarget->DrawLine(p1, p2, PixelGridLineColorBrush, 1f, null);
-                            }
-
-                            p1.Y = cellRect.Top + 0.5f;
-                            p2.Y = cellRect.Bottom - 0.5f;
-                            rangeMin = Math.Max(0, (int) Math.Floor(1f *
-                                -cellRect.Left * cellRectUnscaled.Width / cellRect.Width));
-                            rangeMax = Math.Min(cellRectUnscaled.Width + 1, (int) Math.Ceiling(1f *
-                                (clientSize.Width - cellRect.Left) * cellRectUnscaled.Width / cellRect.Width));
-                            for (var j = rangeMin; j < rangeMax; j++) {
-                                var x = cellRect.Left + j * cellRect.Width / cellRectUnscaled.Width;
-                                p1.X = p2.X = x + 0.5f;
-                                pRenderTarget->DrawLine(p1, p2, PixelGridLineColorBrush, 1f, null);
-                            }
-                        }
-                    }
-                } finally {
-                    ArrayPool<LoadState>.Shared.Return(bitmapLoaded);
-                    ArrayPool<Exception?>.Shared.Return(bitmapExceptions);
+                    DrawText(
+                        msg,
+                        source.Layout.RectOf(sliceCell, imageRect),
+                        wordWrapping: WordWrapping.NoWrap,
+                        textAlignment: TextAlignment.Center,
+                        paragraphAlignment: ParagraphAlignment.Center,
+                        textFormat: ScalingFontTextFormat,
+                        textBrush: ForeColorBrush,
+                        shadowBrush: BackColorBrush,
+                        opacity: 1f,
+                        borderWidth: 2);
                 }
 
                 DrawText(
@@ -503,16 +414,16 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             ParagraphAlignment.Center,
             ScalingFontTextFormat);
         var fontSizeScale = Control.EffectiveFontSizeScale;
-        box = new(
-            metrics.Left - 32 * fontSizeScale,
-            metrics.Top - 32 * fontSizeScale,
-            metrics.Left + metrics.Width + 32 * fontSizeScale,
-            metrics.Top + metrics.Height + 32 * fontSizeScale);
 
         try {
             BackColorBrush->SetOpacity(overlayBackOpacity);
             ForeColorBrush->SetOpacity(overlayForeOpacity);
 
+            var box = new Box2D<float>(
+                metrics.Left - 32 * fontSizeScale,
+                metrics.Top - 32 * fontSizeScale,
+                metrics.Left + metrics.Width + 32 * fontSizeScale,
+                metrics.Top + metrics.Height + 32 * fontSizeScale);
             pRenderTarget->FillRectangle(&box, BackColorBrush);
 
             for (var i = -2; i <= 2; i++) {
@@ -541,18 +452,14 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
     private void ControlOnFontSizeStepLevelChanged(object? sender, EventArgs e) =>
         SafeRelease(ref _pScalingFontTextFormat);
 
-    private void ControlOnResize(object? sender, EventArgs e) => SafeRelease(ref _pScalingFontTextFormat);
+    private void ControlOnResize(object? sender, EventArgs e) =>
+        SafeRelease(ref _pScalingFontTextFormat);
 
     private void ControlOnForeColorWhenLoadedChanged(object? sender, EventArgs e) =>
         SafeRelease(ref _pForeColorWhenLoadedBrush);
 
-    private void ControlOnBackColorWhenLoadedChanged(object? sender, EventArgs e)
-        => SafeRelease(ref _pBackColorWhenLoadedBrush);
-
-    private void ControlOnBorderColorChanged(object? sender, EventArgs e) => SafeRelease(ref _pBorderColorBrush);
-
-    private void ControlOnPixelGridLineColorChanged(object? sender, EventArgs e) =>
-        SafeRelease(ref _pPixelGridLineColorBrush);
+    private void ControlOnBackColorWhenLoadedChanged(object? sender, EventArgs e) =>
+        SafeRelease(ref _pBackColorWhenLoadedBrush);
 
     private sealed class SourceSet : IDisposable, IAsyncDisposable {
         private readonly D2DTexRenderer _renderer;
@@ -565,11 +472,15 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
         public SourceSet(D2DTexRenderer renderer, Task<IBitmapSource> sourceTask) {
             _renderer = renderer;
+            _renderer.Control.UseAlphaChannelChanged += MarkCbufferChanged;
+            _renderer.Control.VisibleColorChannelChanged += MarkCbufferChanged;
             _renderer.Control.RotationChanged += MarkCbufferChanged;
             _renderer.Control.ViewportChanged += MarkCbufferChanged;
             _renderer.Control.TransparencyCellColor1Changed += MarkCbufferChanged;
             _renderer.Control.TransparencyCellColor2Changed += MarkCbufferChanged;
             _renderer.Control.TransparencyCellSizeChanged += MarkCbufferChanged;
+            _renderer.Control.PixelGridLineColorChanged += MarkCbufferChanged;
+            _renderer.Control.PixelGridMinimumZoomChanged += MarkCbufferChanged;
             SourceTask = sourceTask;
             SourceTask.ContinueWith(r => {
                 if (!r.IsCompletedSuccessfully)
@@ -594,11 +505,15 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         }
 
         public void Dispose() {
+            _renderer.Control.UseAlphaChannelChanged -= MarkCbufferChanged;
+            _renderer.Control.VisibleColorChannelChanged -= MarkCbufferChanged;
             _renderer.Control.RotationChanged -= MarkCbufferChanged;
             _renderer.Control.ViewportChanged -= MarkCbufferChanged;
             _renderer.Control.TransparencyCellColor1Changed -= MarkCbufferChanged;
             _renderer.Control.TransparencyCellColor2Changed -= MarkCbufferChanged;
             _renderer.Control.TransparencyCellSizeChanged -= MarkCbufferChanged;
+            _renderer.Control.PixelGridLineColorChanged -= MarkCbufferChanged;
+            _renderer.Control.PixelGridMinimumZoomChanged -= MarkCbufferChanged;
             _cancellationTokenSource.Cancel();
             _ = SafeDispose.EnumerableAsync(ref _pBitmaps);
             _ = SafeDispose.EnumerableAsync(ref _cbuffer);
@@ -679,6 +594,9 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             cbuffer = null!;
             if (_cbuffer is null || cell.CellIndex >= _cbuffer.Length || cell.CellIndex < 0)
                 return false;
+            var layout = SourceTask.Result.Layout;
+            var w = SourceTask.Result.WidthOfMipmap(cell.ImageIndex, cell.Mipmap);
+            var h = SourceTask.Result.HeightOfMipmap(cell.ImageIndex, cell.Mipmap);
             cbuffer = _cbuffer[cell.CellIndex] ??= new(_renderer.Device);
             if (cbuffer.DataVersion != _viewportVersion) {
                 cbuffer.UpdateData(_renderer.DeviceContext, _viewportVersion, new() {
@@ -686,16 +604,22 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                     Pan = _renderer.Control.Pan,
                     EffectiveSize = _renderer.Control.EffectiveSize,
                     ClientSize = _renderer.Control.ClientSize,
-                    CellRectScale = SourceTask.Result.Layout.ScaleOf(cell),
+                    CellRectScale = layout.ScaleOf(cell),
                     TransparencyCellColor1 = _renderer.Control.TransparencyCellSize > 0
                         ? _renderer.Control.TransparencyCellColor1.ToD3Dcolorvalue()
-                        : new(),
+                        : new(0, 0, 0, 1),
                     TransparencyCellColor2 = _renderer.Control.TransparencyCellSize > 0
                         ? _renderer.Control.TransparencyCellColor2.ToD3Dcolorvalue()
-                        : new(),
+                        : new(0, 0, 0, 1),
                     TransparencyCellSize = _renderer.Control.TransparencyCellSize > 0
                         ? _renderer.Control.TransparencyCellSize
                         : 1, // Prevent division by zero
+                    PixelGridColor = _renderer.Control.PixelGridMinimumZoom <= _renderer.Control.EffectiveZoom
+                        ? _renderer.Control.PixelGridLineColor.ToD3Dcolorvalue()
+                        : new(0, 0, 0, 0),
+                    CellSourceSize = new(w, h),
+                    ChannelFilter = _renderer.Control.ChannelFilter,
+                    UseAlphaChannel = _renderer.Control.UseAlphaChannel,
                 });
             }
 

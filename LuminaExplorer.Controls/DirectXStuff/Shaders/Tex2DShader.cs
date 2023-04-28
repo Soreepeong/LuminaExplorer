@@ -115,8 +115,10 @@ public sealed unsafe class Tex2DShader : IDisposable {
         public RectangleF CellRectScale;
         public D3Dcolorvalue TransparencyCellColor1;
         public D3Dcolorvalue TransparencyCellColor2;
-        public VisibleColorChannelTypes ChannelFilter; // todo
-        public bool DisableAlphaChannel; // todo
+        public D3Dcolorvalue PixelGridColor;
+        public SizeF CellSourceSize;
+        public VisibleColorChannelTypes ChannelFilter;
+        public bool UseAlphaChannel;
     }
 
     public enum VisibleColorChannelTypes {

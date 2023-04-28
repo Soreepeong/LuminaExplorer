@@ -23,8 +23,6 @@ public partial class MultiBitmapViewerControl {
     private string? _loadingFileNameWhenEmpty;
     private Color _foreColorWhenLoaded = Color.White;
     private Color _backColorWhenLoaded = Color.Black;
-    private Color _contentBorderColor = Color.DarkGray;
-    private int _contentBorderWidth = 1;
     private Color _transparencyCellColor1 = Color.White;
     private Color _transparencyCellColor2 = Color.LightGray;
     private int _transparencyCellSize = 8;
@@ -33,9 +31,8 @@ public partial class MultiBitmapViewerControl {
     private float _pixelGridMinimumZoom = 5f;
     private float _overlayBackgroundOpacity = 0.7f;
     private Size _sliceSpacing = new(16, 16);
-    private Tex2DShader.VisibleColorChannelTypes _visibleColorChannel;
-    private bool _useAlphaChannel;
-    private float _rotation;
+    private Tex2DShader.VisibleColorChannelTypes _channelFilter;
+    private bool _useAlphaChannel = true;
     private IReadOnlyList<Tuple<Size, float>> _fontSizeStepLevel = new[] {
         Tuple.Create(new Size(480, 360), 9f),
         Tuple.Create(new Size(720, 540), 15f),
@@ -44,6 +41,10 @@ public partial class MultiBitmapViewerControl {
         Tuple.Create(new Size(2560, 1440), 36f),
         Tuple.Create(new Size(3840, 2160), 60f),
     };
+
+    public event EventHandler? UseAlphaChannelChanged;
+
+    public event EventHandler? VisibleColorChannelChanged;
     
     public event EventHandler? RotationChanged;
     
@@ -55,47 +56,52 @@ public partial class MultiBitmapViewerControl {
 
     public event EventHandler? BackColorWhenLoadedChanged;
 
-    public event EventHandler? BorderColorChanged;
-
     public event EventHandler? TransparencyCellColor1Changed;
 
     public event EventHandler? TransparencyCellColor2Changed;
 
     public event EventHandler? TransparencyCellSizeChanged;
 
-
     public event EventHandler? PixelGridLineColorChanged;
 
-    // TODO: use this
+    public event EventHandler? PixelGridMinimumZoomChanged;
+
     public bool UseAlphaChannel {
         get => _useAlphaChannel;
         set {
-            if (_useAlphaChannel != value)
+            if (_useAlphaChannel == value)
                 return;
             _useAlphaChannel = value;
+            UseAlphaChannelChanged?.Invoke(this, EventArgs.Empty);
+            ClearDisplayInformationCache();
+            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
             Invalidate();
         }
     }
 
-    // TODO: use this
-    public Tex2DShader.VisibleColorChannelTypes VisibleColorChannel {
-        get => _visibleColorChannel;
+    public Tex2DShader.VisibleColorChannelTypes ChannelFilter {
+        get => _channelFilter;
         set {
-            if (_visibleColorChannel == value)
+            if (_channelFilter == value)
                 return;
-            _visibleColorChannel = value;
+            _channelFilter = value;
+            VisibleColorChannelChanged?.Invoke(this, EventArgs.Empty);
+            ClearDisplayInformationCache();
+            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
             Invalidate();
         }
     }
 
-    // TODO: apply this to adjust viewport size too
     public float Rotation {
-        get => _rotation;
+        get => Viewport.Rotation;
         set {
-            if (Equals(_rotation, value))
+            if (Equals(Viewport.Rotation, value))
                 return;
-            _rotation = value;
+            
+            Viewport.Rotation = value;
             RotationChanged?.Invoke(this, EventArgs.Empty);
+            ClearDisplayInformationCache();
+            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
             Invalidate();
         }
     }
@@ -107,6 +113,8 @@ public partial class MultiBitmapViewerControl {
                 return;
             _fontSizeStepLevel = value;
             FontSizeStepLevelChanged?.Invoke(this, EventArgs.Empty);
+            ClearDisplayInformationCache();
+            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
             Invalidate();
         }
     }
@@ -129,27 +137,6 @@ public partial class MultiBitmapViewerControl {
                 return;
             _backColorWhenLoaded = value;
             BackColorWhenLoadedChanged?.Invoke(this, EventArgs.Empty);
-            Invalidate();
-        }
-    }
-
-    public Color ContentBorderColor {
-        get => _contentBorderColor;
-        set {
-            if (_contentBorderColor == value)
-                return;
-            _contentBorderColor = value;
-            BorderColorChanged?.Invoke(this, EventArgs.Empty);
-            Invalidate();
-        }
-    }
-
-    public int ContentBorderWidth {
-        get => _contentBorderWidth;
-        set {
-            if (_contentBorderWidth == value)
-                return;
-            _contentBorderWidth = value;
             Invalidate();
         }
     }
@@ -235,6 +222,7 @@ public partial class MultiBitmapViewerControl {
             if (Equals(_pixelGridMinimumZoom, value))
                 return;
             _pixelGridMinimumZoom = value;
+            PixelGridMinimumZoomChanged?.Invoke(this, EventArgs.Empty);
             Invalidate();
         }
     }
@@ -304,52 +292,15 @@ public partial class MultiBitmapViewerControl {
 
     public SizeF EffectiveSize => Viewport.EffectiveSize;
 
+    public SizeF EffectiveRotatedSize => Viewport.EffectiveRotatedSize;
+
     public float EffectiveZoom => Viewport.EffectiveZoom;
 
     private void OnViewportChanged() {
         ViewportChanged?.Invoke(this, EventArgs.Empty);
+        ClearDisplayInformationCache();
         ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
         Invalidate();
-    }
-
-    internal bool ShouldDrawTransparencyGrid(
-        RectangleF cellRect,
-        RectangleF clipRect,
-        out int multiplier,
-        out int minX,
-        out int minY,
-        out int dx,
-        out int dy) {
-        multiplier = TransparencyCellSize;
-        dx = dy = minX = minY = 0;
-
-        // Is transparency grid disabled?
-        if (multiplier <= 0)
-            return false;
-
-        // Is image completely out of drawing region?
-        if (cellRect.Right <= clipRect.Left ||
-            cellRect.Bottom <= clipRect.Top ||
-            cellRect.Left >= clipRect.Right ||
-            cellRect.Top >= clipRect.Bottom)
-            return false;
-
-        minX = cellRect.Left < 0
-            ? (int) -MiscUtils.DivRem(cellRect.Left, -multiplier, out var fdx)
-            : (int) MiscUtils.DivRem(cellRect.Left, multiplier, out fdx);
-        minY = cellRect.Top < 0
-            ? (int) -MiscUtils.DivRem(cellRect.Top, -multiplier, out var fdy)
-            : (int) MiscUtils.DivRem(cellRect.Top, multiplier, out fdy);
-
-        if (minX * multiplier < clipRect.Left)
-            minX = (int) (clipRect.Left / multiplier);
-        if (minY * multiplier < clipRect.Top)
-            minY = (int) (clipRect.Top / multiplier);
-
-        dx = (int) fdx;
-        dy = (int) fdy;
-
-        return true;
     }
 
     private bool TryGetRenderers([MaybeNullWhen(false)] out ITexRenderer[] renderers, bool startLoading = false) {
@@ -393,7 +344,7 @@ public partial class MultiBitmapViewerControl {
             }
             
             MouseActivity.Enabled = true;
-            Viewport.Reset(task.Result.Layout.GridSize);
+            Viewport.Reset(task.Result.Layout.GridSize, 0f);
             Invalidate();
         });
     }

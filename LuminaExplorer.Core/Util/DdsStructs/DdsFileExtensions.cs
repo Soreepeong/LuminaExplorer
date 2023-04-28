@@ -22,7 +22,7 @@ public static class DdsFileExtensions {
             texBuf = tex.TextureBuffer.Filter(format: texFormat);
         }
 
-        var legacyHeader = new DdsHeaderLegacy() {
+        var legacyHeader = new DdsHeaderLegacy {
             Magic = DdsHeaderLegacy.MagicValue,
             Header = new() {
                 Size = Unsafe.SizeOf<DdsHeader>(),

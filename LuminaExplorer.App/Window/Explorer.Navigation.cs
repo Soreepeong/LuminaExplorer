@@ -104,7 +104,7 @@ public partial class Explorer {
                 var path = tree.GetFullPath(_navigationHistory[i]);
 
                 if (_explorer.btnsHistory.DropDownItems.Count <= counter) {
-                    _explorer.btnsHistory.DropDownItems.Add(new ToolStripButton() {
+                    _explorer.btnsHistory.DropDownItems.Add(new ToolStripButton {
                         AutoSize = false,
                         Alignment = ToolStripItemAlignment.Left,
                         TextAlign = ContentAlignment.MiddleLeft,
@@ -285,7 +285,7 @@ public partial class Explorer {
             foreach (var part in _vfs.NormalizePath(pathComponents).Split("/")) {
                 var folders = _vfs.GetFolders(await _vfs.AsFoldersResolved(folder));
                 var candidate = folders.FirstOrDefault(x =>
-                    string.Compare(x.Name, part, StringComparison.InvariantCultureIgnoreCase) == 0);
+                    string.Compare(x.Name, part + "/", StringComparison.InvariantCultureIgnoreCase) == 0);
                 if (candidate is null)
                     break;
                 folder = candidate;

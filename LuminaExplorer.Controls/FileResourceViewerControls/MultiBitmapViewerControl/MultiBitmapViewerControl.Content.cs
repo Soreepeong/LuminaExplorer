@@ -189,13 +189,12 @@ public partial class MultiBitmapViewerControl {
 
             SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
             SafeDispose.OneAsync(ref _bitmapSourceTaskCurrent);
-            Viewport.Reset(Size.Empty);
+            Viewport.Reset(Size.Empty, 0f);
         }
     }
 
     private void ClearDisplayInformationCache() {
         _autoDescriptionCached = null;
-        _autoDescriptionSourceZoom = float.NaN;
         if (TryGetRenderers(out var renderers))
             foreach (var r in renderers)
                 r.AutoDescriptionRectangle = null;

@@ -409,7 +409,6 @@ partial class Explorer {
         // 
         // texPreview
         // 
-        bitmapPreview.ContentBorderColor = Color.LightGray;
         bitmapPreview.Dock = DockStyle.Fill;
         bitmapPreview.Location = new Point(0, 0);
         bitmapPreview.Margin = new Padding(0);
