@@ -47,7 +47,7 @@ public class PapFile : FileResource {
         public uint Version;  // always 0x00020001?
         public short AnimationCount;
         public ushort ModelId;
-        public PapTargetModelType ModelType;
+        public SkeletonTargetModelClassification ModelClassification;
         public int InfoOffset;
         public int HavokDataOffset;
         public int TimelineOffset;
@@ -57,19 +57,11 @@ public class PapFile : FileResource {
             r.ReadInto(out Version);
             r.ReadInto(out AnimationCount);
             r.ReadInto(out ModelId);
-            r.ReadInto(out ModelType);
+            r.ReadInto(out ModelClassification);
             r.ReadInto(out InfoOffset);
             r.ReadInto(out HavokDataOffset);
             r.ReadInto(out TimelineOffset);
         }
-    }
-
-    public enum PapTargetModelType : short {
-        Invalid = -1,
-        Human = 0,
-        Monster = 1,
-        DemiHuman = 2,
-        Weapon = 3,
     }
 
     public class PapAnimation {

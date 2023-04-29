@@ -2,7 +2,7 @@
 using System.Runtime.CompilerServices;
 using Silk.NET.Direct3D11;
 
-namespace LuminaExplorer.Controls.DirectXStuff;
+namespace LuminaExplorer.Controls.DirectXStuff.Resources;
 
 public sealed unsafe class ConstantBufferResource<T> : D3D11Resource where T : unmanaged {
     private ID3D11Buffer* _buffer;

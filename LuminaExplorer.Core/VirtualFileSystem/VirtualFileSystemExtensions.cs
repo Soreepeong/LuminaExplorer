@@ -177,7 +177,7 @@ public static class VirtualFileSystemExtensions {
             ShpkHeader.MagicValue => typeof(ShpkFile),
             PapFile.PapHeader.MagicValue => typeof(PapFile),
             EidFile.EidHeader.MagicValue => typeof(EidFile),
-            SklbFile.SklbHeader.MagicValue => typeof(SklbFile),
+            SklbFile.MagicValue => typeof(SklbFile),
             _ => null,
         };
         

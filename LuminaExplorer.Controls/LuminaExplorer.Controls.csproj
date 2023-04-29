@@ -49,7 +49,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="DirectXStuff\Shaders\Tex2d.hlsl" />
+    <EmbeddedResource Include="DirectXStuff\Shaders\DirectXTexRendererShader.hlsl" />
   </ItemGroup>
 
 </Project>

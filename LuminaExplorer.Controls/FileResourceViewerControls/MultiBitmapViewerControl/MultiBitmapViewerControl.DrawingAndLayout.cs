@@ -31,7 +31,7 @@ public partial class MultiBitmapViewerControl {
     private float _pixelGridMinimumZoom = 5f;
     private float _overlayBackgroundOpacity = 0.7f;
     private Size _sliceSpacing = new(16, 16);
-    private Tex2DShader.VisibleColorChannelTypes _channelFilter;
+    private DirectXTexRendererShader.VisibleColorChannelTypes _channelFilter;
     private bool _useAlphaChannel = true;
     private IReadOnlyList<Tuple<Size, float>> _fontSizeStepLevel = new[] {
         Tuple.Create(new Size(480, 360), 9f),
@@ -79,7 +79,7 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
-    public Tex2DShader.VisibleColorChannelTypes ChannelFilter {
+    public DirectXTexRendererShader.VisibleColorChannelTypes ChannelFilter {
         get => _channelFilter;
         set {
             if (_channelFilter == value)
@@ -314,7 +314,7 @@ public partial class MultiBitmapViewerControl {
             if (_renderers?.IsFaulted is true)
                 _renderers = null;
             _renderers ??= RunOnUiThreadAfter(Task.Run(() => new ITexRenderer[] {
-                new D2DTexRenderer(this),
+                new DirectXTexRenderer(this),
                 // new GdipTexRenderer(this),
             }), r => {
                 Invalidate();

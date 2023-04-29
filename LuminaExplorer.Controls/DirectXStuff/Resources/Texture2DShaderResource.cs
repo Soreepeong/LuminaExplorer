@@ -8,7 +8,7 @@ using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;
 using WicNet;
 
-namespace LuminaExplorer.Controls.DirectXStuff;
+namespace LuminaExplorer.Controls.DirectXStuff.Resources;
 
 public sealed unsafe class Texture2DShaderResource : D3D11Resource {
     private ID3D11Texture2D* _pTexture2D;

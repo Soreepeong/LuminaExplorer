@@ -1,14 +1,64 @@
 ﻿using System;
 using System.Runtime.InteropServices;
+using System.Text;
 using Lumina.Data.Files;
 using LuminaExplorer.Core.Util.DdsStructs;
 using Silk.NET.Core.Native;
+using Silk.NET.Direct3D.Compilers;
 using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;
 
 namespace LuminaExplorer.Controls.DirectXStuff;
 
 public static unsafe class ResourceUtils {
+    public static byte[] CompileShaderFromAssemblyResource(
+        this Type typeSharingNamespace,
+        string target,
+        string entrypointName = "main",
+        string? fileName = null) {
+        byte[] buffer;
+        fileName ??= $"{typeSharingNamespace.Name}.hlsl";
+        using (var stream = typeSharingNamespace.Assembly
+                   .GetManifestResourceStream($"{typeSharingNamespace.Namespace}.{fileName}")!)
+            stream.ReadExactly(buffer = new byte[stream.Length]);
+
+        ID3D10Blob* pCode = null;
+        ID3D10Blob* pErrorMsgs = null;
+        try {
+            fixed (void* pTarget = Encoding.UTF8.GetBytes(target))
+            fixed (void* pEntrypointName = Encoding.UTF8.GetBytes(entrypointName))
+            fixed (byte* pBuffer = &buffer[0]) {
+                var hr = D3DCompiler.GetApi().Compile(
+                    pBuffer,
+                    (nuint) buffer.Length,
+                    (byte*) null,
+                    null,
+                    null,
+                    (byte*) pEntrypointName,
+                    (byte*) pTarget,
+                    1, // debug
+                    0,
+                    &pCode,
+                    &pErrorMsgs);
+
+                if (hr < 0) {
+                    if (pErrorMsgs is not null)
+                        throw new(Encoding.UTF8.GetString(pErrorMsgs->Buffer));
+                    Marshal.ThrowExceptionForHR(hr);
+                }
+            }
+
+            buffer = new byte[pCode->Buffer.Length];
+            pCode->Buffer.CopyTo(new(buffer));
+            return buffer;
+        } finally {
+            if (pCode is not null)
+                pCode->Release();
+            if (pErrorMsgs is not null)
+                pErrorMsgs->Release();
+        }
+    }
+
     public static T* CreateD3DTextureResource<T>(this DdsFile dds, ID3D11Device* pDevice)
         where T : unmanaged {
         T* pResource = null;

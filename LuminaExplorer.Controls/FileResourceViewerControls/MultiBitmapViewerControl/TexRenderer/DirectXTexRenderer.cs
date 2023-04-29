@@ -7,16 +7,15 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using LuminaExplorer.Controls.DirectXStuff;
+using LuminaExplorer.Controls.DirectXStuff.Resources;
 using LuminaExplorer.Controls.DirectXStuff.Shaders;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
-using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.Direct3D11;
 using Silk.NET.DirectWrite;
-using Silk.NET.DXGI;
 using Silk.NET.Maths;
 using Filter = Silk.NET.Direct3D11.Filter;
 using FontStyle = Silk.NET.DirectWrite.FontStyle;
@@ -24,7 +23,7 @@ using IDWriteTextFormat = Silk.NET.DirectWrite.IDWriteTextFormat;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.TexRenderer;
 
-internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerControl>, ITexRenderer {
+internal sealed unsafe class DirectXTexRenderer : D2DRenderer<MultiBitmapViewerControl>, ITexRenderer {
     private readonly SourceSet?[] _sourceSets = new SourceSet?[2];
 
     private ID2D1Brush* _pForeColorWhenLoadedBrush;
@@ -35,12 +34,12 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
     private RectangleF? _autoDescriptionRectangle;
 
-    private Tex2DShader? _tex2DShader;
+    private DirectXTexRendererShader? _tex2DShader;
 
     // ReSharper disable once IntroduceOptionalParameters.Global
-    public D2DTexRenderer(MultiBitmapViewerControl control) : this(control, null, null) { }
+    public DirectXTexRenderer(MultiBitmapViewerControl control) : this(control, null, null) { }
 
-    public D2DTexRenderer(MultiBitmapViewerControl control, ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext)
+    public DirectXTexRenderer(MultiBitmapViewerControl control, ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext)
         : base(control, pDevice, pDeviceContext) {
         Control.Resize += ControlOnResize;
         Control.FontSizeStepLevelChanged += ControlOnFontSizeStepLevelChanged;
@@ -291,30 +290,11 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
                                 out var res,
                                 out _))
                             continue;
+                        
                         if (!sourceSet.TryGetCbuffer(cell, out var cbuffer))
                             continue;
-
-                        fixed (ID3D11Buffer** ppBuffers = _tex2DShader.InputBuffers)
-                        fixed (uint* pStrides = Tex2DShader.InputStrides)
-                        fixed (uint* pOffsets = _tex2DShader.InputOffsets)
-                            DeviceContext->IASetVertexBuffers(0u,
-                                (uint) _tex2DShader.InputBuffers.Length,
-                                ppBuffers,
-                                pStrides,
-                                pOffsets);
-                        DeviceContext->IASetInputLayout(_tex2DShader!.InputLayout);
-                        DeviceContext->IASetIndexBuffer(_tex2DShader.IndexBuffer, Format.FormatR16Uint, 0);
-                        DeviceContext->IASetPrimitiveTopology(D3DPrimitiveTopology.D3D11PrimitiveTopologyTrianglelist);
-
-                        DeviceContext->VSSetShader(_tex2DShader.VertexShader, null, 0);
-                        DeviceContext->VSSetConstantBuffers(0, 1, cbuffer.Buffer);
-
-                        DeviceContext->PSSetShader(_tex2DShader.PixelShader, null, 0);
-                        DeviceContext->PSSetShaderResources(0, 1, res.ShaderResourceView);
-                        DeviceContext->PSSetSamplers(0, 1, zoom >= 2 ? PointSampler : LinearSampler);
-                        DeviceContext->PSSetConstantBuffers(0, 1, cbuffer.Buffer);
-
-                        DeviceContext->DrawIndexed((uint) _tex2DShader.NumIndices, 0, 0);
+                        
+                        _tex2DShader.Draw(DeviceContext, res.ShaderResourceView, zoom >= 2 ? PointSampler : LinearSampler, cbuffer);
                     }
                 }
             }
@@ -462,15 +442,15 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
         SafeRelease(ref _pBackColorWhenLoadedBrush);
 
     private sealed class SourceSet : IDisposable, IAsyncDisposable {
-        private readonly D2DTexRenderer _renderer;
+        private readonly DirectXTexRenderer _renderer;
         private readonly CancellationTokenSource _cancellationTokenSource = new();
         public readonly Task<IBitmapSource> SourceTask;
 
         private ResultDisposingTask<Texture2DShaderResource>?[ /* Image */][ /* Mip */][ /* Slice */]? _pBitmaps;
-        private ConstantBufferResource<Tex2DShader.Cbuffer>?[]? _cbuffer;
+        private ConstantBufferResource<DirectXTexRendererShader.Cbuffer>?[]? _cbuffer;
         private ulong _viewportVersion;
 
-        public SourceSet(D2DTexRenderer renderer, Task<IBitmapSource> sourceTask) {
+        public SourceSet(DirectXTexRenderer renderer, Task<IBitmapSource> sourceTask) {
             _renderer = renderer;
             _renderer.Control.UseAlphaChannelChanged += MarkCbufferChanged;
             _renderer.Control.VisibleColorChannelChanged += MarkCbufferChanged;
@@ -590,7 +570,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
 
         public bool TryGetCbuffer(
             GridLayoutCell cell,
-            [MaybeNullWhen(false)] out ConstantBufferResource<Tex2DShader.Cbuffer> cbuffer) {
+            [MaybeNullWhen(false)] out ConstantBufferResource<DirectXTexRendererShader.Cbuffer> cbuffer) {
             cbuffer = null!;
             if (_cbuffer is null || cell.CellIndex >= _cbuffer.Length || cell.CellIndex < 0)
                 return false;
@@ -633,7 +613,7 @@ internal sealed unsafe class D2DTexRenderer : BaseD2DRenderer<MultiBitmapViewerC
             var bitmapSource = SourceTask.Result;
             _ = SafeDispose.EnumerableAsync(ref _cbuffer);
 
-            _cbuffer = new ConstantBufferResource<Tex2DShader.Cbuffer>[layout.Count];
+            _cbuffer = new ConstantBufferResource<DirectXTexRendererShader.Cbuffer>[layout.Count];
 
             var allTasks = layout
                 .Select(cell => bitmapSource.GetWicBitmapSourceAsync(cell)

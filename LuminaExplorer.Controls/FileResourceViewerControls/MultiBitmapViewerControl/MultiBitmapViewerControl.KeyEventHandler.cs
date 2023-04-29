@@ -179,30 +179,30 @@ public partial class MultiBitmapViewerControl {
                     TransparencyCellSize = -TransparencyCellSize;
                     break;
                 case Keys.T: // Toggle alpha channel; independent from below
-                    if (ChannelFilter == Tex2DShader.VisibleColorChannelTypes.Alpha)
-                        ChannelFilter = Tex2DShader.VisibleColorChannelTypes.All;
+                    if (ChannelFilter == DirectXTexRendererShader.VisibleColorChannelTypes.Alpha)
+                        ChannelFilter = DirectXTexRendererShader.VisibleColorChannelTypes.All;
                     else
                         UseAlphaChannel = !UseAlphaChannel;
                     break;
                 case Keys.R: // Show red channel only, or back to showing all channels
-                    ChannelFilter = ChannelFilter == Tex2DShader.VisibleColorChannelTypes.Red
-                        ? Tex2DShader.VisibleColorChannelTypes.All
-                        : Tex2DShader.VisibleColorChannelTypes.Red;
+                    ChannelFilter = ChannelFilter == DirectXTexRendererShader.VisibleColorChannelTypes.Red
+                        ? DirectXTexRendererShader.VisibleColorChannelTypes.All
+                        : DirectXTexRendererShader.VisibleColorChannelTypes.Red;
                     break;
                 case Keys.G: // Show green channel only, or back to showing all channels
-                    ChannelFilter = ChannelFilter == Tex2DShader.VisibleColorChannelTypes.Green
-                        ? Tex2DShader.VisibleColorChannelTypes.All
-                        : Tex2DShader.VisibleColorChannelTypes.Green;
+                    ChannelFilter = ChannelFilter == DirectXTexRendererShader.VisibleColorChannelTypes.Green
+                        ? DirectXTexRendererShader.VisibleColorChannelTypes.All
+                        : DirectXTexRendererShader.VisibleColorChannelTypes.Green;
                     break;
                 case Keys.B: // Show blue channel only, or back to showing all channels
-                    ChannelFilter = ChannelFilter == Tex2DShader.VisibleColorChannelTypes.Blue
-                        ? Tex2DShader.VisibleColorChannelTypes.All
-                        : Tex2DShader.VisibleColorChannelTypes.Blue;
+                    ChannelFilter = ChannelFilter == DirectXTexRendererShader.VisibleColorChannelTypes.Blue
+                        ? DirectXTexRendererShader.VisibleColorChannelTypes.All
+                        : DirectXTexRendererShader.VisibleColorChannelTypes.Blue;
                     break;
                 case Keys.A: // Show alpha channel only, or back to showing all channels
-                    ChannelFilter = ChannelFilter == Tex2DShader.VisibleColorChannelTypes.Alpha
-                        ? Tex2DShader.VisibleColorChannelTypes.All
-                        : Tex2DShader.VisibleColorChannelTypes.Alpha;
+                    ChannelFilter = ChannelFilter == DirectXTexRendererShader.VisibleColorChannelTypes.Alpha
+                        ? DirectXTexRendererShader.VisibleColorChannelTypes.All
+                        : DirectXTexRendererShader.VisibleColorChannelTypes.Alpha;
                     break;
             }
         }

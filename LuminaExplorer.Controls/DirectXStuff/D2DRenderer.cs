@@ -14,7 +14,7 @@ using IDWriteTextLayout = Silk.NET.DirectWrite.IDWriteTextLayout;
 
 namespace LuminaExplorer.Controls.DirectXStuff;
 
-public abstract unsafe class BaseD2DRenderer<T> : DirectXBaseObject where T : Control {
+public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
     private readonly object _renderTargetObtainLock = new();
 
     private IDXGISwapChain* _pDxgiSwapChain;
@@ -28,7 +28,7 @@ public abstract unsafe class BaseD2DRenderer<T> : DirectXBaseObject where T : Co
 
     private nint _controlHandle;
 
-    protected BaseD2DRenderer(T control, ID3D11Device* pDevice = null, ID3D11DeviceContext* pDeviceContext = null) {
+    protected D2DRenderer(T control, ID3D11Device* pDevice = null, ID3D11DeviceContext* pDeviceContext = null) {
         Control = control;
         try {
             TryInitializeApis();

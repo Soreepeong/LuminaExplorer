@@ -40,19 +40,19 @@ public partial class MultiBitmapViewerControl {
             sb.Append(source.FileName);
             sb.Append($" ({Viewport.EffectiveZoom * 100:0.00}%");
             switch (ChannelFilter) {
-                case Tex2DShader.VisibleColorChannelTypes.Red:
+                case DirectXTexRendererShader.VisibleColorChannelTypes.Red:
                     sb.Append("; red");
-                    goto case Tex2DShader.VisibleColorChannelTypes.All;
-                case Tex2DShader.VisibleColorChannelTypes.Green:
+                    goto case DirectXTexRendererShader.VisibleColorChannelTypes.All;
+                case DirectXTexRendererShader.VisibleColorChannelTypes.Green:
                     sb.Append("; green");
-                    goto case Tex2DShader.VisibleColorChannelTypes.All;
-                case Tex2DShader.VisibleColorChannelTypes.Blue:
+                    goto case DirectXTexRendererShader.VisibleColorChannelTypes.All;
+                case DirectXTexRendererShader.VisibleColorChannelTypes.Blue:
                     sb.Append("; blue");
-                    goto case Tex2DShader.VisibleColorChannelTypes.All;
-                case Tex2DShader.VisibleColorChannelTypes.Alpha:
+                    goto case DirectXTexRendererShader.VisibleColorChannelTypes.All;
+                case DirectXTexRendererShader.VisibleColorChannelTypes.Alpha:
                     sb.Append("; alpha");
                     break;
-                case Tex2DShader.VisibleColorChannelTypes.All:
+                case DirectXTexRendererShader.VisibleColorChannelTypes.All:
                     if (!UseAlphaChannel)
                         sb.Append("; alpha channel hidden");
                     break;

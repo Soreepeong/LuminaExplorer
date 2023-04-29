@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Runtime.InteropServices;
 using Lumina.Data;
 using Lumina.Data.Attributes;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile;
@@ -11,35 +10,43 @@ namespace LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
 
 [FileExtension(".sklb")]
 public class SklbFile : FileResource {
-    public SklbHeader Header;
-    public int Unknown0;
-    public int HavokOffset;
+    public const uint MagicValue = 0x736B6C62;
+    public const uint AlphMagicValue = 0x616C7068;
+
+    public uint Magic;
+    public SklbFormat Version;
+    public ISklbVersionedHeader VersionedHeader = null!;
+    public uint AlphMagic;
+    public ushort[][] AlphData = null!;
     public byte[] HavokData = null!;
 
     public Node HavokRootNode = null!;
     public readonly Dictionary<Tuple<string, int>, Definition> HavokDefinitions = new();
 
     public override void LoadFile() {
-        Header = new(Reader);
-        if (Header.Magic != SklbHeader.MagicValue)
-            throw new InvalidDataException();
+        Reader.ReadInto(out Magic);
+        Reader.ReadInto(out Version);
 
-        switch (Header.Version) {
-            case SklbFormat.K0021:
-                var k0021 = new Sklb0021(Reader);
-                Unknown0 = k0021.Unknown0;
-                HavokOffset = k0021.HavokOffset;
-                break;
-            case SklbFormat.K0031:
-                var k0031 = new Sklb0031(Reader);
-                Unknown0 = (int) k0031.Unknown0;
-                HavokOffset = (int) k0031.HavokOffset;
-                break;
-            default:
-                throw new ArgumentOutOfRangeException();
+        VersionedHeader = Version switch {
+            SklbFormat.K0021 => Reader.ReadStructure<Sklb0021>(),
+            SklbFormat.K0031 => Reader.ReadStructure<Sklb0031>(),
+            _ => throw new NotSupportedException()
+        };
+
+        AlphMagic = Reader.WithSeek(VersionedHeader.AlphOffset).ReadUInt32();
+        if (AlphMagic == AlphMagicValue) {
+            var bart = Reader.ReadStructuresAsArray<ushort>((VersionedHeader.HavokOffset - VersionedHeader.AlphOffset - 4) / 2);
+            var tmp = new List<ushort[]>();
+            for (var i = 0; i < bart.Length;) {
+                var count = bart[i++];
+                tmp.Add(bart[i..(i + count)]);
+                i += count;
+            }
+
+            AlphData = tmp.ToArray();
         }
-
-        HavokData = Data[HavokOffset..];
+        
+        HavokData = Data[VersionedHeader.HavokOffset..];
 
         try {
             HavokRootNode = Parser.Parse(HavokData, HavokDefinitions);
@@ -53,36 +60,72 @@ public class SklbFile : FileResource {
         K0031 = 0x31333030u,
     }
 
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public struct SklbHeader {
-        public const uint MagicValue = 0x736B6C62;
-        
-        public uint Magic;
-        public SklbFormat Version;
-
-        public SklbHeader(BinaryReader r) {
-            r.ReadInto(out Magic);
-            r.ReadInto(out Version);
-        }
+    public interface ISklbVersionedHeader {
+        public int AlphOffset { get; }
+        public int HavokOffset { get; }
     }
 
-    public struct Sklb0021 {
-        public ushort Unknown0;
-        public ushort HavokOffset;
-
-        public Sklb0021(BinaryReader r) {
-            r.ReadInto(out Unknown0);
-            r.ReadInto(out HavokOffset);
-        }
+    public struct SklbVersionedHeaderCommon00210031 {
+        public ushort ModelId;
+        public SkeletonTargetModelClassification ModelClassification;
+        public uint Unknown1;
+        public uint Unknown2;
+        public uint Unknown3;
+        public uint Unknown4;
+        public uint Unknown5;
+        public uint Unknown6;
     }
 
-    public struct Sklb0031 {
-        public uint Unknown0;
-        public uint HavokOffset;
-
-        public Sklb0031(BinaryReader r) {
-            r.ReadInto(out Unknown0);
-            r.ReadInto(out HavokOffset);
+    public struct Sklb0021 : ISklbVersionedHeader {
+        public int AlphOffset {
+            get => AlphOffsetU16;
+            set => AlphOffsetU16 = checked((ushort) value);
         }
+
+        public int HavokOffset {
+            get => HavokOffsetU16;
+            set => HavokOffsetU16 = checked((ushort) value);
+        }
+
+        public SkeletonTargetModelClassification ModelClassification {
+            get => Common00210031.ModelClassification;
+            set => Common00210031.ModelClassification = value;
+        }
+
+        public int ModelId {
+            get => Common00210031.ModelId;
+            set => Common00210031.ModelId = checked((ushort) value);
+        }
+
+        public ushort AlphOffsetU16;
+        public ushort HavokOffsetU16;
+        public SklbVersionedHeaderCommon00210031 Common00210031;
+    }
+
+    public struct Sklb0031 : ISklbVersionedHeader {
+        public int AlphOffset {
+            get => (int) AlphOffsetU32;
+            set => AlphOffsetU32 = unchecked((uint) value);
+        }
+
+        public int HavokOffset {
+            get => (int) HavokOffsetU32;
+            set => HavokOffsetU32 = unchecked((uint) value);
+        }
+
+        public SkeletonTargetModelClassification ModelClassification {
+            get => Common00210031.ModelClassification;
+            set => Common00210031.ModelClassification = value;
+        }
+
+        public int ModelId {
+            get => Common00210031.ModelId;
+            set => Common00210031.ModelId = checked((ushort) value);
+        }
+
+        public uint AlphOffsetU32;
+        public uint HavokOffsetU32;
+        public uint Unknown1;
+        public SklbVersionedHeaderCommon00210031 Common00210031;
     }
 }

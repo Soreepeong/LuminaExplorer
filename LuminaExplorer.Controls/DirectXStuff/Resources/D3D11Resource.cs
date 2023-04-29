@@ -2,9 +2,9 @@
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
 
-namespace LuminaExplorer.Controls.DirectXStuff;
+namespace LuminaExplorer.Controls.DirectXStuff.Resources;
 
-public abstract unsafe class D3D11Resource : DirectXBaseObject {
+public abstract unsafe class D3D11Resource : DirectXObject {
     private ID3D11Resource* _pResource;
 
     public ID3D11Resource* Resource => _pResource;
