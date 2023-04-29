@@ -16,36 +16,26 @@ public class ShpkFile : FileResource {
         Header = Reader.ReadStructure<ShpkHeader>();
         if (Header.Magic != ShpkHeader.MagicValue)
             throw new InvalidDataException();
-        ShaderEntries =
-            Enumerable.Range(0, (int)(Header.NumVertexShaders + Header.NumPixelShaders))
-                .Select(i => new ShaderEntry(this, i < Header.NumVertexShaders))
-                .ToArray();
-        // Parameter? 40 bytes per entry
+        ShaderEntries = Enumerable
+            .Range(0, (int) (Header.NumVertexShaders + Header.NumPixelShaders))
+            .Select(_ => new ShaderEntry(this))
+            .ToArray();
     }
 
     public class ShaderEntry {
         private readonly ShpkFile _file;
         public ShaderHeader ShaderHeader;
         public InputTable[]? InputTables;
-        public VertexShaderInputTable[]? VertexShaderInputTables;
         public string[] InputNames;
 
-        public ShaderEntry(ShpkFile file, bool isVertexShader) {
+        public ShaderEntry(ShpkFile file) {
             _file = file;
             ShaderHeader = _file.Reader.ReadStructure<ShaderHeader>();
-            if (!isVertexShader || true) {
-                InputTables = _file.Reader.ReadStructuresAsArray<InputTable>(ShaderHeader.NumInputs);
-                InputNames = InputTables.Select(x => Encoding.UTF8.GetString(
-                    _file.Data,
-                    (int) (_file.Header.InputStringBlockOffset + x.InputStringOffset),
-                    (int) x.InputStringSize)).ToArray();
-            } else {
-                VertexShaderInputTables = _file.Reader.ReadStructuresAsArray<VertexShaderInputTable>(ShaderHeader.NumInputs);
-                InputNames = VertexShaderInputTables.Select(x => Encoding.UTF8.GetString(
-                    _file.Data,
-                    (int) (_file.Header.InputStringBlockOffset + x.InputStringOffset),
-                    (int) x.InputStringSize)).ToArray();
-            }
+            InputTables = _file.Reader.ReadStructuresAsArray<InputTable>(ShaderHeader.NumInputs);
+            InputNames = InputTables.Select(x => Encoding.UTF8.GetString(
+                _file.Data,
+                (int) (_file.Header.InputStringBlockOffset + x.InputStringOffset),
+                (int) x.InputStringSize)).ToArray();
         }
 
         public Span<byte> ByteCode => _file.DataSpan.Slice(

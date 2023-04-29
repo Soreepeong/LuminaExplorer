@@ -34,7 +34,6 @@ public class TabbedTextViewer : Form {
         var cts = _cancellationTokenSource = new();
         Text = shcdFile.FilePath.Path;
         _viewerControl.Clear();
-        var context = TaskScheduler.FromCurrentSynchronizationContext();
         Task.Run(
                 () => {
                     return DisassembleCsoData(shcdFile.ByteCode, out var d, out var e)
