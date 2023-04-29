@@ -17,6 +17,7 @@ public interface IVirtualFileSystem : IDisposable {
     public Task<IVirtualFolder> AsFoldersResolved(params string[] pathComponents);
     public Task<IVirtualFolder> AsFoldersResolved(IVirtualFolder folder);
     public Task<IVirtualFolder> AsFileNamesResolved(IVirtualFolder folder);
+    public bool AreFileNamesResolved(IVirtualFolder folder);
     public void SuggestFullPath(string name);
     
     public string NormalizePath(params string[] pathComponents);
@@ -27,6 +28,7 @@ public interface IVirtualFileSystem : IDisposable {
     public IVirtualFolder[] GetTreeFromRoot(IVirtualFolder folder);
     public bool HasNoSubfolder(IVirtualFolder folder);
     public int GetKnownFolderCount(IVirtualFolder folder);
+    public Task<IVirtualFile?> FindFile(IVirtualFolder root, params string[] pathComponents);
     public List<IVirtualFile> GetFiles(IVirtualFolder folder);
     public List<IVirtualFolder> GetFolders(IVirtualFolder folder);
 

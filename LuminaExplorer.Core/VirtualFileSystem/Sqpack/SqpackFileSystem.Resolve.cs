@@ -73,6 +73,8 @@ public sealed partial class SqpackFileSystem {
         }
     }
 
+    public bool AreFileNamesResolved(IVirtualFolder folder) => ((SqpackFolder) folder).FileNamesResolveAttempted;
+
     public Task<IVirtualFolder> AsFileNamesResolved(IVirtualFolder ifolder) {
         var folder = (SqpackFolder) ifolder;
         lock (_childFilesResolvers) {

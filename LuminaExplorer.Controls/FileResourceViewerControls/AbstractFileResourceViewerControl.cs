@@ -22,7 +22,7 @@ public abstract class AbstractFileResourceViewerControl : Control {
         base.Dispose(disposing);
     }
 
-    public override Size GetPreferredSize(Size proposedSize) => new(320, 240);
+    public override Size GetPreferredSize(Size proposedSize) => new(720, 480);
 
     public virtual Task<Size> GetPreferredSizeAsync(Size proposedSize) =>
         Task.FromResult(GetPreferredSize(proposedSize));

@@ -9,14 +9,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="DirectXStuff\Shaders\MdlRendererShader.hlsl" />
     <None Remove="Util\tex2d_ps.hlsl" />
     <None Remove="Util\tex2d_vs.hlsl" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Update="CoreVirtualObjectListView.cs">
-      <SubType>Component</SubType>
-    </Compile>
+    <Compile Update="CoreVirtualObjectListView.cs" />
     <Compile Update="FileResourceViewerControls\ImageViewerControl\MultiBitmapViewerControl.cs">
       <SubType>Component</SubType>
     </Compile>
@@ -50,6 +49,11 @@
 
   <ItemGroup>
     <EmbeddedResource Include="DirectXStuff\Shaders\DirectXTexRendererShader.hlsl" />
+    <EmbeddedResource Include="DirectXStuff\Shaders\MdlRendererShader.hlsl" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClCompile Include="DirectXStuff\Shaders\MdlRendererShader.hlsl" />
   </ItemGroup>
 
 </Project>

@@ -39,16 +39,16 @@ public sealed unsafe class DirectXTexRendererShader : DirectXObject {
     public DirectXTexRendererShader(ID3D11Device* pDevice) {
         try {
             var bytecode = GetType().CompileShaderFromAssemblyResource("ps_4_0", "main_ps");
-            fixed (ID3D11PixelShader** p2 = &_pPixelShader)
+            fixed (ID3D11PixelShader** ppPixelShader = &_pPixelShader)
             fixed (void* pBytecode = bytecode)
-                ThrowH(pDevice->CreatePixelShader(pBytecode, (nuint) bytecode.Length, null, p2));
+                ThrowH(pDevice->CreatePixelShader(pBytecode, (nuint) bytecode.Length, null, ppPixelShader));
 
             bytecode = GetType().CompileShaderFromAssemblyResource("vs_4_0", "main_vs");
             fixed (byte* pszPosition = "POSITION"u8.ToArray())
             fixed (byte* pszTexCoord = "TEXCOORD"u8.ToArray())
-            fixed (ID3D11VertexShader** p2 = &_pVertexShader)
+            fixed (ID3D11VertexShader** ppVertexShader = &_pVertexShader)
             fixed (void* pBytecode = bytecode) {
-                ThrowH(pDevice->CreateVertexShader(pBytecode, (nuint) bytecode.Length, null, p2));
+                ThrowH(pDevice->CreateVertexShader(pBytecode, (nuint) bytecode.Length, null, ppVertexShader));
 
                 var desc = new InputElementDesc[] {
                     new(pszPosition, 0, Format.FormatR32G32Float, 0, 0, InputClassification.PerVertexData, 0),

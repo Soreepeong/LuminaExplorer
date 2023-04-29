@@ -8,8 +8,10 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using BrightIdeasSoftware;
 using Lumina.Data;
+using Lumina.Data.Files;
 using LuminaExplorer.App.Utils;
 using LuminaExplorer.App.Window.FileViewers;
+using LuminaExplorer.Controls.FileResourceViewerControls.ModelViewerControl;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 using LuminaExplorer.Core.Util;
@@ -372,6 +374,16 @@ public partial class Explorer {
                         case ShpkFile f: {
                             var viewer = new TabbedTextViewer();
                             viewer.ShowShader(f, _explorer);
+                            break;
+                        }
+                        case MdlFile f: {
+                            var c = new ModelViewerControl {Dock = DockStyle.Fill};
+                            c.SetModel(_vfs, _vfs.RootFolder, f);
+                            var viewer = new Form {
+                                Controls = {c},
+                                Size = new(1024, 768)
+                            };
+                            viewer.Show();
                             break;
                         }
                     }

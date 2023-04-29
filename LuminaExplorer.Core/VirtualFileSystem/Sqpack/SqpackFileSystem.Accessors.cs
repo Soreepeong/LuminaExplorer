@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Lumina.Misc;
 
 namespace LuminaExplorer.Core.VirtualFileSystem.Sqpack;
@@ -77,6 +78,46 @@ public sealed partial class SqpackFileSystem {
             _treeStructureLock.ExitReadLock();
         }
     }
+
+    public Task<IVirtualFile?> FindFile(IVirtualFolder root, params string[] pathComponents) => Task.Run(async () => {
+        pathComponents = NormalizePath(pathComponents).Split('/');
+        var folder = root;
+
+        foreach (var pathComponent in pathComponents.SkipLast(1)) {
+            if (pathComponent == ".")
+                continue;
+            if (pathComponent == "..") {
+                folder = folder.Equals(root) ? root : (folder.Parent ?? root);
+                continue;
+            }
+
+            var folders = GetFolders(await AsFoldersResolved(folder));
+            folder = folders.FirstOrDefault(x =>
+                string.Compare(x.Name, pathComponent + "/", StringComparison.InvariantCultureIgnoreCase) == 0);
+            if (folder is null)
+                return null;
+        }
+
+        var files = GetFiles(await AsFoldersResolved(folder));
+
+        // Do we have a matching name hash?
+        var nameHash = Crc32.Get(pathComponents.Last().ToLowerInvariant());
+        using (var fileEnumerator = files.Where(x => x.NameHash == nameHash).GetEnumerator()) {
+            if (fileEnumerator.MoveNext()) {
+                var file = fileEnumerator.Current;
+
+                // Are there duplicates, and names must be checked?
+                if (!fileEnumerator.MoveNext())
+                    return file;
+            }
+        }
+
+        if (!AreFileNamesResolved(folder))
+            files = GetFiles(await AsFileNamesResolved(folder));
+
+        return files.FirstOrDefault(x =>
+            string.Compare(x.Name, pathComponents.Last(), StringComparison.InvariantCultureIgnoreCase) == 0);
+    });
 
     public List<SqpackFile> GetFiles(SqpackFolder folder) {
         if (!IsFoldersResolved(folder))

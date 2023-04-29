@@ -31,8 +31,7 @@ public sealed class PanZoomTracker : IDisposable {
         MouseActivity.ZoomWheel += MouseActivityTrackerOnZoomWheel;
         MouseActivity.LeftDoubleClick += MouseActivityOnLeftDoubleClick;
         MouseActivity.DragEnd += MouseActivityOnDragEnd;
-        Control.Resize += ControlOnResize;
-        Control.MarginChanged += ControlOnMarginChanged;
+        Control.ClientSizeChanged += ControlOnClientSizeChanged;
 
         ZoomExponentUnit = Math.Max(1, (1 << 8) * SystemInformation.MouseWheelScrollDelta);
         ZoomExponentRange = Math.Max(1, ZoomExponentUnit << 3);
@@ -46,8 +45,7 @@ public sealed class PanZoomTracker : IDisposable {
         MouseActivity.ZoomWheel -= MouseActivityTrackerOnZoomWheel;
         MouseActivity.LeftDoubleClick -= MouseActivityOnLeftDoubleClick;
         MouseActivity.DragEnd -= MouseActivityOnDragEnd;
-        Control.Resize -= ControlOnResize;
-        Control.MarginChanged -= ControlOnMarginChanged;
+        Control.ClientSizeChanged -= ControlOnClientSizeChanged;
     }
 
     public event Action? ViewportChanged;
@@ -418,12 +416,7 @@ public sealed class PanZoomTracker : IDisposable {
             MouseActivity.DragOrigin ?? DefaultOrigin);
     }
 
-    private void ControlOnResize(object? sender, EventArgs e) {
-        if (!EnforceLimits())
-            ViewportChanged?.Invoke();
-    }
-
-    private void ControlOnMarginChanged(object? sender, EventArgs e) {
+    private void ControlOnClientSizeChanged(object? sender, EventArgs e) {
         if (!EnforceLimits())
             ViewportChanged?.Invoke();
     }

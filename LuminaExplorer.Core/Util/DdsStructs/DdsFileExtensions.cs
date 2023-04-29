@@ -101,9 +101,9 @@ public static class DdsFileExtensions {
                 break;
             case TexFile.TextureFormat.B4G4R4A4:
                 legacyHeader.Header.PixelFormat.Flags = DdsPixelFormatFlags.Rgb | DdsPixelFormatFlags.AlphaPixels;
-                legacyHeader.Header.PixelFormat.BBitMask = 0xF;
-                legacyHeader.Header.PixelFormat.GBitMask = 0xF0;
-                legacyHeader.Header.PixelFormat.RBitMask = 0xF00;
+                legacyHeader.Header.PixelFormat.BBitMask = 0x000F;
+                legacyHeader.Header.PixelFormat.GBitMask = 0x00F0;
+                legacyHeader.Header.PixelFormat.RBitMask = 0x0F00;
                 legacyHeader.Header.PixelFormat.ABitMask = 0xF000;
                 break;
             case TexFile.TextureFormat.B5G5R5A1:
@@ -192,7 +192,7 @@ public static class DdsFileExtensions {
         return new(
             Path.ChangeExtension(Path.GetFileName(tex.FilePath.Path), ".dds"),
             legacyHeader,
-            dxt10Header,
+            UseDxt10Header ? dxt10Header : null,
             data);
     }
 }

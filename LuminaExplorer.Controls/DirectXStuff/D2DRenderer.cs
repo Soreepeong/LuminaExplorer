@@ -42,7 +42,7 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
     public void UiThreadInitialize() {
         try {
             _controlHandle = Control.Handle;
-            Control.Resize += ControlOnResize;
+            Control.ClientSizeChanged += ControlOnClientSizeChanged;
             Control.ForeColorChanged += ControlOnForeColorChanged;
             Control.BackColorChanged += ControlOnBackColorChanged;
             Control.FontChanged += ControlOnFontChanged;
@@ -53,7 +53,7 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
 
     protected override void Dispose(bool disposing) {
         if (disposing) {
-            Control.Resize -= ControlOnResize;
+            Control.ClientSizeChanged -= ControlOnClientSizeChanged;
             Control.ForeColorChanged -= ControlOnForeColorChanged;
             Control.BackColorChanged -= ControlOnBackColorChanged;
             Control.FontChanged -= ControlOnFontChanged;
@@ -176,7 +176,7 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
 
     private void ControlOnFontChanged(object? sender, EventArgs e) => SafeRelease(ref _pFontTextFormat);
 
-    private void ControlOnResize(object? sender, EventArgs e) {
+    private void ControlOnClientSizeChanged(object? sender, EventArgs e) {
         SafeRelease(ref _pRenderTarget2D);
         SafeRelease(ref _pRenderTarget3D);
         SafeRelease(ref _pDxgiSurface);
@@ -313,13 +313,13 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
 
         var pRenderTarget = RenderTarget2D;
 
-        var box = rectangle.ToSilkFloat();
+        var box = rectangle.ToSilkValue();
         fixed (char* pString = @string.AsSpan()) {
             for (var i = -borderWidth; i <= borderWidth; i++) {
                 for (var j = -borderWidth; j <= borderWidth; j++) {
                     if (i == 0 && j == 0)
                         continue;
-                    box = (rectangle with {X = rectangle.X + i, Y = rectangle.Y + j}).ToSilkFloat();
+                    box = (rectangle with {X = rectangle.X + i, Y = rectangle.Y + j}).ToSilkValue();
                     pRenderTarget->DrawTextA(
                         pString,
                         (uint) @string.Length,
@@ -331,7 +331,7 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
                 }
             }
 
-            box = rectangle.ToSilkFloat();
+            box = rectangle.ToSilkValue();
             pRenderTarget->DrawTextA(
                 pString,
                 (uint) @string.Length,

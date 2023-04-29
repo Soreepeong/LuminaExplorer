@@ -6,6 +6,15 @@ using System.Threading.Tasks;
 namespace LuminaExplorer.Core.Util;
 
 public static class SafeDispose {
+    public static void Lazy<T>(ref Lazy<T>? u) {
+        if (u?.IsValueCreated is true) {
+            var v = u.Value;
+            One(ref v);
+        }
+
+        u = null;
+    }
+    
     public static void One<T>(ref T? u) {
         if (u is IDisposable disposable)
             disposable.Dispose();
@@ -31,6 +40,17 @@ public static class SafeDispose {
             ud.Dispose();
     }
 
+    public static Task LazyAsync<T>(ref Lazy<T>? u) {
+        if (u?.IsValueCreated is true) {
+            var v = u.Value;
+            u = null;
+            return OneAsync(ref v);
+        }
+
+        u = null;
+        return Task.CompletedTask;
+    }
+    
     public static Task OneAsync<T>(ref T? u) {
         if (u is not IAsyncDisposable asyncDisposable) {
             One(ref u);

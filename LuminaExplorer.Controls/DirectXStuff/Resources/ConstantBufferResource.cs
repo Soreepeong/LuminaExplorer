@@ -5,10 +5,13 @@ using Silk.NET.Direct3D11;
 namespace LuminaExplorer.Controls.DirectXStuff.Resources;
 
 public sealed unsafe class ConstantBufferResource<T> : D3D11Resource where T : unmanaged {
+    private ID3D11DeviceContext* _pContext;
     private ID3D11Buffer* _buffer;
 
-    public ConstantBufferResource(ID3D11Device* pDevice) {
+    public ConstantBufferResource(ID3D11Device* pDevice, ID3D11DeviceContext* pContext) {
         try {
+            _pContext = pContext;
+            _pContext->AddRef();
             fixed (ID3D11Buffer** ppBuffer = &_buffer) {
                 var bufferDesc = new BufferDesc(
                     byteWidth: (uint) ((Unsafe.SizeOf<T>() + 15) / 16 * 16),
@@ -27,20 +30,20 @@ public sealed unsafe class ConstantBufferResource<T> : D3D11Resource where T : u
         }
     }
 
-    public ulong? DataVersion { get; private set; }
-
     public ID3D11Buffer* Buffer => _buffer;
 
-    public void UpdateData(ID3D11DeviceContext* pContext, ulong dataVersion, T data) {
-        if (dataVersion == DataVersion)
-            return;
-        
-        pContext->UpdateSubresource(Resource, 0, null, &data, 0, 0);
-        DataVersion = dataVersion;
+    public bool UpdateRequired { get; private set; }
+
+    public void MarkUpdateRequired() => UpdateRequired = true;
+
+    public void UpdateData(T data) {
+        _pContext->UpdateSubresource(Resource, 0, null, &data, 0, 0);
+        UpdateRequired = false;
     }
 
     protected override void Dispose(bool disposing) {
         SafeRelease(ref _buffer);
+        SafeRelease(ref _pContext);
         base.Dispose(disposing);
     }
 }

@@ -1,7 +1,8 @@
-Texture2D g_texture : register(t0);
 SamplerState g_sampler : register(s0);
 
-cbuffer Tex2DConstantbuffer : register(b0) {
+Texture2D g_texture : register(t0);
+
+cbuffer g_parameters : register(b0) {
 	float g_rotation;
 	float g_transparencyCellSize;
 	float2 g_pan;
@@ -16,18 +17,18 @@ cbuffer Tex2DConstantbuffer : register(b0) {
 	bool g_useAlphaChannel;
 }
 
-struct VertexShaderInput {
+struct VSInput {
 	float2 xy : POSITION0;
 	float2 uv : TEXCOORD;
 };
 
-struct PixelShaderInput {
-	float4 pos : SV_POSITION;
+struct VSOutput {
+	float4 position : SV_POSITION;
 	float2 uv : TEXCOORD;
 };
 
-PixelShaderInput main_vs(VertexShaderInput input) {
-	PixelShaderInput vertexShaderOutput;
+VSOutput main_vs(VSInput input) {
+	VSOutput output;
 
 	const float2 pos = g_cellRectScale.xy + lerp(0, g_cellRectScale.zw, input.xy) - 0.5;
 	const float2 scaled = pos * g_effectiveSize;
@@ -38,10 +39,10 @@ PixelShaderInput main_vs(VertexShaderInput input) {
 		scaled.x * s + scaled.y * c);
 	const float2 translated = rotated + g_pan;
 	const float2 rangeAdjusted = translated * 2 / g_clientSize;
-	vertexShaderOutput.pos = float4(rangeAdjusted.x, -rangeAdjusted.y, 0.5, 1);
-	vertexShaderOutput.uv = input.uv;
+	output.position = float4(rangeAdjusted.x, -rangeAdjusted.y, 0.5, 1);
+	output.uv = input.uv;
 
-	return vertexShaderOutput;
+	return output;
 }
 
 float4 blend_colors(float4 bg, float4 fg) {
@@ -49,7 +50,7 @@ float4 blend_colors(float4 bg, float4 fg) {
 	return float4(((1 - fg.w) * bg.w * bg.xyz + fg.w * fg.xyz) / newA, newA);
 }
 
-float4 main_ps(PixelShaderInput input) : SV_TARGET {
+float4 main_ps(VSOutput input) : SV_TARGET {
 	float4 fg = g_texture.Sample(g_sampler, input.uv);
 	float4 color;
 	

@@ -64,6 +64,8 @@ public class PhysicalFileSystem : IVirtualFileSystem {
         });
     }
 
+    public bool AreFileNamesResolved(IVirtualFolder folder) => true;
+
     public void SuggestFullPath(string name) { }
 
     public string NormalizePath(params string[] pathComponents) =>
@@ -86,6 +88,32 @@ public class PhysicalFileSystem : IVirtualFileSystem {
     public bool HasNoSubfolder(IVirtualFolder folder) => !(folder as BasePhysicalFolder)!.Folders.Value.Any();
 
     public int GetKnownFolderCount(IVirtualFolder folder) => (folder as BasePhysicalFolder)!.Folders.Value.Count;
+
+    public Task<IVirtualFile?> FindFile(IVirtualFolder root, params string[] pathComponents) {
+        return Task.Run(async () => {
+            var path = NormalizePath(pathComponents).Split('/');
+            var folder = root;
+
+            foreach (var pathComponent in path.SkipLast(1)) {
+                if (pathComponent == ".")
+                    continue;
+                if (pathComponent == "..") {
+                    folder = folder.Equals(root) ? root : (folder.Parent ?? root);
+                    continue;
+                }
+
+                var folders = GetFolders(await AsFoldersResolved(folder));
+                folder = folders.FirstOrDefault(x =>
+                    string.Compare(x.Name, pathComponent + "/", StringComparison.InvariantCultureIgnoreCase) == 0);
+                if (folder is null)
+                    return null;
+            }
+
+            return (IVirtualFile?) ((BasePhysicalFolder) folder).Files.Value
+                .FirstOrDefault(x =>
+                    string.Compare(x.Name, pathComponents.Last(), StringComparison.InvariantCultureIgnoreCase) == 0);
+        });
+    }
 
     public List<IVirtualFile> GetFiles(IVirtualFolder folder) =>
         ((BasePhysicalFolder) folder).Files.Value.Cast<IVirtualFile>().ToList();

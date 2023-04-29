@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Buffers;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
@@ -248,58 +247,54 @@ internal sealed unsafe class DirectXTexRenderer : D2DRenderer<MultiBitmapViewerC
             (bitmapSourceTask == SourcePrevious?.SourceTask && SourcePrevious.IsEveryVisibleSliceReadyForDrawing()));
 
     protected override void Draw3D(ID3D11RenderTargetView* pRenderTarget) {
-        var colors = ArrayPool<float>.Shared.Rent(4);
-        try {
-            Color color;
-            if (SourceCurrent?.IsAnyVisibleSliceReadyForDrawing() is true)
-                color = Control.BackColorWhenLoaded;
-            else if (SourceCurrent?.SourceTask.IsFaulted is true)
-                color = Control.BackColor;
-            else if (SourcePrevious?.IsAnyVisibleSliceReadyForDrawing() is true)
-                color = Control.BackColorWhenLoaded;
-            else
-                color = Control.BackColor;
+        Span<float> colors = stackalloc float[4];
+        Color color;
+        if (SourceCurrent?.IsAnyVisibleSliceReadyForDrawing() is true)
+            color = Control.BackColorWhenLoaded;
+        else if (SourceCurrent?.SourceTask.IsFaulted is true)
+            color = Control.BackColor;
+        else if (SourcePrevious?.IsAnyVisibleSliceReadyForDrawing() is true)
+            color = Control.BackColorWhenLoaded;
+        else
+            color = Control.BackColor;
 
-            colors[0] = 1f * color.R / 255;
-            colors[1] = 1f * color.G / 255;
-            colors[2] = 1f * color.B / 255;
-            colors[3] = 1f * color.A / 255;
+        colors[0] = 1f * color.R / 255;
+        colors[1] = 1f * color.G / 255;
+        colors[2] = 1f * color.B / 255;
+        colors[3] = 1f * color.A / 255;
 
-            DeviceContext->ClearRenderTargetView(pRenderTarget, ref colors[0]);
+        DeviceContext->ClearRenderTargetView(pRenderTarget, ref colors[0]);
 
-            if (_tex2DShader is null)
-                return;
+        if (_tex2DShader is null)
+            return;
 
-            var currentSourceFullyAvailable = SourceCurrent?.IsEveryVisibleSliceReadyForDrawing() is true;
-            var zoom = Control.EffectiveZoom;
-            foreach (var sourceSet in _sourceSets) {
-                if (sourceSet is null)
-                    continue;
-                if (currentSourceFullyAvailable && SourcePrevious == sourceSet) {
-                    Debug.Assert(SourcePrevious != SourceCurrent);
-                    continue;
-                }
+        var currentSourceFullyAvailable = SourceCurrent?.IsEveryVisibleSliceReadyForDrawing() is true;
+        var zoom = Control.EffectiveZoom;
+        foreach (var sourceSet in _sourceSets) {
+            if (sourceSet is null)
+                continue;
+            if (currentSourceFullyAvailable && SourcePrevious == sourceSet) {
+                Debug.Assert(SourcePrevious != SourceCurrent);
+                continue;
+            }
 
-                if (sourceSet.SourceTask.IsCompletedSuccessfully) {
-                    var source = sourceSet.SourceTask.Result;
+            if (sourceSet.SourceTask.IsCompletedSuccessfully) {
+                var source = sourceSet.SourceTask.Result;
 
-                    foreach (var cell in source.Layout) {
-                        if (!sourceSet.TryGetBitmapAt(
-                                cell,
-                                out _,
-                                out var res,
-                                out _))
-                            continue;
+                foreach (var cell in source.Layout) {
+                    if (!sourceSet.TryGetBitmapAt(
+                            cell,
+                            out _,
+                            out var res,
+                            out _))
+                        continue;
                         
-                        if (!sourceSet.TryGetCbuffer(cell, out var cbuffer))
-                            continue;
+                    if (!sourceSet.TryGetCbuffer(cell, out var cbuffer))
+                        continue;
                         
-                        _tex2DShader.Draw(DeviceContext, res.ShaderResourceView, zoom >= 2 ? PointSampler : LinearSampler, cbuffer);
-                    }
+                    _tex2DShader.Draw(DeviceContext, res.ShaderResourceView, zoom >= 2 ? PointSampler : LinearSampler, cbuffer);
                 }
             }
-        } finally {
-            ArrayPool<float>.Shared.Return(colors);
         }
     }
 
@@ -577,9 +572,9 @@ internal sealed unsafe class DirectXTexRenderer : D2DRenderer<MultiBitmapViewerC
             var layout = SourceTask.Result.Layout;
             var w = SourceTask.Result.WidthOfMipmap(cell.ImageIndex, cell.Mipmap);
             var h = SourceTask.Result.HeightOfMipmap(cell.ImageIndex, cell.Mipmap);
-            cbuffer = _cbuffer[cell.CellIndex] ??= new(_renderer.Device);
-            if (cbuffer.DataVersion != _viewportVersion) {
-                cbuffer.UpdateData(_renderer.DeviceContext, _viewportVersion, new() {
+            cbuffer = _cbuffer[cell.CellIndex] ??= new(_renderer.Device, _renderer.DeviceContext);
+            if (cbuffer.UpdateRequired) {
+                cbuffer.UpdateData(new() {
                     Rotation = _renderer.Control.Rotation,
                     Pan = _renderer.Control.Pan,
                     EffectiveSize = _renderer.Control.EffectiveSize,
