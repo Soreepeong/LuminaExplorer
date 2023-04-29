@@ -10,13 +10,15 @@ using Silk.NET.Direct3D11;
 using Silk.NET.DirectWrite;
 using Silk.NET.DXGI;
 using AlphaMode = Silk.NET.Direct2D.AlphaMode;
+using Blend = Silk.NET.Direct3D11.Blend;
+using FillMode = Silk.NET.Direct3D11.FillMode;
 using FontStyle = Silk.NET.DirectWrite.FontStyle;
 using IDWriteTextFormat = Silk.NET.DirectWrite.IDWriteTextFormat;
 using IDWriteTextLayout = Silk.NET.DirectWrite.IDWriteTextLayout;
 
 namespace LuminaExplorer.Controls.DirectXStuff;
 
-public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
+public abstract unsafe class DirectXRenderer<T> : DirectXObject where T : Control {
     private readonly object _renderTargetObtainLock = new();
 
     private IDXGISwapChain* _pDxgiSwapChain;
@@ -30,16 +32,48 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
 
     private readonly bool _useDepthStencil;
     private DepthStencilResource? _depthStencilResource;
-    
+    private ID3D11BlendState* _pBlendState;
+    private ID3D11RasterizerState* _pRasterizerState;
+
     private nint _controlHandle;
 
-    protected D2DRenderer(T control, bool useDepthStencil, ID3D11Device* pDevice = null, ID3D11DeviceContext* pDeviceContext = null) {
+    protected DirectXRenderer(T control, bool useDepthStencil, ID3D11Device* pDevice = null,
+        ID3D11DeviceContext* pDeviceContext = null) {
         Control = control;
         try {
             TryInitializeApis();
             Device = pDevice is not null ? pDevice : SharedD3D11Device;
             DeviceContext = pDeviceContext is not null ? pDeviceContext : SharedD3D11DeviceContext;
             _useDepthStencil = useDepthStencil;
+            
+            // Below: entirely copied from SaintCoinach
+            var blendDesc = new BlendDesc();
+            blendDesc.RenderTarget.Element0 = new(
+                blendEnable: false,
+                srcBlend: Blend.One,
+                destBlend: Blend.Zero,
+                blendOp: BlendOp.Add,
+                srcBlendAlpha: Blend.One,
+                destBlendAlpha: Blend.Zero,
+                blendOpAlpha: BlendOp.Add,
+                renderTargetWriteMask: (byte) ColorWriteEnable.All);
+            fixed (ID3D11BlendState** ppBlendState = &_pBlendState)
+                ThrowH(Device->CreateBlendState(&blendDesc, ppBlendState));
+
+            // Below: default values from SharpDX, except where noted
+            var rasterizerDesc = new RasterizerDesc(
+                fillMode: FillMode.Solid,
+                cullMode: CullMode.Front, // SaintCoinach
+                frontCounterClockwise: false,
+                depthBias: 0,
+                slopeScaledDepthBias: 0,
+                depthBiasClamp: 0,
+                depthClipEnable: true,
+                scissorEnable: false,
+                multisampleEnable: true, // SaintCoinach
+                antialiasedLineEnable: false);
+            fixed (ID3D11RasterizerState** ppRasterizerState = &_pRasterizerState)
+                ThrowH(Device->CreateRasterizerState(&rasterizerDesc, ppRasterizerState));
         } catch (Exception e) {
             LastException = e;
         }
@@ -72,6 +106,8 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
         SafeRelease(ref _pRenderTarget2D);
         SafeRelease(ref _pRenderTarget3D);
         SafeRelease(ref _pDxgiSurface);
+        SafeRelease(ref _pBlendState);
+        SafeRelease(ref _pRasterizerState);
 
         base.Dispose(disposing);
     }
@@ -112,10 +148,9 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
         get {
             if (_pRenderTarget2D is not null)
                 return _pRenderTarget2D;
-            
+
             SetUpRenderTargets();
             return _pRenderTarget2D;
-            
         }
     }
 
@@ -123,10 +158,9 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
         get {
             if (_pRenderTarget3D is not null)
                 return _pRenderTarget3D;
-            
+
             SetUpRenderTargets();
             return _pRenderTarget3D;
-            
         }
     }
 
@@ -135,9 +169,10 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
             if (_pRenderTarget2D is not null && _pRenderTarget3D is not null)
                 return;
 
-            SafeRelease(ref _pDxgiSurface);
             SafeRelease(ref _pRenderTarget2D);
             SafeRelease(ref _pRenderTarget3D);
+            SafeDispose.One(ref _depthStencilResource);
+            SafeRelease(ref _pDxgiSurface);
 
             try {
                 if (_pDxgiSwapChain is null) {
@@ -189,12 +224,13 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
                     using var qi = _pDxgiSurface->QueryInterface<ID3D11Resource>();
                     ThrowH(Device->CreateRenderTargetView(qi.Handle, null, ppRenderTarget));
                 }
+
             } catch (Exception e) {
                 throw LastException = e;
             }
         }
     }
-    
+
     private void ControlOnForeColorChanged(object? sender, EventArgs e) => SafeRelease(ref _pForeColorBrush);
 
     private void ControlOnBackColorChanged(object? sender, EventArgs e) => SafeRelease(ref _pBackColorBrush);
@@ -227,12 +263,14 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
                     MinDepth = 0f,
                     MaxDepth = 1f,
                 };
-                
+
                 var pDepthStencilView = DepthStencilView;
                 DeviceContext->RSSetViewports(1, viewport);
+                DeviceContext->RSSetState(_pRasterizerState);
                 DeviceContext->OMSetRenderTargets(1, RenderTarget3D, pDepthStencilView);
+                DeviceContext->OMSetBlendState(_pBlendState, null, uint.MaxValue);
                 if (pDepthStencilView is not null)
-                    DeviceContext->ClearDepthStencilView(pDepthStencilView, (uint)ClearFlag.Depth, 1f, 0);
+                    DeviceContext->ClearDepthStencilView(pDepthStencilView, (uint) ClearFlag.Depth, 1f, 0);
                 Draw3D(RenderTarget3D);
 
                 var pRenderTarget = RenderTarget2D;

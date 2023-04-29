@@ -22,7 +22,7 @@ using IDWriteTextFormat = Silk.NET.DirectWrite.IDWriteTextFormat;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.TexRenderer;
 
-internal sealed unsafe class DirectXTexRenderer : D2DRenderer<MultiBitmapViewerControl>, ITexRenderer {
+internal sealed unsafe class DirectXTexRenderer : DirectXRenderer<MultiBitmapViewerControl>, ITexRenderer {
     private readonly SourceSet?[] _sourceSets = new SourceSet?[2];
 
     private ID2D1Brush* _pForeColorWhenLoadedBrush;

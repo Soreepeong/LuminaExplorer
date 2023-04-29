@@ -131,7 +131,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
     }
 }
 
-public unsafe class MdlRenderer : D2DRenderer<ModelViewerControl> {
+public unsafe class MdlRenderer : DirectXRenderer<ModelViewerControl> {
     private MdlRendererShader _shader;
     private MdlRendererShader.State _shaderState;
     private Task<Model>? _modelTask;
