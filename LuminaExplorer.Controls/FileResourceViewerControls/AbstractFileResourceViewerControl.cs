@@ -2,9 +2,7 @@
 using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Lumina.Data;
 using LuminaExplorer.Controls.Util;
-using LuminaExplorer.Core.VirtualFileSystem;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls;
 
@@ -29,9 +27,7 @@ public abstract class AbstractFileResourceViewerControl : Control {
     public virtual Task<Size> GetPreferredSizeAsync(Size proposedSize) =>
         Task.FromResult(GetPreferredSize(proposedSize));
 
-    private Rectangle GetViewportRectangleSuggestionImpl(Control? opener, Size preferredSize) {
-        var screen = opener is null ? Screen.FromPoint(Cursor.Position) : Screen.FromControl(opener);
-
+    private Rectangle GetViewportRectangleSuggestionImpl(Screen screen, Control? opener, Size preferredSize) {
         var pos = opener?.PointToScreen(new(opener.Width / 2, opener.Height / 2)) ?? new(
             screen.WorkingArea.Left + screen.WorkingArea.Width / 2,
             screen.WorkingArea.Top + screen.WorkingArea.Height / 2);
@@ -59,11 +55,15 @@ public abstract class AbstractFileResourceViewerControl : Control {
         return new(pos, preferredSize);
     }
 
-    public Rectangle GetViewportRectangleSuggestion(Control? opener) =>
-        GetViewportRectangleSuggestionImpl(opener, GetPreferredSize(opener?.Size ?? Size.Empty));
+    public Rectangle GetViewportRectangleSuggestion(Control? opener) {
+        var screen = opener is null ? Screen.FromPoint(Cursor.Position) : Screen.FromControl(opener);
+        return GetViewportRectangleSuggestionImpl(screen, opener, GetPreferredSize(screen.WorkingArea.Size));
+    }
 
-    public async Task<Rectangle> GetViewportRectangleSuggestionAsync(Control? opener) =>
-        GetViewportRectangleSuggestionImpl(opener,await  GetPreferredSizeAsync(opener?.Size ?? Size.Empty));
+    public async Task<Rectangle> GetViewportRectangleSuggestionAsync(Control? opener) {
+        var screen = opener is null ? Screen.FromPoint(Cursor.Position) : Screen.FromControl(opener);
+        return GetViewportRectangleSuggestionImpl(screen, opener, await GetPreferredSizeAsync(screen.WorkingArea.Size));
+    }
 
     public Task RunOnUiThread(Action action, bool allowChildAttach = false) => Task.Factory.StartNew(
         action,

@@ -1,9 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Lumina.Data.Files;
+using Lumina.Data.Files.Excel;
+using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
+using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 using LuminaExplorer.Core.VirtualFileSystem.Matcher;
 using Microsoft.Extensions.ObjectPool;
 
@@ -160,4 +165,21 @@ public static class VirtualFileSystemExtensions {
         progress.Completed = true;
         progressCallback(progress);
     }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
+
+    internal static bool GetFileResourceTypeByMagic(uint magic, [MaybeNullWhen(false)] out Type type) {
+        type = magic switch {
+            0x42444553u => typeof(ScdFile),
+            0x46445845u => typeof(ExcelDataFile),
+            0x46485845u => typeof(ExcelHeaderFile),
+            0x544c5845u => typeof(ExcelListFile),
+            ShcdHeader.MagicValue => typeof(ShcdFile),
+            ShpkHeader.MagicValue => typeof(ShpkFile),
+            PapFile.PapHeader.MagicValue => typeof(PapFile),
+            EidFile.EidHeader.MagicValue => typeof(EidFile),
+            SklbFile.SklbHeader.MagicValue => typeof(SklbFile),
+            _ => null,
+        };
+        
+        return type is not null;
+    }
 }

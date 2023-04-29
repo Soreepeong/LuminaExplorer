@@ -21,7 +21,7 @@ public class SklbFile : FileResource {
 
     public override void LoadFile() {
         Header = new(Reader);
-        if (Header.Magic != 0x736B6C62)
+        if (Header.Magic != SklbHeader.MagicValue)
             throw new InvalidDataException();
 
         switch (Header.Version) {
@@ -55,6 +55,8 @@ public class SklbFile : FileResource {
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct SklbHeader {
+        public const uint MagicValue = 0x736B6C62;
+        
         public uint Magic;
         public SklbFormat Version;
 

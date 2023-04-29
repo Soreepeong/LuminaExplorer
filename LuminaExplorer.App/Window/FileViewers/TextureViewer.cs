@@ -20,8 +20,8 @@ using MessageBoxIcon = System.Windows.Forms.MessageBoxIcon;
 namespace LuminaExplorer.App.Window.FileViewers;
 
 public partial class TextureViewer : Form {
-    private const int MinimumWidth = 320;
-    private const int MinimumHeight = 240;
+    private const int MinimumDefaultWidth = 320;
+    private const int MinimumDefaultHeight = 240;
 
     private static readonly Guid TextureViewerSaveToGuid = Guid.Parse("5793cbbc-ae79-4d14-8825-9de07d583848");
 
@@ -428,14 +428,14 @@ public partial class TextureViewer : Form {
 
     public void ShowRelativeTo(Control opener) {
         var rc = TexViewer.GetViewportRectangleSuggestion(opener);
-        if (rc.Width < MinimumWidth) {
-            rc.X -= (MinimumWidth - rc.Width) / 2;
-            rc.Width = MinimumWidth;
+        if (rc.Width < MinimumDefaultWidth) {
+            rc.X -= (MinimumDefaultWidth - rc.Width) / 2;
+            rc.Width = MinimumDefaultWidth;
         }
 
-        if (rc.Height < MinimumHeight) {
-            rc.X -= (MinimumHeight - rc.Height) / 2;
-            rc.Height = MinimumHeight;
+        if (rc.Height < MinimumDefaultHeight) {
+            rc.X -= (MinimumDefaultHeight - rc.Height) / 2;
+            rc.Height = MinimumDefaultHeight;
         }
 
         SetBounds(rc.X, rc.Y, rc.Width, rc.Height);

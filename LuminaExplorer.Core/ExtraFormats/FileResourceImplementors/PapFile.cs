@@ -23,7 +23,7 @@ public class PapFile : FileResource {
 
     public override void LoadFile() {
         Header = new(Reader);
-        if (Header.Magic != 0x20706170)
+        if (Header.Magic != PapHeader.MagicValue)
             throw new InvalidDataException();
         
         Reader.BaseStream.Position = Header.InfoOffset;
@@ -41,6 +41,8 @@ public class PapFile : FileResource {
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct PapHeader {
+        public const uint MagicValue = 0x20706170;
+        
         public uint Magic;
         public uint Version;  // always 0x00020001?
         public short AnimationCount;

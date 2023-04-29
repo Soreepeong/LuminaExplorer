@@ -45,12 +45,6 @@ public interface IVirtualFileLookup : IDisposable {
             x => x);
 
         typeByExt[".atex"] = typeByExt[".tex"];
-
-        var typeByMagic = new Dictionary<uint, Type> {
-            {
-                0x42444553u, typeByExt[".scd"]
-            },
-        };
         var possibleTypes = new HashSet<Type>();
 
         switch (lookup.Type) {
@@ -66,7 +60,7 @@ public interface IVirtualFileLookup : IDisposable {
                 }
 
                 {
-                    if (typeByMagic.TryGetValue(magic, out var type))
+                    if (VirtualFileSystemExtensions.GetFileResourceTypeByMagic(magic, out var type))
                         possibleTypes.Add(type);
                 }
 

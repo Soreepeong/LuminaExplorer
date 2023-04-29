@@ -11,6 +11,7 @@ using Lumina.Data;
 using LuminaExplorer.App.Utils;
 using LuminaExplorer.App.Window.FileViewers;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
+using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.VirtualFileSystem;
 
@@ -360,6 +361,19 @@ public partial class Explorer {
                             _explorer._navigationHandler?.CurrentFolder,
                             source.ObjectList.Where(x => !x.IsFolder).Select(x => x.File));
                         viewer.ShowRelativeTo(_explorer);
+                    }
+
+                    switch (fr.Result) {
+                        case ShcdFile f: {
+                            var viewer = new TabbedTextViewer();
+                            viewer.ShowShader(f, _explorer);
+                            break;
+                        }
+                        case ShpkFile f: {
+                            var viewer = new TabbedTextViewer();
+                            viewer.ShowShader(f, _explorer);
+                            break;
+                        }
                     }
                 }, TaskScheduler.FromCurrentSynchronizationContext());
             }
