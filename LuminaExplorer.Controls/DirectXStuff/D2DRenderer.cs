@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
+using LuminaExplorer.Controls.DirectXStuff.Resources;
 using LuminaExplorer.Controls.Util;
+using LuminaExplorer.Core.Util;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct2D;
 using Silk.NET.Direct3D11;
@@ -26,14 +28,18 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
     private ID2D1Brush* _pBackColorBrush;
     private IDWriteTextFormat* _pFontTextFormat;
 
+    private readonly bool _useDepthStencil;
+    private DepthStencilResource? _depthStencilResource;
+    
     private nint _controlHandle;
 
-    protected D2DRenderer(T control, ID3D11Device* pDevice = null, ID3D11DeviceContext* pDeviceContext = null) {
+    protected D2DRenderer(T control, bool useDepthStencil, ID3D11Device* pDevice = null, ID3D11DeviceContext* pDeviceContext = null) {
         Control = control;
         try {
             TryInitializeApis();
             Device = pDevice is not null ? pDevice : SharedD3D11Device;
             DeviceContext = pDeviceContext is not null ? pDeviceContext : SharedD3D11DeviceContext;
+            _useDepthStencil = useDepthStencil;
         } catch (Exception e) {
             LastException = e;
         }
@@ -57,6 +63,7 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
             Control.ForeColorChanged -= ControlOnForeColorChanged;
             Control.BackColorChanged -= ControlOnBackColorChanged;
             Control.FontChanged -= ControlOnFontChanged;
+            SafeDispose.One(ref _depthStencilResource);
         }
 
         SafeRelease(ref _pForeColorBrush);
@@ -82,6 +89,24 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
     protected ID2D1Brush* BackColorBrush => GetOrCreateSolidColorBrush(ref _pBackColorBrush, Control.BackColor);
 
     protected IDWriteTextFormat* FontTextFormat => GetOrCreateFromFont(ref _pFontTextFormat, Control.Font);
+
+    protected ID3D11DepthStencilView* DepthStencilView {
+        get {
+            if (!_useDepthStencil)
+                return null;
+            if (_depthStencilResource is not null)
+                return _depthStencilResource.View;
+
+            try {
+                _ = RenderTarget2D;
+                _depthStencilResource = new(Device, (IUnknown*) _pDxgiSurface);
+                return _depthStencilResource.View;
+            } catch (Exception e) {
+                LastException = e;
+                throw;
+            }
+        }
+    }
 
     protected ID2D1RenderTarget* RenderTarget2D {
         get {
@@ -179,6 +204,7 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
     private void ControlOnClientSizeChanged(object? sender, EventArgs e) {
         SafeRelease(ref _pRenderTarget2D);
         SafeRelease(ref _pRenderTarget3D);
+        SafeDispose.One(ref _depthStencilResource);
         SafeRelease(ref _pDxgiSurface);
     }
 
@@ -201,8 +227,12 @@ public abstract unsafe class D2DRenderer<T> : DirectXObject where T : Control {
                     MinDepth = 0f,
                     MaxDepth = 1f,
                 };
+                
+                var pDepthStencilView = DepthStencilView;
                 DeviceContext->RSSetViewports(1, viewport);
-                DeviceContext->OMSetRenderTargets(1, RenderTarget3D, null);
+                DeviceContext->OMSetRenderTargets(1, RenderTarget3D, pDepthStencilView);
+                if (pDepthStencilView is not null)
+                    DeviceContext->ClearDepthStencilView(pDepthStencilView, (uint)ClearFlag.Depth, 1f, 0);
                 Draw3D(RenderTarget3D);
 
                 var pRenderTarget = RenderTarget2D;

@@ -38,8 +38,11 @@ internal sealed unsafe class DirectXTexRenderer : D2DRenderer<MultiBitmapViewerC
     // ReSharper disable once IntroduceOptionalParameters.Global
     public DirectXTexRenderer(MultiBitmapViewerControl control) : this(control, null, null) { }
 
-    public DirectXTexRenderer(MultiBitmapViewerControl control, ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext)
-        : base(control, pDevice, pDeviceContext) {
+    public DirectXTexRenderer(
+        MultiBitmapViewerControl control,
+        ID3D11Device* pDevice,
+        ID3D11DeviceContext* pDeviceContext)
+        : base(control, false, pDevice, pDeviceContext) {
         Control.Resize += ControlOnResize;
         Control.FontSizeStepLevelChanged += ControlOnFontSizeStepLevelChanged;
         Control.ForeColorWhenLoadedChanged += ControlOnForeColorWhenLoadedChanged;

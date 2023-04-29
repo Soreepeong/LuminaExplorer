@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
@@ -20,7 +21,7 @@ public partial class MultiBitmapViewerControl : AbstractFileResourceViewerContro
         MouseActivity.UseMiddleDrag = true;
         MouseActivity.UseRightDrag = true;
         MouseActivity.UseLeftDouble = true;
-        MouseActivity.UseWheelZoom = true;
+        MouseActivity.UseWheelZoom = MouseActivityTracker.WheelZoomMode.RequireControlKey;
         MouseActivity.UseDragZoom = true;
         MouseActivity.UseInfiniteLeftDrag = true;
         MouseActivity.UseInfiniteRightDrag = true;

@@ -11,6 +11,7 @@ using Lumina.Models.Models;
 using LuminaExplorer.Controls.DirectXStuff;
 using LuminaExplorer.Controls.DirectXStuff.Resources;
 using LuminaExplorer.Controls.DirectXStuff.Shaders;
+using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.Util.DdsStructs;
 using LuminaExplorer.Core.VirtualFileSystem;
@@ -27,7 +28,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
     private Task<Model>? _modelTask;
 
     public ModelViewerControl() {
-        base.BackColor = DefaultBackColor; 
+        base.BackColor = DefaultBackColor;
         _cameraManager = new(this);
         _cameraManager.ViewportChanged += OnCameraManagerOnViewportChanged;
     }
@@ -142,7 +143,7 @@ public unsafe class MdlRenderer : D2DRenderer<ModelViewerControl> {
         : this(control, null, null) { }
 
     public MdlRenderer(ModelViewerControl control, ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext)
-        : base(control, pDevice, pDeviceContext) {
+        : base(control, true, pDevice, pDeviceContext) {
         _shader = new(Device, DeviceContext);
         _cameraParameters = new(Device, DeviceContext);
         Control.ViewportChanged += ControlOnViewportChanged;
@@ -150,6 +151,7 @@ public unsafe class MdlRenderer : D2DRenderer<ModelViewerControl> {
 
     protected override void Dispose(bool disposing) {
         if (disposing) {
+            ClearModel();
             _ = SafeDispose.OneAsync(ref _shader!);
             _ = SafeDispose.OneAsync(ref _cameraParameters!);
         }
@@ -157,21 +159,32 @@ public unsafe class MdlRenderer : D2DRenderer<ModelViewerControl> {
         base.Dispose(disposing);
     }
 
+    public void ClearModel() {
+        _modelTask = null;
+        _modelObject?.ContinueWith(r => r.Result.TextureLoadStateChanged -= ResultOnTextureLoadStateChanged);
+        _modelObject = null;
+    }
+
     public void UpdateModel(Task<Model> newModelTask, Func<string, Task<DdsFile?>> ddsCallback) {
         if (_modelTask == newModelTask)
             return;
 
+        ClearModel();
         _modelTask = newModelTask;
 
         newModelTask.ContinueWith(r => {
             if (_modelTask != newModelTask)
                 return;
 
-            _modelObject = Task.Run(() => new MdlRendererShader.ModelObject(_shader, r.Result, ddsCallback));
-            _modelObject.ContinueWith(_ => {
+            _modelObject = Task.Run(() => {
+                var modelObject = new MdlRendererShader.ModelObject(_shader, r.Result, ddsCallback);
+                modelObject.TextureLoadStateChanged += ResultOnTextureLoadStateChanged;
+                return modelObject;
+            });
+            Control.RunOnUiThreadAfter(_modelObject, _ => {
                 if (_modelTask != newModelTask)
                     return;
-
+                
                 var bb = _modelTask.Result.File!.ModelBoundingBoxes;
                 var target = new Vector3(
                     (bb.Min[0] + bb.Max[0]) / 2f,
@@ -182,13 +195,18 @@ public unsafe class MdlRenderer : D2DRenderer<ModelViewerControl> {
                     target: target,
                     yawFromTarget: 0,
                     pitchFromTarget: 0,
-                    distance: 2 * (
+                    distance: 4 * (
                         target.X * occ.System.Forward.X +
                         target.Y + occ.System.Forward.Y +
                         target.Z + occ.System.Forward.Z));
+                _cameraParameters.MarkUpdateRequired();
                 Control.Invalidate();
             });
         });
+    }
+
+    private void ResultOnTextureLoadStateChanged() {
+        Control.Invalidate();
     }
 
     protected override void Draw3D(ID3D11RenderTargetView* pRenderTarget) {
@@ -210,7 +228,9 @@ public unsafe class MdlRenderer : D2DRenderer<ModelViewerControl> {
         // empty
     }
 
-    private void ControlOnViewportChanged() => _cameraParameters.MarkUpdateRequired();
+    private void ControlOnViewportChanged() {
+        _cameraParameters.MarkUpdateRequired();
+    }
 }
 
 public sealed class CameraManager : IDisposable {
@@ -222,7 +242,7 @@ public sealed class CameraManager : IDisposable {
         _control = control;
         _control.MouseActivity.UseLeftDrag = true;
         _control.MouseActivity.UseInfiniteLeftDrag = true;
-        _control.MouseActivity.UseWheelZoom = true;
+        _control.MouseActivity.UseWheelZoom = MouseActivityTracker.WheelZoomMode.Always;
         _control.MouseActivity.Pan += MouseActivityOnPan;
         _control.MouseActivity.ZoomWheel += MouseActivityOnZoomWheel;
         _control.ClientSizeChanged += ControlOnClientSizeChanged;
@@ -240,8 +260,8 @@ public sealed class CameraManager : IDisposable {
     public ICamera Camera => ObjectCentricCamera;
 
     private void MouseActivityOnPan(Point delta) {
-        ObjectCentricCamera.YawFromTarget += delta.X * MathF.PI / 180;
-        ObjectCentricCamera.PitchFromTarget += delta.Y * MathF.PI / 180;
+        ObjectCentricCamera.YawFromTarget += delta.X * MathF.PI / 720;
+        ObjectCentricCamera.PitchFromTarget += delta.Y * MathF.PI / 720;
         ViewportChanged?.Invoke();
     }
 
@@ -327,7 +347,7 @@ public class ObjectCentricCamera : ICamera {
     public Matrix4x4 View {
         get {
             if (_view is null) {
-                var rotation = Matrix4x4.CreateFromYawPitchRoll(-_yawFromTarget, -_pitchFromTarget, 0);
+                var rotation = Matrix4x4.CreateFromYawPitchRoll(-_yawFromTarget, _pitchFromTarget, 0);
                 _view = Matrix4x4.CreateLookAt(
                     cameraPosition: Vector3.Transform(System.Forward * _distance, rotation),
                     cameraTarget: _target,

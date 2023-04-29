@@ -121,7 +121,7 @@ public sealed class MouseActivityTracker : IDisposable {
         }
     }
 
-    public bool UseWheelZoom { get; set; }
+    public WheelZoomMode UseWheelZoom { get; set; }
 
     public bool UseDragZoom { get; set; }
 
@@ -364,7 +364,9 @@ public sealed class MouseActivityTracker : IDisposable {
         if (!_enabled)
             return;
 
-        if (UseWheelZoom && e.Delta != 0 && (IsDragging || Control.ModifierKeys.HasFlag(Keys.Control)))
+        if (e.Delta != 0 && (
+                UseWheelZoom is WheelZoomMode.Always ||
+                (UseWheelZoom is WheelZoomMode.RequireControlKey && Control.ModifierKeys.HasFlag(Keys.Control))))
             ZoomWheel?.Invoke(e.Location, e.Delta);
     }
 
@@ -501,6 +503,12 @@ public sealed class MouseActivityTracker : IDisposable {
         DragStart,
         Up,
         DragEnd,
+    }
+
+    public enum WheelZoomMode {
+        Disabled,
+        Always,
+        RequireControlKey,
     }
 
     public delegate void PanDelegate(Point delta);
