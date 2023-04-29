@@ -59,6 +59,7 @@ public abstract class BaseWrapper<T> : ICustomTypeDescriptor {
             string? categoryName,
             string? description)
             : base(name, new Attribute?[] {
+                new ReadOnlyAttribute(true),
                 categoryName is null ? null : new CategoryAttribute(categoryName),
                 description is null ? null : new DescriptionAttribute(description)
             }.Where(x => x != null).ToArray()!) {

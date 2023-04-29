@@ -172,6 +172,7 @@ public static class VirtualFileSystemExtensions {
             0x46445845u => typeof(ExcelDataFile),
             0x46485845u => typeof(ExcelHeaderFile),
             0x544c5845u => typeof(ExcelListFile),
+            FdtFile.FdtHeader.MagicValue => typeof(FdtFile),
             ShcdHeader.MagicValue => typeof(ShcdFile),
             ShpkHeader.MagicValue => typeof(ShpkFile),
             PapFile.PapHeader.MagicValue => typeof(PapFile),
