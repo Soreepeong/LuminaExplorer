@@ -9,7 +9,6 @@ using Lumina.Data.Files;
 using Lumina.Models.Materials;
 using Lumina.Models.Models;
 using LuminaExplorer.Controls.DirectXStuff;
-using LuminaExplorer.Controls.DirectXStuff.Resources;
 using LuminaExplorer.Controls.DirectXStuff.Shaders;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
@@ -134,7 +133,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
 
 public unsafe class MdlRenderer : D2DRenderer<ModelViewerControl> {
     private MdlRendererShader _shader;
-    private ConstantBufferResource<MdlRendererShader.CameraParameters> _cameraParameters;
+    private MdlRendererShader.State _shaderState;
     private Task<Model>? _modelTask;
     private Task<MdlRendererShader.ModelObject>? _modelObject;
 
@@ -145,7 +144,7 @@ public unsafe class MdlRenderer : D2DRenderer<ModelViewerControl> {
     public MdlRenderer(ModelViewerControl control, ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext)
         : base(control, true, pDevice, pDeviceContext) {
         _shader = new(Device, DeviceContext);
-        _cameraParameters = new(Device, DeviceContext);
+        _shaderState = new(Device, DeviceContext);
         Control.ViewportChanged += ControlOnViewportChanged;
     }
 
@@ -153,7 +152,7 @@ public unsafe class MdlRenderer : D2DRenderer<ModelViewerControl> {
         if (disposing) {
             ClearModel();
             _ = SafeDispose.OneAsync(ref _shader!);
-            _ = SafeDispose.OneAsync(ref _cameraParameters!);
+            _ = SafeDispose.OneAsync(ref _shaderState!);
         }
 
         base.Dispose(disposing);
@@ -195,11 +194,11 @@ public unsafe class MdlRenderer : D2DRenderer<ModelViewerControl> {
                     target: target,
                     yawFromTarget: 0,
                     pitchFromTarget: 0,
-                    distance: 4 * (
+                    distance: 64 * (
                         target.X * occ.System.Forward.X +
                         target.Y + occ.System.Forward.Y +
                         target.Z + occ.System.Forward.Z));
-                _cameraParameters.MarkUpdateRequired();
+                _shaderState.UpdateCamera(Matrix4x4.Identity, Control.Camera.View, Control.Camera.Projection);
                 Control.Invalidate();
             });
         });
@@ -218,10 +217,8 @@ public unsafe class MdlRenderer : D2DRenderer<ModelViewerControl> {
 
         DeviceContext->ClearRenderTargetView(pRenderTarget, ref colors[0]);
 
-        if (_cameraParameters.UpdateRequired)
-            _cameraParameters.UpdateData(new(Control.Camera.Projection, Control.Camera.View));
         if (_modelObject?.IsCompletedSuccessfully is true)
-            _shader.Draw(_cameraParameters, _modelObject.Result);
+            _shader.Draw(_shaderState, _modelObject.Result);
     }
 
     protected override void Draw2D(ID2D1RenderTarget* pRenderTarget) {
@@ -229,7 +226,7 @@ public unsafe class MdlRenderer : D2DRenderer<ModelViewerControl> {
     }
 
     private void ControlOnViewportChanged() {
-        _cameraParameters.MarkUpdateRequired();
+        _shaderState.UpdateCamera(Matrix4x4.Identity, Control.Camera.View, Control.Camera.Projection);
     }
 }
 
@@ -242,6 +239,8 @@ public sealed class CameraManager : IDisposable {
         _control = control;
         _control.MouseActivity.UseLeftDrag = true;
         _control.MouseActivity.UseInfiniteLeftDrag = true;
+        _control.MouseActivity.UseRightDrag = true;
+        _control.MouseActivity.UseInfiniteRightDrag = true;
         _control.MouseActivity.UseWheelZoom = MouseActivityTracker.WheelZoomMode.Always;
         _control.MouseActivity.Pan += MouseActivityOnPan;
         _control.MouseActivity.ZoomWheel += MouseActivityOnZoomWheel;
@@ -260,13 +259,18 @@ public sealed class CameraManager : IDisposable {
     public ICamera Camera => ObjectCentricCamera;
 
     private void MouseActivityOnPan(Point delta) {
-        ObjectCentricCamera.YawFromTarget += delta.X * MathF.PI / 720;
-        ObjectCentricCamera.PitchFromTarget += delta.Y * MathF.PI / 720;
+        if (_control.MouseActivity.FirstHeldButton == MouseButtons.Left) {
+            ObjectCentricCamera.YawFromTarget += delta.X * MathF.PI / 720;
+            var pitch = ObjectCentricCamera.PitchFromTarget + delta.Y * MathF.PI / 720;
+            ObjectCentricCamera.PitchFromTarget = Math.Clamp(pitch, MathF.PI / -2, MathF.PI / 2);
+        } else if (_control.MouseActivity.FirstHeldButton == MouseButtons.Right) {
+            ObjectCentricCamera.Target += _system3D.Up * delta.Y / 12f;
+        }
         ViewportChanged?.Invoke();
     }
 
     private void MouseActivityOnZoomWheel(Point origin, int delta) {
-        ObjectCentricCamera.Distance += delta / 12f;
+        ObjectCentricCamera.Distance = MathF.Max(ObjectCentricCamera.Distance + delta / 12f, 1f);
         ViewportChanged?.Invoke();
     }
 
@@ -315,8 +319,7 @@ public class ObjectCentricCamera : ICamera {
             target: target,
             yawFromTarget: 0,
             pitchFromTarget: 0,
-            distance: 2 * (target.X * system.Forward.X + target.Y + system.Forward.Y + target.Z + system.Forward.Z)
-        );
+            distance: 64);
     }
 
     public Vector3 Target {
@@ -348,8 +351,9 @@ public class ObjectCentricCamera : ICamera {
         get {
             if (_view is null) {
                 var rotation = Matrix4x4.CreateFromYawPitchRoll(-_yawFromTarget, _pitchFromTarget, 0);
+                var scaledDistance = MathF.Pow(2, _distance / 64f);
                 _view = Matrix4x4.CreateLookAt(
-                    cameraPosition: Vector3.Transform(System.Forward * _distance, rotation),
+                    cameraPosition: Vector3.Transform(System.Forward * scaledDistance, rotation),
                     cameraTarget: _target,
                     cameraUpVector: System.Up);
             }

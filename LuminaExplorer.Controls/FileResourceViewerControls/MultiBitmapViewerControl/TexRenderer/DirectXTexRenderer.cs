@@ -577,7 +577,7 @@ internal sealed unsafe class DirectXTexRenderer : D2DRenderer<MultiBitmapViewerC
             var h = SourceTask.Result.HeightOfMipmap(cell.ImageIndex, cell.Mipmap);
             cbuffer = _cbuffer[cell.CellIndex] ??= new(_renderer.Device, _renderer.DeviceContext);
             if (cbuffer.UpdateRequired) {
-                cbuffer.UpdateData(new() {
+                var data = new DirectXTexRendererShader.Cbuffer {
                     Rotation = _renderer.Control.Rotation,
                     Pan = _renderer.Control.Pan,
                     EffectiveSize = _renderer.Control.EffectiveSize,
@@ -598,7 +598,8 @@ internal sealed unsafe class DirectXTexRenderer : D2DRenderer<MultiBitmapViewerC
                     CellSourceSize = new(w, h),
                     ChannelFilter = _renderer.Control.ChannelFilter,
                     UseAlphaChannel = _renderer.Control.UseAlphaChannel,
-                });
+                };
+                cbuffer.UpdateData(data);
             }
 
             return true;

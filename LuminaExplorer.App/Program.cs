@@ -1,11 +1,14 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows.Forms;
+using Lumina.Data.Files;
 using LuminaExplorer.App.Window;
 using LuminaExplorer.App.Window.FileViewers;
+using LuminaExplorer.Controls.FileResourceViewerControls.ModelViewerControl;
 using LuminaExplorer.Core.SqPackPath;
 using LuminaExplorer.Core.VirtualFileSystem.Physical;
 using LuminaExplorer.Core.VirtualFileSystem.Sqpack;
@@ -55,7 +58,26 @@ static class Program {
         /*/
         using var fs = new PhysicalFileSystem();
         //*/
-        
+        {
+            var viewer = new Form {
+                Size = new(1024, 768)
+            };
+            Task.Delay(100).ContinueWith(_ => 
+            viewer.BeginInvoke(() => {
+                var t = Task.Run(async () => {
+                    var ft = fs.FindFile(fs.RootFolder, "chara/monster/m0361/obj/body/b0001/model/m0361b0001.mdl");
+                    await ft;
+                    using var l = fs.GetLookup(ft.Result);
+                    return await l.AsFileResource<MdlFile>();
+                });
+                t.Wait();
+                var c = new ModelViewerControl {Dock = DockStyle.Fill};
+                c.SetModel(fs, fs.RootFolder, t.Result);
+                viewer.Controls.Add(c);
+            }));
+            Application.Run(viewer);
+            return;
+        }
         using var mainExplorer = new Explorer(appConfig, fs);
         
         try {

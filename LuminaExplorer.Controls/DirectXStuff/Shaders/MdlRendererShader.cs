@@ -10,7 +10,6 @@ using Lumina.Data.Parsing;
 using Lumina.Models.Materials;
 using Lumina.Models.Models;
 using LuminaExplorer.Controls.DirectXStuff.Resources;
-using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.Util.DdsStructs;
 using Silk.NET.Core.Native;
@@ -115,22 +114,22 @@ public unsafe class MdlRendererShader : DirectXObject {
         base.Dispose(disposing);
     }
 
-    public void Draw(ConstantBufferResource<CameraParameters> cameraParameters, ModelObject modelObject) {
+    public void Draw(State state, ModelObject modelObject) {
         _pDeviceContext->IASetInputLayout(_pInputLayout);
         _pDeviceContext->IASetPrimitiveTopology(D3DPrimitiveTopology.D3D11PrimitiveTopologyTrianglelist);
 
         _pDeviceContext->VSSetShader(_pVertexShader, null, 0);
-        _pDeviceContext->VSSetConstantBuffers(0, 1, cameraParameters.Buffer);
-
         _pDeviceContext->PSSetShader(_pPixelShader, null, 0);
-        _pDeviceContext->PSSetConstantBuffers(0, 1, cameraParameters.Buffer);
         fixed (ID3D11SamplerState** ppSamplers = _pSamplers)
             _pDeviceContext->PSSetSamplers(0, (uint) _pSamplers.Length, ppSamplers);
 
-        for (var i = 0; modelObject.GetBuffers(i, out var pVertexBuffer, out var pIndexBuffer); i++) {
+        state.BindConstantBuffers();
+        
+        _pDeviceContext->IASetIndexBuffer(modelObject.IndexBuffer, Format.FormatR16Uint, 0);
+
+        for (var i = 0; modelObject.GetVertexBuffer(i, out var pVertexBuffer); i++) {
             var submeshes = modelObject.GetSubmeshes(i);
             _pDeviceContext->IASetVertexBuffers(0, 1, pVertexBuffer, (uint) Unsafe.SizeOf<VsInput>(), 0);
-            _pDeviceContext->IASetIndexBuffer(pIndexBuffer, Format.FormatR16Uint, 0);
 
             if (modelObject.TryGetMaterial(i, out var materialIndex, out var material)) {
                 for (var j = 0; j < material.Textures.Length; j++) {
@@ -209,21 +208,29 @@ public unsafe class MdlRendererShader : DirectXObject {
                 }
 
                 if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.Position))
-                    descriptors[i++] = new(pszPosition, 0, Format.FormatR32G32B32A32Float, 0, 0, InputClassification.PerVertexData);
+                    descriptors[i++] = new(pszPosition, 0, Format.FormatR32G32B32A32Float, 0, 0,
+                        InputClassification.PerVertexData);
                 if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.BlendWeights))
-                    descriptors[i++] = new(pszBlendWeight, 0, Format.FormatR32G32B32A32Float, 0, 0, InputClassification.PerVertexData);
+                    descriptors[i++] = new(pszBlendWeight, 0, Format.FormatR32G32B32A32Float, 0, 0,
+                        InputClassification.PerVertexData);
                 if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.BlendIndices))
-                    descriptors[i++] = new(pszBlendIndices, 0, Format.FormatR32G32B32A32Float, 0, 0, InputClassification.PerVertexData);
+                    descriptors[i++] = new(pszBlendIndices, 0, Format.FormatR32G32B32A32Float, 0, 0,
+                        InputClassification.PerVertexData);
                 if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.Normal))
-                    descriptors[i++] = new(pszNormal, 0, Format.FormatR32G32B32A32Float, 0, 0, InputClassification.PerVertexData);
+                    descriptors[i++] = new(pszNormal, 0, Format.FormatR32G32B32A32Float, 0, 0,
+                        InputClassification.PerVertexData);
                 if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.UV))
-                    descriptors[i++] = new(pszTexCoord, 0, Format.FormatR32G32B32A32Float, 0, 0, InputClassification.PerVertexData);
+                    descriptors[i++] = new(pszTexCoord, 0, Format.FormatR32G32B32A32Float, 0, 0,
+                        InputClassification.PerVertexData);
                 if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.Tangent2))
-                    descriptors[i++] = new(pszTangent, 1, Format.FormatR32G32B32A32Float, 0, 0, InputClassification.PerVertexData);
+                    descriptors[i++] = new(pszTangent, 1, Format.FormatR32G32B32A32Float, 0, 0,
+                        InputClassification.PerVertexData);
                 if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.Tangent1))
-                    descriptors[i++] = new(pszTangent, 0, Format.FormatR32G32B32A32Float, 0, 0, InputClassification.PerVertexData);
+                    descriptors[i++] = new(pszTangent, 0, Format.FormatR32G32B32A32Float, 0, 0,
+                        InputClassification.PerVertexData);
                 if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.Color))
-                    descriptors[i] = new(pszColor, 0, Format.FormatR32G32B32A32Float, 0, 0, InputClassification.PerVertexData);
+                    descriptors[i] = new(pszColor, 0, Format.FormatR32G32B32A32Float, 0, 0,
+                        InputClassification.PerVertexData);
 
                 ID3D11InputLayout* pInputLayout = null;
                 fixed (InputElementDesc* pDesc = descriptors)
@@ -244,9 +251,8 @@ public unsafe class MdlRendererShader : DirectXObject {
         private readonly Model _model;
         private readonly Mesh[] _meshes;
         private readonly ID3D11Buffer*[] _meshVertices;
-        private readonly ID3D11Buffer*[] _meshIndices;
         private readonly Task<Texture2DShaderResource?>[][] _textures;
-
+        private ID3D11Buffer* _pIndexBuffer;
         private Texture2DShaderResource _dummy;
 
         public ModelObject(MdlRendererShader shader, Model model, Func<string, Task<DdsFile?>> ddsCallback) {
@@ -291,7 +297,6 @@ public unsafe class MdlRendererShader : DirectXObject {
                     .Where(x => x.Vertices.Any())
                     .ToArray();
                 _meshVertices = new ID3D11Buffer*[_meshes.Length];
-                _meshIndices = new ID3D11Buffer*[_meshes.Length];
                 for (var i = 0; i < _meshes.Length; i++) {
                     var mesh = _meshes[i];
                     var vertices = new VsInput[mesh.Vertices.Length];
@@ -323,15 +328,16 @@ public unsafe class MdlRendererShader : DirectXObject {
                         ThrowH(shader._pDevice->CreateBuffer(&vertexBufferDesc, &vertexData, ppVertexBuffer));
                     }
 
-                    fixed (void* pIndices = mesh.Indices)
-                    fixed (ID3D11Buffer** ppIndexBuffer = &_meshIndices[i]) {
-                        var indexData = new SubresourceData(pIndices);
-                        var indexBufferDesc = new BufferDesc(
-                            (uint) Buffer.ByteLength(mesh.Indices),
-                            Usage.Default,
-                            (uint) BindFlag.IndexBuffer);
-                        ThrowH(shader._pDevice->CreateBuffer(&indexBufferDesc, &indexData, ppIndexBuffer));
-                    }
+                }
+
+                fixed (void* pIndexData = &model.File!.Data[model.File!.FileHeader.IndexOffset[(int) model.Lod]])
+                fixed (ID3D11Buffer** ppIndexBuffer = &_pIndexBuffer) {
+                    var indexData = new SubresourceData(pIndexData);
+                    var indexBufferDesc = new BufferDesc(
+                        model.File.FileHeader.IndexBufferSize[(int) model.Lod],
+                        Usage.Default,
+                        (uint) BindFlag.IndexBuffer);
+                    ThrowH(shader._pDevice->CreateBuffer(&indexBufferDesc, &indexData, ppIndexBuffer));
                 }
             } catch (Exception) {
                 DisposeInner(true);
@@ -341,13 +347,14 @@ public unsafe class MdlRendererShader : DirectXObject {
 
         public event Action? TextureLoadStateChanged;
 
-        public bool GetBuffers(int i, out ID3D11Buffer* pVertexBuffer, out ID3D11Buffer* pIndexBuffer) {
-            pVertexBuffer = pIndexBuffer = null;
+        public ID3D11Buffer* IndexBuffer => _pIndexBuffer; 
+
+        public bool GetVertexBuffer(int i, out ID3D11Buffer* pVertexBuffer) {
+            pVertexBuffer = null;
             if (i >= _meshVertices.Length || i < 0)
                 return false;
 
             pVertexBuffer = _meshVertices[i];
-            pIndexBuffer = _meshIndices[i];
             return true;
         }
 
@@ -358,7 +365,7 @@ public unsafe class MdlRendererShader : DirectXObject {
         }
 
         public ID3D11ShaderResourceView* GetTexture(int materialIndex, int modelIndex) =>
-            (_textures[materialIndex][modelIndex] is { IsCompletedSuccessfully: true, Result: { } r }
+            (_textures[materialIndex][modelIndex] is {IsCompletedSuccessfully: true, Result: { } r}
                 ? r
                 : _dummy).ShaderResourceView;
 
@@ -369,14 +376,17 @@ public unsafe class MdlRendererShader : DirectXObject {
         private void DisposeInner(bool disposing) {
             if (disposing) {
                 SafeDispose.One(ref _dummy!);
-                for (var i = 0; i < _textures.Length; i++)
-                    _ = SafeDispose.EnumerableAsync(ref _textures[i]);
+                for (var i = 0; i < _textures.Length; i++) {
+                    foreach (var t1 in _textures[i])
+                        t1.Dispose();
+
+                    _textures[i] = Array.Empty<Task<Texture2DShaderResource?>>();
+                }
             }
 
             for (var i = 0; i < _meshVertices.Length; i++)
                 SafeRelease(ref _meshVertices[i]);
-            for (var i = 0; i < _meshIndices.Length; i++)
-                SafeRelease(ref _meshIndices[i]);
+            SafeRelease(ref _pIndexBuffer);
         }
 
         protected override void Dispose(bool disposing) {
@@ -385,26 +395,169 @@ public unsafe class MdlRendererShader : DirectXObject {
         }
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    public struct CameraParameters {
-        public Matrix4X4<float> ViewProjection;
+    public sealed class State : IDisposable {
+        private ID3D11DeviceContext* _pContext;
+        private ConstantBufferResource<CameraParameters> _cameraBufferResource;
+        private ConstantBufferResource<LightParameters> _lightBufferResource;
+        private readonly ID3D11Buffer*[] _buffers = new ID3D11Buffer*[2];
 
-        public CameraParameters() { }
+        private CameraParameters _camera = new();
+        private LightParameters _light = new();
 
-        public CameraParameters(Matrix4x4 projection, Matrix4x4 view) {
-            ViewProjection = Matrix4x4.Multiply(view, projection).ToSilkValue();
+        public State(ID3D11Device* pDevice, ID3D11DeviceContext* pContext) {
+            try {
+                _pContext = pContext;
+                _pContext->AddRef();
+                _cameraBufferResource = new(pDevice, pContext);
+                _lightBufferResource = new(pDevice, pContext);
+
+                _buffers[0] = _cameraBufferResource.Buffer;
+                _buffers[1] = _lightBufferResource.Buffer;
+            } catch (Exception) {
+                Dispose();
+                throw;
+            }
+        }
+
+        ~State() {
+            Dispose(false);
+        }
+
+        private void Dispose(bool disposing) {
+            if (disposing) {
+                SafeDispose.One(ref _cameraBufferResource!);
+                SafeDispose.One(ref _lightBufferResource!);
+            }
+
+            SafeRelease(ref _pContext);
+        }
+
+        public void Dispose() {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        public CameraParameters Camera {
+            get => _camera;
+            set {
+                _camera = value;
+                _cameraBufferResource.MarkUpdateRequired();
+            }
+        }
+
+        public LightParameters Light {
+            get => _light;
+            set {
+                _light = value;
+                _lightBufferResource.MarkUpdateRequired();
+            }
+        }
+
+        public void BindConstantBuffers() {
+            fixed (ID3D11Buffer** ppBuffers = _buffers) {
+                if (_cameraBufferResource.UpdateRequired)
+                    _cameraBufferResource.UpdateData(_camera);
+                if (_lightBufferResource.UpdateRequired)
+                    _lightBufferResource.UpdateData(_light);
+
+                _pContext->VSSetConstantBuffers(0, (uint) _buffers.Length, ppBuffers);
+                _pContext->PSSetConstantBuffers(0, (uint) _buffers.Length, ppBuffers);
+            }
+        }
+
+        public void UpdateCamera(Matrix4x4 world, Matrix4x4 view, Matrix4x4 projection) {
+            _camera.View = view;
+            _camera.InverseView = Matrix4x4.Invert(_camera.View, out var inverse)
+                ? inverse
+                : Matrix4x4.Identity;
+            _camera.ViewProjection = Matrix4x4.Multiply(view, projection);
+            _camera.InverseViewProjection = Matrix4x4.Invert(_camera.ViewProjection, out inverse)
+                ? inverse
+                : Matrix4x4.Identity;
+            _camera.Projection = projection;
+            _camera.InverseProjection = Matrix4x4.Invert(_camera.Projection, out inverse)
+                ? inverse
+                : Matrix4x4.Identity;
+            // note: MainViewToProjection not assigned
+            _camera.EyePosition = _camera.InverseView.Translation;
+            // note: LookAtVector not assigned
+
+            _camera.WorldView = Matrix4x4.Multiply(world, _camera.View);
+
+            _camera.World = world;
+            _camera.WorldInverseTranspose = Matrix4x4.Invert(world, out var worldTranspose)
+                ? Matrix4x4.Transpose(worldTranspose)
+                : Matrix4x4.Identity;
+            _camera.WorldViewProjection = Matrix4x4.Multiply(world, _camera.ViewProjection);
+
+            _cameraBufferResource.MarkUpdateRequired();
         }
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Explicit)]
+    public struct CameraParameters {
+        [FieldOffset(0x000)] public Matrix4x4 View;
+        [FieldOffset(0x040)] public Matrix4x4 InverseView;
+        [FieldOffset(0x080)] public Matrix4x4 ViewProjection;
+        [FieldOffset(0x0C0)] public Matrix4x4 InverseViewProjection;
+        [FieldOffset(0x100)] public Matrix4x4 Projection;
+        [FieldOffset(0x140)] public Matrix4x4 InverseProjection;
+        [FieldOffset(0x180)] public Matrix4x4 MainViewToProjection;
+        [FieldOffset(0x1C0)] public Vector3 EyePosition;
+        [FieldOffset(0x1D0)] public Vector3 LookAtVector;
+
+        [FieldOffset(0x1E0)] public Matrix4x4 WorldView;
+
+        [FieldOffset(0x220)] public Matrix4x4 World;
+        [FieldOffset(0x260)] public Matrix4x4 WorldInverseTranspose;
+        [FieldOffset(0x2A0)] public Matrix4x4 WorldViewProjection;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct DirectionalLight {
+        [FieldOffset(0x00)] public Vector3 Direction;
+        [FieldOffset(0x10)] public Vector4 Diffuse;
+        [FieldOffset(0x20)] public Vector4 Specular;
+    };
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct LightParameters {
+        [FieldOffset(0x00)] public Vector4 DiffuseColor = Vector4.One;
+        [FieldOffset(0x10)] public Vector3 EmissiveColor = Vector3.Zero;
+        [FieldOffset(0x20)] public Vector3 AmbientColor = new(0.05333332f, 0.09882354f, 0.1819608f);
+        [FieldOffset(0x30)] public Vector3 SpecularColor = Vector3.One;
+        [FieldOffset(0x3C)] public float SpecularPower = 64;
+        [FieldOffset(0x40)] 
+        public DirectionalLight Light0 = new() {
+            Direction = new(0.5f, 0.25f, 1),
+            Diffuse = Vector4.One,
+            Specular = Vector4.One * 0.75f,
+        };
+        [FieldOffset(0x70)] 
+        public DirectionalLight Light1 = new() {
+            Direction = new(0, -1, 0),
+            Diffuse = Vector4.One,
+            Specular = Vector4.One * 0.75f,
+        };
+        [FieldOffset(0xA0)] 
+        public DirectionalLight Light2 = new() {
+            Direction = new(-0.5f, 0.25f, -1),
+            Diffuse = Vector4.One,
+            Specular = Vector4.One * 0.75f,
+        };
+
+        public LightParameters() { }
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
     public struct VsInput {
-        public Vector4 Position;
-        public Vector4 BlendWeight;
-        public Vector4D<byte> BlendIndices;
-        public Vector3 Normal;
-        public Vector4 Uv;
-        public Vector4 Tangent2;
-        public Vector4 Tangent1;
-        public Vector4 Color;
+        [FieldOffset(0x00)] public Vector4 Position;
+        [FieldOffset(0x10)] public Vector4 BlendWeight;
+        [FieldOffset(0x20)] public Vector4D<byte> BlendIndices;
+        [FieldOffset(0x24)] public Vector3 Normal;
+        [FieldOffset(0x30)] public Vector4 Uv;
+        [FieldOffset(0x40)] public Vector4 Tangent2;
+        [FieldOffset(0x50)] public Vector4 Tangent1;
+        [FieldOffset(0x60)] public Vector4 Color;
     }
 }

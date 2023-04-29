@@ -32,7 +32,7 @@ public sealed unsafe class ConstantBufferResource<T> : D3D11Resource where T : u
 
     public ID3D11Buffer* Buffer => _buffer;
 
-    public bool UpdateRequired { get; private set; }
+    public bool UpdateRequired { get; private set; } = true;
 
     public void MarkUpdateRequired() => UpdateRequired = true;
 
