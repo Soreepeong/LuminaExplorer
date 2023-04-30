@@ -10,6 +10,7 @@ using Lumina.Data.Files;
 using Lumina.Models.Materials;
 using Lumina.Models.Models;
 using LuminaExplorer.Controls.DirectXStuff.Resources;
+using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.Util.DdsStructs;
 using Silk.NET.Core.Native;
@@ -122,7 +123,18 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
         base.Dispose(disposing);
     }
 
-    public void Draw(State state, ModelObject modelObject) {
+    public void BindBufferByIndex(uint index, ID3D11Buffer* pBuffer) {
+        _pDeviceContext->VSSetConstantBuffers(index, 1u, &pBuffer);
+        _pDeviceContext->PSSetConstantBuffers(index, 1u, &pBuffer);
+    }
+
+    public void BindCamera(ID3D11Buffer* pBuffer) => BindBufferByIndex(0, pBuffer);
+    public void BindWorldViewMatrix(ID3D11Buffer* pBuffer) => BindBufferByIndex(1, pBuffer);
+    public void BindJointMatrixArray(ID3D11Buffer* pBuffer) => BindBufferByIndex(2, pBuffer);
+    public void BindMiscWorldCamera(ID3D11Buffer* pBuffer) => BindBufferByIndex(3, pBuffer);
+    public void BindLight(ID3D11Buffer* pBuffer) => BindBufferByIndex(4, pBuffer);
+
+    public void Draw(ModelObject modelObject) {
         _pDeviceContext->IASetInputLayout(_pInputLayout);
         _pDeviceContext->IASetPrimitiveTopology(D3DPrimitiveTopology.D3D11PrimitiveTopologyTrianglelist);
 
@@ -130,8 +142,6 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
         _pDeviceContext->PSSetShader(_pPixelShader, null, 0);
         fixed (ID3D11SamplerState** ppSamplers = _pSamplers)
             _pDeviceContext->PSSetSamplers(0, (uint) _pSamplers.Length, ppSamplers);
-
-        state.BindConstantBuffers();
 
         _pDeviceContext->IASetIndexBuffer(modelObject.IndexBuffer, Format.FormatR16Uint, 0);
 
@@ -387,161 +397,24 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
         public Submesh[] GetSubmeshes(int i) => _meshes[i].Submeshes;
     }
 
-    public sealed class State : IDisposable {
-        private ID3D11DeviceContext* _pDeviceContext;
-        private ConstantBufferResource<CameraParameters> _cameraBufferResource;
-        private ConstantBufferResource<LightParameters> _lightBufferResource;
-        private readonly ID3D11Buffer*[] _buffers = new ID3D11Buffer*[2];
+    [StructLayout(LayoutKind.Explicit, Size = 0xC0)]
+    public struct WorldMisc {
+        [FieldOffset(0x00)] public Matrix4X4<float> World;
+        [FieldOffset(0x40)] public Matrix4X4<float> WorldInverseTranspose;
+        [FieldOffset(0x80)] public Matrix4X4<float> WorldViewProjection;
 
-        private CameraParameters _camera = new();
-        private LightParameters _light = new();
-
-        public State(ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext) {
-            try {
-                _pDeviceContext = pDeviceContext;
-                _pDeviceContext->AddRef();
-                _cameraBufferResource = new(pDevice, pDeviceContext);
-                _lightBufferResource = new(pDevice, pDeviceContext);
-
-                _buffers[0] = _cameraBufferResource.Buffer;
-                _buffers[1] = _lightBufferResource.Buffer;
-            } catch (Exception) {
-                Dispose();
-                throw;
-            }
-        }
-
-        ~State() {
-            Dispose(false);
-        }
-
-        private void Dispose(bool disposing) {
-            if (disposing) {
-                SafeDispose.One(ref _cameraBufferResource!);
-                SafeDispose.One(ref _lightBufferResource!);
-            }
-
-            SafeRelease(ref _pDeviceContext);
-        }
-
-        public void Dispose() {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        public CameraParameters Camera {
-            get => _camera;
-            set {
-                _camera = value;
-                _cameraBufferResource.MarkUpdateRequired();
-            }
-        }
-
-        public LightParameters Light {
-            get => _light;
-            set {
-                _light = value;
-                _lightBufferResource.MarkUpdateRequired();
-            }
-        }
-
-        public void BindConstantBuffers() {
-            fixed (ID3D11Buffer** ppBuffers = _buffers) {
-                if (_cameraBufferResource.UpdateRequired)
-                    _cameraBufferResource.UpdateData(_camera);
-                if (_lightBufferResource.UpdateRequired)
-                    _lightBufferResource.UpdateData(_light);
-
-                _pDeviceContext->VSSetConstantBuffers(0, (uint) _buffers.Length, ppBuffers);
-                _pDeviceContext->PSSetConstantBuffers(0, (uint) _buffers.Length, ppBuffers);
-            }
-        }
-
-        public void UpdateCamera(Matrix4x4 world, Matrix4x4 view, Matrix4x4 projection) {
-            _camera.View = view;
-            _camera.InverseView = Matrix4x4.Invert(_camera.View, out var inverse)
-                ? inverse
-                : Matrix4x4.Identity;
-            _camera.ViewProjection = Matrix4x4.Multiply(view, projection);
-            _camera.InverseViewProjection = Matrix4x4.Invert(_camera.ViewProjection, out inverse)
-                ? inverse
-                : Matrix4x4.Identity;
-            _camera.Projection = projection;
-            _camera.InverseProjection = Matrix4x4.Invert(_camera.Projection, out inverse)
-                ? inverse
-                : Matrix4x4.Identity;
-            // note: MainViewToProjection not assigned
-            _camera.EyePosition = _camera.InverseView.Translation;
-            // note: LookAtVector not assigned
-
-            _camera.WorldView = Matrix4x4.Multiply(world, _camera.View);
-
-            _camera.World = world;
-            _camera.WorldInverseTranspose = Matrix4x4.Invert(world, out var worldTranspose)
-                ? Matrix4x4.Transpose(worldTranspose)
-                : Matrix4x4.Identity;
-            _camera.WorldViewProjection = Matrix4x4.Multiply(world, _camera.ViewProjection);
-
-            _cameraBufferResource.MarkUpdateRequired();
-        }
-    }
-
-    [StructLayout(LayoutKind.Explicit)]
-    public struct CameraParameters {
-        private const int JointMatrixArraySize = 64;
-
-        [FieldOffset(0x000)] public Matrix4x4 View = Matrix4x4.Identity;
-        [FieldOffset(0x040)] public Matrix4x4 InverseView = Matrix4x4.Identity;
-        [FieldOffset(0x080)] public Matrix4x4 ViewProjection = Matrix4x4.Identity;
-        [FieldOffset(0x0C0)] public Matrix4x4 InverseViewProjection = Matrix4x4.Identity;
-        [FieldOffset(0x100)] public Matrix4x4 Projection = Matrix4x4.Identity;
-        [FieldOffset(0x140)] public Matrix4x4 InverseProjection = Matrix4x4.Identity;
-        [FieldOffset(0x180)] public Matrix4x4 MainViewToProjection = Matrix4x4.Identity;
-        [FieldOffset(0x1C0)] public Vector3 EyePosition = Vector3.Zero;
-        [FieldOffset(0x1D0)] public Vector3 LookAtVector = Vector3.Zero;
-
-        [FieldOffset(0x1E0)] public Matrix4x4 WorldView = Matrix4x4.Identity;
-
-        [FieldOffset(0x220)] public Matrix4x4 World = Matrix4x4.Identity;
-        [FieldOffset(0x260)] public Matrix4x4 WorldInverseTranspose = Matrix4x4.Identity;
-        [FieldOffset(0x2A0)] public Matrix4x4 WorldViewProjection = Matrix4x4.Identity;
-
-        // this really doesn't belong here, but separating this means one more struct to care
-        [FieldOffset(0x2E0)] public fixed float JointMatrixArrayData[4 * 4 * JointMatrixArraySize];
-
-        public CameraParameters() {
-            for (var i = 0; i < JointMatrixArraySize; i++) {
-                // initialize them with identity matrices
-                JointMatrixArrayData[i * 16 + 0] = 1f;
-                JointMatrixArrayData[i * 16 + 5] = 1f;
-                JointMatrixArrayData[i * 16 + 10] = 1f;
-                JointMatrixArrayData[i * 16 + 15] = 1f;
-            }
-        }
-
-        public Matrix3X4<float> this[int i] {
-            get {
-                if (i is < 0 or >= JointMatrixArraySize)
-                    throw new ArgumentOutOfRangeException(nameof(i), i, null);
-                var value = new Matrix3X4<float>();
-                fixed (void* p = &JointMatrixArrayData[i * 16])
-                    Buffer.MemoryCopy(p, &value, 64, 64);
-                return value;
-            }
-            set {
-                if (i is < 0 or >= JointMatrixArraySize)
-                    throw new ArgumentOutOfRangeException(nameof(i), i, null);
-                fixed (void* p = &JointMatrixArrayData[i * 16])
-                    Buffer.MemoryCopy(&value, p, 64, 64);
-            }
-        }
-
-        public void UpdateJointMatrices(Matrix4x4[] matrices) {
-            if (matrices.Length != JointMatrixArraySize)
-                throw new ArgumentException("Invalid number of items", nameof(matrices));
-            fixed (void* p = matrices)
-            fixed (void* t = JointMatrixArrayData)
-                Buffer.MemoryCopy(p, t, 4 * 4 * JointMatrixArraySize, 4 * 4 * JointMatrixArraySize);
+        public static WorldMisc FromWorldViewProjection(
+            Matrix4x4 world,
+            Matrix4x4 view,
+            Matrix4x4 projection) {
+            var viewProjection = Matrix4x4.Multiply(view, projection);
+            return new() {
+                World = world.ToSilkValue(),
+                WorldInverseTranspose = (Matrix4x4.Invert(world, out var worldTranspose)
+                    ? Matrix4x4.Transpose(worldTranspose)
+                    : Matrix4x4.Identity).ToSilkValue(),
+                WorldViewProjection = Matrix4x4.Multiply(world, viewProjection).ToSilkValue(),
+            };
         }
     }
 
@@ -554,31 +427,37 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
 
     [StructLayout(LayoutKind.Explicit)]
     public struct LightParameters {
-        [FieldOffset(0x00)] public Vector4 DiffuseColor = Vector4.One;
-        [FieldOffset(0x10)] public Vector3 EmissiveColor = Vector3.Zero;
-        [FieldOffset(0x20)] public Vector3 AmbientColor = new(0.05333332f, 0.09882354f, 0.1819608f);
-        [FieldOffset(0x30)] public Vector3 SpecularColor = Vector3.One;
-        [FieldOffset(0x3C)] public float SpecularPower = 64;
+        [FieldOffset(0x00)] public Vector4 DiffuseColor;
+        [FieldOffset(0x10)] public Vector3 EmissiveColor;
+        [FieldOffset(0x20)] public Vector3 AmbientColor;
+        [FieldOffset(0x30)] public Vector3 SpecularColor;
+        [FieldOffset(0x3C)] public float SpecularPower;
+        [FieldOffset(0x40)] public DirectionalLight Light0;
+        [FieldOffset(0x70)] public DirectionalLight Light1;
+        [FieldOffset(0xA0)] public DirectionalLight Light2;
 
-        [FieldOffset(0x40)] public DirectionalLight Light0 = new() {
-            Direction = new(0.5f, 0.25f, 1),
-            Diffuse = Vector4.One,
-            Specular = Vector4.One * 0.75f,
+        public static LightParameters Default => new() {
+            DiffuseColor = Vector4.One,
+            EmissiveColor = Vector3.Zero,
+            AmbientColor = new(0.05333332f, 0.09882354f, 0.1819608f),
+            SpecularColor = Vector3.One,
+            SpecularPower = 64,
+            Light0 = new() {
+                Direction = new(0.5f, 0.25f, 1),
+                Diffuse = Vector4.One,
+                Specular = Vector4.One * 0.75f,
+            },
+            Light1 = new() {
+                Direction = new(0, -1, 0),
+                Diffuse = Vector4.One,
+                Specular = Vector4.One * 0.75f,
+            },
+            Light2 = new() {
+                Direction = new(-0.5f, 0.25f, -1),
+                Diffuse = Vector4.One,
+                Specular = Vector4.One * 0.75f,
+            },
         };
-
-        [FieldOffset(0x70)] public DirectionalLight Light1 = new() {
-            Direction = new(0, -1, 0),
-            Diffuse = Vector4.One,
-            Specular = Vector4.One * 0.75f,
-        };
-
-        [FieldOffset(0xA0)] public DirectionalLight Light2 = new() {
-            Direction = new(-0.5f, 0.25f, -1),
-            Diffuse = Vector4.One,
-            Specular = Vector4.One * 0.75f,
-        };
-
-        public LightParameters() { }
     }
 
     [StructLayout(LayoutKind.Explicit)]

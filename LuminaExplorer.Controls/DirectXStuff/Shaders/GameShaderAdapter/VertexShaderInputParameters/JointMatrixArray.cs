@@ -9,7 +9,7 @@ namespace LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter.VertexS
 [InputId(InputId.JointMatrixArray)]
 public unsafe struct JointMatrixArray {
     public const int ValueCount = 64;
-    
+
     [FieldOffset(0)] public fixed float Values[3 * 4 * ValueCount];
 
     public Matrix3X4<float> this[int i] {
@@ -26,6 +26,19 @@ public unsafe struct JointMatrixArray {
                 throw new ArgumentOutOfRangeException(nameof(i), i, null);
             fixed (void* p = &Values[i * 12])
                 Buffer.MemoryCopy(&value, p, 48, 48);
+        }
+    }
+
+    public static JointMatrixArray Default {
+        get {
+            JointMatrixArray res;
+            for (var i = 0; i < ValueCount; i++) {
+                res.Values[i * 12 + 0] = 1;
+                res.Values[i * 12 + 5] = 1;
+                res.Values[i * 12 + 10] = 1;
+            }
+
+            return res;
         }
     }
 }

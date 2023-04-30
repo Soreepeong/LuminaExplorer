@@ -2,7 +2,6 @@
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter.VertexShaderInputParameters;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 using Silk.NET.Direct3D11;
 using ShaderType = LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles.ShaderType;
@@ -91,7 +90,7 @@ public unsafe class GameShaderState : DirectXObject {
         fixed (ID3D11Buffer** ppBuffers = _buffers) {
             for (var i = 0; i < shaderEntry.InputTables.Length; i++) {
                 var table = shaderEntry.InputTables[i];
-                var bufferIndex = Array.IndexOf(_types, (InputId) table.InternalId);
+                var bufferIndex = Array.IndexOf(_types, table.InternalId);
                 if (bufferIndex == -1)
                     continue;
                 switch (shaderEntry.ShaderType) {

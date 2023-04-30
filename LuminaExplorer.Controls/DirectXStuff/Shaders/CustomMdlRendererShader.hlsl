@@ -45,48 +45,54 @@ Texture2D g_normalTexture : register(t1);
 Texture2D g_specularTexture : register(t2);
 Texture2D g_maskTexture : register(t3);
 
-// see: SaintCoinach.Graphics.Viewer/Effects/HLSL/Common.fxh
-cbuffer g_cameraParameters : register(b0) {
-	// System.Numerics.Matrix4x4 is in row major.
+// Note that System.Numerics.Matrix4x4 uses row major.
+// HLSL defaults to column major.
+// The game also uses row major.
 
-	// The game defines these as camera parameters.	
-	row_major float4x4 g_camera_view;  // 3x4 in game
-	row_major float4x4 g_camera_inverseView;  // 4x3 in game
-	row_major float4x4 g_camera_viewProjection;
-	row_major float4x4 g_camera_inverseViewProjection;
-	row_major float4x4 g_camera_projection;
-	row_major float4x4 g_camera_inverseProjection;
-	row_major float4x4 g_camera_mainViewToProjection;
-	float3 g_eyePosition;
-	float3 g_lookAtVector;
-
-	// The game defines one world parameter, seemingly in a different register.
-	// Not doing that here (for no special reason.)
-	row_major float4x4 g_worldView;  // 3x4 in game
-
-	// It's here, just because SaintCoinach.Graphics defines these.
-	row_major float4x4 g_world;
-	row_major float4x4 g_worldInverseTranspose;
-	row_major float4x4 g_worldViewProjection;
-
-	// For skinning.
-	row_major float4x4 g_JointMatrixArray[64];
+// InputId = 0xF0BAD919u
+cbuffer g_CameraParameters : register(b0) {
+	row_major float3x4 m_View;
+	row_major float3x4 m_InverseView;
+	row_major float4x4 m_ViewProjection;
+	row_major float4x4 m_InverseViewProjection;
+	row_major float4x4 m_Projection;
+	row_major float4x4 m_InverseProjection;
+	row_major float4x4 m_MainViewToProjection;
+	float3 m_EyePosition;
+	float3 m_LookAtVector;
 }
 
-cbuffer g_lightParameters : register(b1) {
-	float4 g_light_diffuseColor : packoffset(c0);
-	float3 g_light_emissiveColor : packoffset(c1);
-	float3 g_light_ambientColor : packoffset(c2);
-	float3 g_light_specularColor : packoffset(c3);
-	float g_light_specularPower : packoffset(c3.w);
+// InputId = 0x76BB3DC0u
+cbuffer m_WorldViewMatrix : register(b1) {
+	row_major float3x4 m_WorldView;
+}
 
-	DirectionalLight g_light0 : packoffset(c4);
-	DirectionalLight g_light1 : packoffset(c7);
-	DirectionalLight g_light2 : packoffset(c10);
+// InputId = 0x88AA546Au
+cbuffer m_JointMatrixArray : register(b2) {
+	row_major float3x4 m_JointMatrixArray[64];
+}
+
+// Following two are used by shaders from SaintCoinach.
+cbuffer g_MiscWorldCameraParameters : register(b3) {
+	row_major float4x4 m_World;
+	row_major float4x4 m_WorldInverseTranspose;
+	row_major float4x4 m_WorldViewProjection;
+}
+
+cbuffer g_LightParameters : register(b4) {
+	float4 m_DiffuseColor : packoffset(c0);
+	float3 m_EmissiveColor : packoffset(c1);
+	float3 m_AmbientColor : packoffset(c2);
+	float3 m_SpecularColor : packoffset(c3);
+	float m_SpecularPower : packoffset(c3.w);
+
+	DirectionalLight g_Light0 : packoffset(c4);
+	DirectionalLight g_Light1 : packoffset(c7);
+	DirectionalLight g_Light2 : packoffset(c10);
 }
 
 // see: SaintCoinach.Graphics.Viewer/Effects/HLSL/Lightning.fxh
-Lighting getLight(float3 pos3D, float3 eyeVector, float3 worldNormal) {
+Lighting GetLight(float3 pos3D, float3 eyeVector, float3 worldNormal) {
 	float3x3 lightDirections = 0;
 	float3x3 lightDiffuse = 0;
 	float3x3 lightSpecular = 0;
@@ -96,17 +102,17 @@ Lighting getLight(float3 pos3D, float3 eyeVector, float3 worldNormal) {
 	[unroll]
 	for (int i = 0; i < 3; i++) {
 		lightDirections[i] = float3x3(
-			g_light0.direction,
-			g_light1.direction,
-			g_light2.direction)[i];
+			g_Light0.direction,
+			g_Light1.direction,
+			g_Light2.direction)[i];
 		lightDiffuse[i] = float3x3(
-			g_light0.diffuse.xyz,
-			g_light1.diffuse.xyz,
-			g_light2.diffuse.xyz)[i];
+			g_Light0.diffuse.xyz,
+			g_Light1.diffuse.xyz,
+			g_Light2.diffuse.xyz)[i];
 		lightSpecular[i] = float3x3(
-			g_light0.specular.xyz,
-			g_light1.specular.xyz,
-			g_light2.specular.xyz)[i];
+			g_Light0.specular.xyz,
+			g_Light1.specular.xyz,
+			g_Light2.specular.xyz)[i];
         
 		halfVectors[i] = normalize(eyeVector - lightDirections[i]);
 	}
@@ -117,17 +123,17 @@ Lighting getLight(float3 pos3D, float3 eyeVector, float3 worldNormal) {
 	const float3 zeroL = step(0, dotL);
 
 	const float3 diffuse  = zeroL * dotL;
-	const float3 specular = pow(max(dotH, 0) * zeroL, g_light_specularPower);
+	const float3 specular = pow(max(dotH, 0) * zeroL, m_SpecularPower);
 
 	Lighting result;
     
-	result.diffuse  = mul(diffuse,  lightDiffuse)  * g_light_diffuseColor.rgb + g_light_emissiveColor;
-	result.specular = mul(specular, lightSpecular) * g_light_specularColor;
+	result.diffuse  = mul(diffuse,  lightDiffuse)  * m_DiffuseColor.rgb + m_EmissiveColor;
+	result.specular = mul(specular, lightSpecular) * m_SpecularColor;
 
 	return result;
 }
 
-void applySkinning(inout VSInput input) {
+void ApplySkinning(inout VSInput input) {
 	float4 pos = 0;
 	float3 norm = 0;
 	float3 t1 = 0;
@@ -135,7 +141,7 @@ void applySkinning(inout VSInput input) {
 
 	[unroll]
 	for(int i = 0; i < 4; i++) {
-		const float4x3 joint = g_JointMatrixArray[input.blendIndices[i]];
+		const float3x4 joint = m_JointMatrixArray[input.blendIndices[i]];
 		const float w = input.blendWeight[i];
 
 		pos.xyz += mul(input.position, joint) * w;
@@ -155,14 +161,14 @@ void applySkinning(inout VSInput input) {
 VSOutput main_vs(VSInput input) {
 	VSOutput output;
 
-	output.positionPS = mul(input.position, g_worldViewProjection);
-	output.positionWS = mul(input.position, g_world).xyz;
-	output.normalWS = normalize(mul(float4(input.normal, 1), g_worldInverseTranspose)).xyz;
+	output.positionPS = mul(input.position, m_WorldViewProjection);
+	output.positionWS = mul(input.position, m_World).xyz;
+	output.normalWS = normalize(mul(float4(input.normal, 1), m_WorldInverseTranspose)).xyz;
 
 	input.tangent1 = (input.tangent1 - 0.5) * 2.0;
 	input.tangent2 = (input.tangent2 - 0.5) * 2.0;
 
-	applySkinning(input);
+	ApplySkinning(input);
 
 	output.uv = input.uv;
 	output.blendWeight = input.blendWeight;
@@ -171,11 +177,11 @@ VSOutput main_vs(VSInput input) {
 
 	// Going to pretend these are tangents
 	float4 t1 = (input.tangent1 - 0.5) * 2.0;
-	output.tangent1WS.xyz = normalize(mul(float4(t1.xyz, 1), g_worldInverseTranspose)).xyz;
+	output.tangent1WS.xyz = normalize(mul(float4(t1.xyz, 1), m_WorldInverseTranspose)).xyz;
 	output.tangent1WS.w = t1.w;
 
 	float4 t2 = (input.tangent2 - 0.5) * 2.0;
-	output.tangent2WS.xyz = normalize(mul(float4(t2.xyz, 1), g_worldInverseTranspose)).xyz;
+	output.tangent2WS.xyz = normalize(mul(float4(t2.xyz, 1), m_WorldInverseTranspose)).xyz;
 	output.tangent2WS.w = t2.w;
 
 	return output;
@@ -193,8 +199,8 @@ float4 main_ps(VSOutput input) : SV_TARGET {
 	const float3 binorm = cross(input.normalWS.xyz, input.tangent1WS.xyz);
 	const float3 bumpnormal = normalize(bump.x * input.tangent1WS.xyz + bump.y * binorm + bump.z * input.normalWS);
 
-	const float3 eyeVector = normalize(g_eyePosition - input.positionWS);
-	const Lighting light = getLight(g_eyePosition, eyeVector, bumpnormal);
+	const float3 eyeVector = normalize(m_EyePosition - input.positionWS);
+	const Lighting light = GetLight(m_EyePosition, eyeVector, bumpnormal);
 
 	float4 color = float4(diffuse.rgb, a);
 

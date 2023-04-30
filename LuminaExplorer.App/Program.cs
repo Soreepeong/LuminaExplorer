@@ -94,21 +94,20 @@ static class Program {
 
         //*/
         var viewer = new Form {
-            Size = new(1024, 768)
+            Size = new(1024, 768),
         };
-        Task.Delay(100).ContinueWith(_ =>
-        viewer.BeginInvoke(() => {
+        viewer.Load += (_, _) => {
             var t = Task.Run(async () => {
                 var ft = fs.FindFile(fs.RootFolder, "chara/monster/m0361/obj/body/b0001/model/m0361b0001.mdl");
                 await ft;
-                using var l = fs.GetLookup(ft.Result);
+                using var l = fs.GetLookup(ft.Result!);
                 return await l.AsFileResource<MdlFile>();
             });
             t.Wait();
             var c = new ModelViewerControl { Dock = DockStyle.Fill };
             c.SetModel(fs, fs.RootFolder, t.Result);
             viewer.Controls.Add(c);
-        }));
+        };
         Application.Run(viewer);
         return;
         /*/

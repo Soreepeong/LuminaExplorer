@@ -446,19 +446,18 @@ internal sealed unsafe class DirectXTexRenderer : DirectXRenderer<MultiBitmapVie
 
         private ResultDisposingTask<Texture2DShaderResource>?[ /* Image */][ /* Mip */][ /* Slice */]? _pBitmaps;
         private ConstantBufferResource<DirectXTexRendererShader.Cbuffer>?[]? _cbuffer;
-        private ulong _viewportVersion;
-
+        
         public SourceSet(DirectXTexRenderer renderer, Task<IBitmapSource> sourceTask) {
             _renderer = renderer;
-            _renderer.Control.UseAlphaChannelChanged += MarkCbufferChanged;
-            _renderer.Control.VisibleColorChannelChanged += MarkCbufferChanged;
-            _renderer.Control.RotationChanged += MarkCbufferChanged;
-            _renderer.Control.ViewportChanged += MarkCbufferChanged;
-            _renderer.Control.TransparencyCellColor1Changed += MarkCbufferChanged;
-            _renderer.Control.TransparencyCellColor2Changed += MarkCbufferChanged;
-            _renderer.Control.TransparencyCellSizeChanged += MarkCbufferChanged;
-            _renderer.Control.PixelGridLineColorChanged += MarkCbufferChanged;
-            _renderer.Control.PixelGridMinimumZoomChanged += MarkCbufferChanged;
+            _renderer.Control.UseAlphaChannelChanged += MarkAllCbuffersChanged;
+            _renderer.Control.VisibleColorChannelChanged += MarkAllCbuffersChanged;
+            _renderer.Control.RotationChanged += MarkAllCbuffersChanged;
+            _renderer.Control.ViewportChanged += MarkAllCbuffersChanged;
+            _renderer.Control.TransparencyCellColor1Changed += MarkAllCbuffersChanged;
+            _renderer.Control.TransparencyCellColor2Changed += MarkAllCbuffersChanged;
+            _renderer.Control.TransparencyCellSizeChanged += MarkAllCbuffersChanged;
+            _renderer.Control.PixelGridLineColorChanged += MarkAllCbuffersChanged;
+            _renderer.Control.PixelGridMinimumZoomChanged += MarkAllCbuffersChanged;
             SourceTask = sourceTask;
             SourceTask.ContinueWith(r => {
                 if (!r.IsCompletedSuccessfully)
@@ -483,15 +482,15 @@ internal sealed unsafe class DirectXTexRenderer : DirectXRenderer<MultiBitmapVie
         }
 
         public void Dispose() {
-            _renderer.Control.UseAlphaChannelChanged -= MarkCbufferChanged;
-            _renderer.Control.VisibleColorChannelChanged -= MarkCbufferChanged;
-            _renderer.Control.RotationChanged -= MarkCbufferChanged;
-            _renderer.Control.ViewportChanged -= MarkCbufferChanged;
-            _renderer.Control.TransparencyCellColor1Changed -= MarkCbufferChanged;
-            _renderer.Control.TransparencyCellColor2Changed -= MarkCbufferChanged;
-            _renderer.Control.TransparencyCellSizeChanged -= MarkCbufferChanged;
-            _renderer.Control.PixelGridLineColorChanged -= MarkCbufferChanged;
-            _renderer.Control.PixelGridMinimumZoomChanged -= MarkCbufferChanged;
+            _renderer.Control.UseAlphaChannelChanged -= MarkAllCbuffersChanged;
+            _renderer.Control.VisibleColorChannelChanged -= MarkAllCbuffersChanged;
+            _renderer.Control.RotationChanged -= MarkAllCbuffersChanged;
+            _renderer.Control.ViewportChanged -= MarkAllCbuffersChanged;
+            _renderer.Control.TransparencyCellColor1Changed -= MarkAllCbuffersChanged;
+            _renderer.Control.TransparencyCellColor2Changed -= MarkAllCbuffersChanged;
+            _renderer.Control.TransparencyCellSizeChanged -= MarkAllCbuffersChanged;
+            _renderer.Control.PixelGridLineColorChanged -= MarkAllCbuffersChanged;
+            _renderer.Control.PixelGridMinimumZoomChanged -= MarkAllCbuffersChanged;
             _cancellationTokenSource.Cancel();
             _ = SafeDispose.EnumerableAsync(ref _pBitmaps);
             _ = SafeDispose.EnumerableAsync(ref _cbuffer);
@@ -575,8 +574,8 @@ internal sealed unsafe class DirectXTexRenderer : DirectXRenderer<MultiBitmapVie
             var layout = SourceTask.Result.Layout;
             var w = SourceTask.Result.WidthOfMipmap(cell.ImageIndex, cell.Mipmap);
             var h = SourceTask.Result.HeightOfMipmap(cell.ImageIndex, cell.Mipmap);
-            cbuffer = _cbuffer[cell.CellIndex] ??= new(_renderer.Device, _renderer.DeviceContext);
-            if (cbuffer.UpdateRequired) {
+            cbuffer = _cbuffer[cell.CellIndex] ??= new(_renderer.Device, _renderer.DeviceContext, true);
+            if (cbuffer.EnablePull) {
                 var data = new DirectXTexRendererShader.Cbuffer {
                     Rotation = _renderer.Control.Rotation,
                     Pan = _renderer.Control.Pan,
@@ -605,7 +604,11 @@ internal sealed unsafe class DirectXTexRenderer : DirectXRenderer<MultiBitmapVie
             return true;
         }
 
-        private void MarkCbufferChanged(object? sender, EventArgs e) => _viewportVersion++;
+        private void MarkAllCbuffersChanged(object? sender, EventArgs e) {
+            foreach (var c in _cbuffer ?? Array.Empty<ConstantBufferResource<DirectXTexRendererShader.Cbuffer>?>())
+                if (c is not null)
+                    c.EnablePull=true;
+        }
 
         private void SourceTaskOnLayoutChanged() => _renderer.Control.Invoke(() => {
             var layout = SourceTask.Result.Layout;
