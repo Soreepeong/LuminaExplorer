@@ -12,7 +12,7 @@ public sealed class CameraManager : IDisposable {
     private readonly AbstractFileResourceViewerControl _control;
 
     public CameraManager(AbstractFileResourceViewerControl control, System3D? system3D = null) {
-        System3D = system3D ?? new(new(0, 0, -1), new(0, 1, 0), new(1, 0, 0));
+        System3D = system3D ?? new(new(0, 0, 1), new(0, 1, 0), new(-1, 0, 0));
         _control = control;
         ObjectCentricCamera = new(System3D);
         _control.MouseActivity.UseLeftDrag = true;
@@ -46,12 +46,12 @@ public sealed class CameraManager : IDisposable {
     private void MouseActivityOnPan(Point delta) {
         switch (_control.MouseActivity.FirstHeldButton) {
             case MouseButtons.Left:
-                ObjectCentricCamera.Pitch += delta.Y * MathF.PI / 720;
-                ObjectCentricCamera.Yaw +=
-                    (ObjectCentricCamera.IsUpsideDown ? -1 : 1) * delta.X * MathF.PI / 720;
+                ObjectCentricCamera.Pitch -= delta.Y * MathF.PI / 720;
+                ObjectCentricCamera.Yaw -=
+                    (ObjectCentricCamera.IsUpsideDown ? 1 : -1) * delta.X * MathF.PI / 720;
                 break;
             case MouseButtons.Right:
-                ObjectCentricCamera.TargetOffset += System3D.Right * delta.X / 120f - System3D.Up * delta.Y / 120f;
+                ObjectCentricCamera.TargetOffset -= System3D.Right * delta.X / 120f + System3D.Up * delta.Y / 120f;
                 break;
             case MouseButtons.Middle:
                 ObjectCentricCamera.FovExponent += (delta.X + delta.Y) / 1200f;
@@ -64,7 +64,7 @@ public sealed class CameraManager : IDisposable {
     private void MouseActivityOnLeftDoubleClick(Point cursor) {
         ObjectCentricCamera.Update(
             targetOffset: Vector3.Zero,
-            yaw: MathF.PI,
+            yaw: 0,
             pitch: 0,
             roll: 0,
             fovExponent: 0,

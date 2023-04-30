@@ -134,7 +134,7 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
     public void BindMiscWorldCamera(ID3D11Buffer* pBuffer) => BindBufferByIndex(3, pBuffer);
     public void BindLight(ID3D11Buffer* pBuffer) => BindBufferByIndex(4, pBuffer);
 
-    public void Draw(ModelObject modelObject) {
+    public void Draw(ModelObject modelObject, Span<nint> pJointTableBuffers) {
         _pDeviceContext->IASetInputLayout(_pInputLayout);
         _pDeviceContext->IASetPrimitiveTopology(D3DPrimitiveTopology.D3D11PrimitiveTopologyTrianglelist);
 
@@ -145,9 +145,13 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
 
         _pDeviceContext->IASetIndexBuffer(modelObject.IndexBuffer, Format.FormatR16Uint, 0);
 
-        for (var i = 0; modelObject.GetVertexBuffer(i, out var pVertexBuffer); i++) {
+        for (var i = 0; modelObject.TryGetMesh(i, out var pVertexBuffer, out var boneTableIndex); i++) {
             var submeshes = modelObject.GetSubmeshes(i);
             _pDeviceContext->IASetVertexBuffers(0, 1, pVertexBuffer, (uint) Unsafe.SizeOf<VsInput>(), 0);
+            
+            if (boneTableIndex != ushort.MaxValue)
+                BindJointMatrixArray((ID3D11Buffer*) pJointTableBuffers[boneTableIndex]);
+            // todo: if it's not skinned, then reset this to identity (or this is unnecessary maybe)
 
             if (modelObject.TryGetMaterial(i, out var materialIndex, out var material)) {
                 for (var j = 0; j < material.Textures.Length; j++) {
@@ -288,12 +292,14 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
 
         public ID3D11Buffer* IndexBuffer => _pIndexBuffer;
 
-        public bool GetVertexBuffer(int i, out ID3D11Buffer* pVertexBuffer) {
+        public bool TryGetMesh(int meshIndex, out ID3D11Buffer* pVertexBuffer, out int boneTableIndex) {
             pVertexBuffer = null;
-            if (i >= _meshVertices.Length || i < 0)
+            boneTableIndex = 0;
+            if (meshIndex >= _meshVertices.Length || meshIndex < 0)
                 return false;
 
-            pVertexBuffer = _meshVertices[i];
+            pVertexBuffer = _meshVertices[meshIndex];
+            boneTableIndex = _model.File!.Meshes[_meshes[meshIndex].MeshIndex].BoneTableIndex;
             return true;
         }
 

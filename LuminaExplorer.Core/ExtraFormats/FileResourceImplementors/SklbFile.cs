@@ -125,6 +125,11 @@ public class SklbFile : FileResource {
         public Vector3 Translation;
         public Quaternion Rotation;
         public Vector3 Scale;
+
+        public Matrix4x4 Matrix => 
+            Matrix4x4.CreateScale(Scale) *
+            Matrix4x4.CreateFromQuaternion(Rotation) *
+            Matrix4x4.CreateTranslation(Translation);
     }
 
     public enum SklbFormat : uint {

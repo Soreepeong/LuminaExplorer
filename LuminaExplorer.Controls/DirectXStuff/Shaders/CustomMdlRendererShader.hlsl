@@ -144,10 +144,25 @@ void ApplySkinning(inout VSInput input) {
 		const float3x4 joint = m_JointMatrixArray[input.blendIndices[i]];
 		const float w = input.blendWeight[i];
 
-		pos.xyz += mul(input.position, joint) * w;
-		norm += mul(input.normal, joint) * w;
-		t1 += mul(input.tangent1, joint) * w;
-		t2 += mul(input.tangent2, joint) * w;
+		// pos += mul(input.position, joint) * w;
+		// ^ This would be true if it was true row_major float4x4 transformation matrix.
+		// The game seems to be passing column_major float4x3 transformation matrix, disguised as float3x4.
+		// Possibly in order to reduce memory bandwidth usage?
+		pos.x += w * dot(input.position, joint[0]);
+		pos.y += w * dot(input.position, joint[1]);
+		pos.z += w * dot(input.position, joint[2]);
+		
+		norm.x += w * dot(input.normal, joint[0]);
+		norm.y += w * dot(input.normal, joint[1]);
+		norm.z += w * dot(input.normal, joint[2]);
+		
+		t1.x += w * dot(input.tangent1, joint[0]);
+		t1.y += w * dot(input.tangent1, joint[1]);
+		t1.z += w * dot(input.tangent1, joint[2]);
+		
+		t2.x += w * dot(input.tangent2, joint[0]);
+		t2.y += w * dot(input.tangent2, joint[1]);
+		t2.z += w * dot(input.tangent2, joint[2]);
 	}
 
 	input.position.xyz = pos.xyz;
@@ -161,14 +176,14 @@ void ApplySkinning(inout VSInput input) {
 VSOutput main_vs(VSInput input) {
 	VSOutput output;
 
-	output.positionPS = mul(input.position, m_WorldViewProjection);
-	output.positionWS = mul(input.position, m_World).xyz;
-	output.normalWS = normalize(mul(float4(input.normal, 1), m_WorldInverseTranspose)).xyz;
-
 	input.tangent1 = (input.tangent1 - 0.5) * 2.0;
 	input.tangent2 = (input.tangent2 - 0.5) * 2.0;
 
 	ApplySkinning(input);
+
+	output.positionPS = mul(input.position, m_WorldViewProjection);
+	output.positionWS = mul(input.position, m_World).xyz;
+	output.normalWS = normalize(mul(float4(input.normal, 1), m_WorldInverseTranspose)).xyz;
 
 	output.uv = input.uv;
 	output.blendWeight = input.blendWeight;

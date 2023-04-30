@@ -28,6 +28,7 @@ public static unsafe class ResourceUtils {
             fixed (void* pTarget = Encoding.UTF8.GetBytes(target))
             fixed (void* pEntrypointName = Encoding.UTF8.GetBytes(entrypointName))
             fixed (byte* pBuffer = &buffer[0]) {
+                
                 var hr = D3DCompiler.GetApi().Compile(
                     pBuffer,
                     (nuint) buffer.Length,
@@ -36,7 +37,7 @@ public static unsafe class ResourceUtils {
                     null,
                     (byte*) pEntrypointName,
                     (byte*) pTarget,
-                    1, // debug
+                    1 | 2, // debug | skip_optimization
                     0,
                     &pCode,
                     &pErrorMsgs);

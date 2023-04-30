@@ -7,6 +7,7 @@ using System.Text;
 using Lumina.Data;
 using Lumina.Data.Attributes;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile;
+using LuminaExplorer.Core.ExtraFormats.HavokTagfile.Value;
 using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
@@ -37,6 +38,24 @@ public class PapFile : FileResource {
         } catch (Exception) {
             // pass
         }
+    }
+
+    public Node GetAnimationBinding(int bindingIndex) {
+        if (bindingIndex < 0)
+            throw new ArgumentOutOfRangeException(nameof(bindingIndex), bindingIndex, null);
+        if (HavokRootNode.AsMap.GetValueOrDefault("namedVariants") is not ValueArray namedVariants)
+            throw new(); // care later about errmsg
+        if (namedVariants.Values.FirstOrDefault() is not ValueNode namedVariant0)
+            throw new();
+        if (namedVariant0.Node.AsMap.GetValueOrDefault("variant") is not ValueNode variant)
+            throw new();
+        if (variant.Node.AsMap.GetValueOrDefault("bindings") is not ValueArray bindings)
+            throw new();
+        if (bindings.Values.Count <= bindingIndex)
+            throw new ArgumentOutOfRangeException(nameof(bindingIndex), bindingIndex, null);
+        if (bindings.Values[bindingIndex] is not ValueNode binding)
+            throw new();
+        return binding.Node;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]

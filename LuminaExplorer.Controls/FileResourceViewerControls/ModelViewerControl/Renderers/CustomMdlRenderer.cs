@@ -6,6 +6,8 @@ using Lumina.Data.Parsing;
 using LuminaExplorer.Controls.DirectXStuff.Resources;
 using LuminaExplorer.Controls.DirectXStuff.Shaders;
 using LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter.VertexShaderInputParameters;
+using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
+using LuminaExplorer.Core.ExtraFormats.HavokAnimation;
 using LuminaExplorer.Core.Util;
 using Silk.NET.Direct3D11;
 
@@ -15,11 +17,12 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
     private CustomMdlRendererShader _shader;
     private ConstantBufferResource<CameraParameter> _paramCamera;
     private ConstantBufferResource<WorldViewMatrix> _paramWorldViewMatrix;
-    private ConstantBufferResource<JointMatrixArray> _paramJointMatrixArray;
     private ConstantBufferResource<CustomMdlRendererShader.WorldMisc> _paramWorldMisc;
     private ConstantBufferResource<CustomMdlRendererShader.LightParameters> _paramLight;
     private Task<MdlFile>? _modelTask;
     private Task<CustomMdlRendererShader.ModelObject>? _modelObject;
+
+    private ResultDisposingTask<AnimatingJointsConstantBufferResource>? _animator;
 
     public CustomMdlRenderer(ModelViewerControl control)
         // ReSharper disable once IntroduceOptionalParameters.Global
@@ -32,8 +35,6 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
         _paramCamera.DataPull += ParamCameraOnDataPull;
         _paramWorldViewMatrix = new(Device, DeviceContext);
         _paramWorldViewMatrix.DataPull += ParamWorldViewMatrixOnDataPull;
-        _paramJointMatrixArray = new(Device, DeviceContext, true, JointMatrixArray.Default);
-        _paramJointMatrixArray.DataPull += ParamJointMatrixArrayOnDataPull;
         _paramWorldMisc = new(Device, DeviceContext);
         _paramWorldMisc.DataPull += ParamWorldMiscOnDataPull;
         _paramLight = new(Device, DeviceContext, false, CustomMdlRendererShader.LightParameters.Default);
@@ -44,10 +45,8 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
         if (disposing) {
             ClearModel();
             _ = SafeDispose.OneAsync(ref _shader!);
-
             _ = SafeDispose.OneAsync(ref _paramCamera!);
             _ = SafeDispose.OneAsync(ref _paramWorldViewMatrix!);
-            _ = SafeDispose.OneAsync(ref _paramJointMatrixArray!);
             _ = SafeDispose.OneAsync(ref _paramWorldMisc!);
             _ = SafeDispose.OneAsync(ref _paramLight!);
         }
@@ -66,6 +65,7 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
             }
         });
         _modelObject = null;
+        _ = SafeDispose.OneAsync(ref _animator);
     }
 
     public override void UpdateModel(Task<MdlFile> newModelTask) {
@@ -91,6 +91,24 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
                     return;
 
                 ResetCamera(_modelTask.Result.ModelBoundingBoxes);
+
+                var sklbTask = Control.GetTypedFileAsync<SklbFile>(
+                    "/chara/monster/m0361/skeleton/base/b0001/skl_m0361b0001.sklb");
+                var papTask = Control.GetTypedFileAsync<PapFile>(
+                    "/chara/monster/m0361/animation/a0001/bt_common/idle_sp/idle_sp_1.pap");
+                    // "/chara/monster/m0361/animation/a0001/bt_common/resident/monster.pap");
+                
+                _animator = new(Task.WhenAll(sklbTask, papTask).ContinueWith(_ => {
+                    if (!sklbTask.IsCompletedSuccessfully ||
+                        !papTask.IsCompletedSuccessfully ||
+                        sklbTask.Result is null ||
+                        papTask.Result is null)
+                        throw sklbTask.Exception ?? papTask.Exception ?? throw new();
+                    var a = new AnimatingJointsConstantBufferResource(Device, DeviceContext, r.Result, sklbTask.Result);
+                    a.Animation = AnimationSet.Decode(papTask.Result.GetAnimationBinding(0)); 
+                    return a;
+                }));
+                Control.RunOnUiThreadAfter(_animator.Task, _ => Control.Invalidate());
             });
         });
     }
@@ -100,7 +118,7 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
             Control.Camera.View,
             Control.Camera.Projection));
 
-    private void ParamWorldViewMatrixOnDataPull(ConstantBufferResource<WorldViewMatrix> sender) => 
+    private void ParamWorldViewMatrixOnDataPull(ConstantBufferResource<WorldViewMatrix> sender) =>
         _paramWorldViewMatrix.UpdateData(WorldViewMatrix.FromWorldView(Matrix4x4.Identity, Control.Camera.View));
 
     private void ParamWorldMiscOnDataPull(ConstantBufferResource<CustomMdlRendererShader.WorldMisc> sender) =>
@@ -109,19 +127,21 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
             Control.Camera.View,
             Control.Camera.Projection));
 
-    private void ParamJointMatrixArrayOnDataPull(ConstantBufferResource<JointMatrixArray> sender) {
-        // todo: fill this when animating
-    }
-
     protected override void Draw3D(ID3D11RenderTargetView* pRenderTarget) {
         base.Draw3D(pRenderTarget);
         if (_modelObject?.IsCompletedSuccessfully is true) {
             _shader.BindCamera(_paramCamera.Buffer);
             _shader.BindWorldViewMatrix(_paramWorldViewMatrix.Buffer);
-            _shader.BindJointMatrixArray(_paramJointMatrixArray.Buffer);
             _shader.BindMiscWorldCamera(_paramWorldMisc.Buffer);
             _shader.BindLight(_paramLight.Buffer);
-            _shader.Draw(_modelObject.Result);
+
+            if (_animator?.IsCompletedSuccessfully is true) {
+                Span<nint> jointBuffers = stackalloc nint[_animator.Result.BufferCount];
+                _animator.Result.UpdateAnimationStateAndGetBuffers(jointBuffers);
+                _shader.Draw(_modelObject.Result, jointBuffers);
+                Control.BeginInvoke(Control.Invalidate);
+            } else
+                _shader.Draw(_modelObject.Result, new());
         }
     }
 
@@ -131,9 +151,9 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
             targetOffset: Vector3.Zero,
             targetBboxMin: new(bboxTarget.Min.AsSpan()),
             targetBboxMax: new(bboxTarget.Max.AsSpan()),
-            yaw: MathF.PI,
+            yaw: 0,
             pitch: 0,
-            resetDistance:true);
+            resetDistance: true);
         UpdateCamera();
     }
 

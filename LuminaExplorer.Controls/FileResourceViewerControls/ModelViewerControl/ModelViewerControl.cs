@@ -152,9 +152,9 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         return false;
     }
 
-    internal Task<T?>? GetTypedFileAsync<T>(string path) where T : FileResource {
+    internal Task<T?> GetTypedFileAsync<T>(string path) where T : FileResource {
         if (Vfs is not { } vfs || VfsRoot is not { } vfsRoot || _modelTaskCancellationTokenSource?.Token is not { } cts)
-            return null;
+            return Task.FromResult((T?) null);
         return Task.Factory.StartNew(async () => {
             var file = await vfs.FindFile(vfsRoot, path);
             if (file is null)

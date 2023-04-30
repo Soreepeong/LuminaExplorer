@@ -12,6 +12,11 @@ public unsafe struct JointMatrixArray {
 
     [FieldOffset(0)] public fixed float Values[3 * 4 * ValueCount];
 
+    /// <summary>
+    /// Gets or sets the 3x4 (row=3, col=4) column-major matrix of the specified joint.
+    /// </summary>
+    /// <remarks>Use Matrix4x4.Transpose(...).TruncateAs3X4ToSilkValue().</remarks>
+    /// <param name="i">Index of value.</param>
     public Matrix3X4<float> this[int i] {
         get {
             if (i is < 0 or >= ValueCount)
