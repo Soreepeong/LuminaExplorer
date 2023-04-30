@@ -9,7 +9,6 @@ using Lumina.Data.Files;
 using Lumina.Data.Structs;
 using Lumina.Models.Materials;
 using LuminaExplorer.Controls.DirectXStuff.Resources;
-using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.Util.DdsStructs;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
@@ -25,8 +24,8 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
     private readonly Task<Material?>?[] _materials;
     private readonly Task<ShaderSet?>?[] _shaderSets;
     private readonly ID3D11InputLayout*[] _pInputLayouts;
-    private Task<Texture2DShaderResource?>?[ /* Material Index*/][ /* Texture Index */] _textures;
-    private ID3D11SamplerState*[ /* Material Index*/][ /* Texture Index */] _pSamplers;
+    private readonly Task<Texture2DShaderResource?>?[ /* Material Index*/]?[ /* Texture Index */] _textures;
+    private readonly ID3D11SamplerState*[ /* Material Index*/]?[ /* Texture Index */] _pSamplers;
     private ID3D11Device* _pDevice;
     private ID3D11DeviceContext* _pDeviceContext;
     private readonly ID3D11Buffer*[] _pIndexBuffers;
@@ -98,16 +97,24 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
             SafeRelease(ref _pIndexBuffers[i]);
         for (var i = 0; i < _pVertexBuffers.Length; i++)
             SafeRelease(ref _pVertexBuffers[i]);
-        foreach (var t in _pSamplers)
-            for (var i = 0; i < t.Length; i++)
-                SafeRelease(ref t[i]);
+        foreach (var t in _pSamplers) {
+            if (t is not null) {
+                for (var i = 0; i < t.Length; i++)
+                    SafeRelease(ref t[i]);
+            }
+        }
+
         SafeRelease(ref _pDeviceContext);
         SafeRelease(ref _pDevice);
     }
 
     private void DisposeInner(bool disposing) {
         if (disposing) {
-            SafeDispose.Enumerable(ref _textures!);
+            foreach (var t in _textures) {
+                if (t is not null)
+                    foreach (var j in t)
+                        j?.Dispose();
+            }
         }
 
         ReleaseUnmanagedResources();
@@ -195,10 +202,10 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
                         return null;
                     var m = new Material(mtrlFile);
                     var materialIndex = _mdl.Meshes[meshIndex].MaterialIndex;
-                    
+
                     _textures[materialIndex] = new Task<Texture2DShaderResource?>?[m.Textures.Length];
-                    _pSamplers[materialIndex] = new ID3D11SamplerState*[m.Textures.Length];
-                    
+                    var samplers = _pSamplers[materialIndex] = new ID3D11SamplerState*[m.Textures.Length];
+
                     var samplerDesc = new SamplerDesc {
                         Filter = Filter.MinMagMipLinear,
                         MaxAnisotropy = 0,
@@ -211,7 +218,7 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
                         ComparisonFunc = ComparisonFunc.Never,
                     };
                     for (var i = 0; i < mtrlFile.Samplers.Length; i++) {
-                        fixed (ID3D11SamplerState** ppSampler = &_pSamplers[materialIndex][i])
+                        fixed (ID3D11SamplerState** ppSampler = &samplers[i])
                             ThrowH(pDevice->CreateSamplerState(&samplerDesc, ppSampler));
                     }
 
@@ -253,11 +260,14 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
         if (_materials[materialIndex] is not {IsCompletedSuccessfully: true, Result: { } mat})
             return false;
 
-        var task = _textures[materialIndex][textureIndex];
+        if (_textures[materialIndex] is not { } textures)
+            return false;
+
+        var task = textures[textureIndex];
         if (task is null) {
             var textureDefinition = mat.Textures[textureIndex];
             if (textureDefinition.TexturePath == "dummy.tex") {
-                _textures[materialIndex][textureIndex] = Task.FromResult((Texture2DShaderResource?) null);
+                textures[textureIndex] = Task.FromResult((Texture2DShaderResource?) null);
                 return false;
             }
 
@@ -268,7 +278,7 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
 
             var pDevice = _pDevice;
             pDevice->AddRef();
-            _textures[materialIndex][textureIndex] = task = loader.ContinueWith(r => {
+            textures[textureIndex] = task = loader.ContinueWith(r => {
                 try {
                     if (!r.IsCompletedSuccessfully || r.Result is null)
                         return null;

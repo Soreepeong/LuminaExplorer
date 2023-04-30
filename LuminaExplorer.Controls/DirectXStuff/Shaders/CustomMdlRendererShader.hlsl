@@ -68,6 +68,9 @@ cbuffer g_cameraParameters : register(b0) {
 	row_major float4x4 g_world;
 	row_major float4x4 g_worldInverseTranspose;
 	row_major float4x4 g_worldViewProjection;
+
+	// For skinning.
+	row_major float4x4 g_JointMatrixArray[64];
 }
 
 cbuffer g_lightParameters : register(b1) {
@@ -124,6 +127,30 @@ Lighting getLight(float3 pos3D, float3 eyeVector, float3 worldNormal) {
 	return result;
 }
 
+void applySkinning(inout VSInput input) {
+	float4 pos = 0;
+	float3 norm = 0;
+	float3 t1 = 0;
+	float3 t2 = 0;
+
+	[unroll]
+	for(int i = 0; i < 4; i++) {
+		const float4x3 joint = g_JointMatrixArray[input.blendIndices[i]];
+		const float w = input.blendWeight[i];
+
+		pos.xyz += mul(input.position, joint) * w;
+		norm += mul(input.normal, joint) * w;
+		t1 += mul(input.tangent1, joint) * w;
+		t2 += mul(input.tangent2, joint) * w;
+	}
+
+	input.position.xyz = pos.xyz;
+
+	input.normal = normalize(norm);
+	input.tangent1.xyz = normalize(t1);
+	input.tangent2.xyz = normalize(t2);
+}
+
 // see: SaintCoinach.Graphics.Viewer/Effects/HLSL/Common.fxh
 VSOutput main_vs(VSInput input) {
 	VSOutput output;
@@ -131,6 +158,11 @@ VSOutput main_vs(VSInput input) {
 	output.positionPS = mul(input.position, g_worldViewProjection);
 	output.positionWS = mul(input.position, g_world).xyz;
 	output.normalWS = normalize(mul(float4(input.normal, 1), g_worldInverseTranspose)).xyz;
+
+	input.tangent1 = (input.tangent1 - 0.5) * 2.0;
+	input.tangent2 = (input.tangent2 - 0.5) * 2.0;
+
+	applySkinning(input);
 
 	output.uv = input.uv;
 	output.blendWeight = input.blendWeight;

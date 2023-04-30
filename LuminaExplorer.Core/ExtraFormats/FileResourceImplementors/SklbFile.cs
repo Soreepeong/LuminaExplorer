@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Numerics;
 using Lumina.Data;
 using Lumina.Data.Attributes;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile;
+using LuminaExplorer.Core.ExtraFormats.HavokTagfile.Value;
 using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
@@ -19,6 +22,7 @@ public class SklbFile : FileResource {
     public uint AlphMagic;
     public ushort[][] AlphData = null!;
     public byte[] HavokData = null!;
+    public Bone[] Bones = null!;
 
     public Node HavokRootNode = null!;
     public readonly Dictionary<Tuple<string, int>, Definition> HavokDefinitions = new();
@@ -50,9 +54,77 @@ public class SklbFile : FileResource {
 
         try {
             HavokRootNode = Parser.Parse(HavokData, HavokDefinitions);
+            
+            /*
+             * root.namedVariants[0].variant.skeletons[0]
+             *     .name => who cares
+             *     .parentIndices[N] => int (-1 = root)
+             *     .bones[N].name => str
+             *     .referencePose[n] => float4x3 (TRS)
+             */
+            var resultBones = new List<Bone>();
+            if (HavokRootNode.AsMap.GetValueOrDefault("namedVariants") is not ValueArray namedVariants)
+                throw new(); // care later about errmsg
+            if (namedVariants.Values.FirstOrDefault() is not ValueNode namedVariant0)
+                throw new();
+            if (namedVariant0.Node.AsMap.GetValueOrDefault("variant") is not ValueNode variant)
+                throw new();
+            if (variant.Node.AsMap.GetValueOrDefault("skeletons") is not ValueArray skeletons)
+                throw new();
+            if (skeletons.Values.FirstOrDefault() is not ValueNode skeleton)
+                throw new();
+            if (skeleton.Node.AsMap.GetValueOrDefault("parentIndices") is not ValueArray parentIndices)
+                throw new();
+            if (skeleton.Node.AsMap.GetValueOrDefault("bones") is not ValueArray bones)
+                throw new();
+            if (skeleton.Node.AsMap.GetValueOrDefault("referencePose") is not ValueArray referencePoses)
+                throw new();
+            foreach (var (boneValue, parentIndexValue, referencePoseValue) in bones.Values.Zip(
+                         parentIndices.Values, referencePoses.Values)) {
+                var bone = new Bone {
+                    Index = resultBones.Count
+                };
+
+                if (boneValue is not ValueNode boneNode)
+                    throw new();
+                if (boneNode.Node.AsMap.GetValueOrDefault("name") is not ValueString name)
+                    throw new();
+                bone.Name = name.Value;
+                
+                if (parentIndexValue is not ValueInt parentIndex)
+                    throw new();
+                bone.ParentIndex = parentIndex.Value;
+                
+                if (referencePoseValue is not ValueArray poseFloats)
+                    throw new();
+                bone.Translation.X = poseFloats.Values[0] is ValueFloat tx ? tx.Value : throw new();
+                bone.Translation.Y = poseFloats.Values[1] is ValueFloat ty ? ty.Value : throw new();
+                bone.Translation.Z = poseFloats.Values[2] is ValueFloat tz ? tz.Value : throw new();
+                bone.Rotation.X = poseFloats.Values[4] is ValueFloat rx ? rx.Value : throw new();
+                bone.Rotation.Y = poseFloats.Values[5] is ValueFloat ry ? ry.Value : throw new();
+                bone.Rotation.Z = poseFloats.Values[6] is ValueFloat rz ? rz.Value : throw new();
+                bone.Rotation.W = poseFloats.Values[7] is ValueFloat rw ? rw.Value : throw new();
+                bone.Scale.X = poseFloats.Values[8] is ValueFloat sx ? sx.Value : throw new();
+                bone.Scale.Y = poseFloats.Values[9] is ValueFloat sy ? sy.Value : throw new();
+                bone.Scale.Z = poseFloats.Values[10] is ValueFloat sz ? sz.Value : throw new();
+
+                resultBones.Add(bone);
+            }
+
+            Bones = resultBones.ToArray();
+
         } catch (Exception) {
             // pass
         }
+    }
+
+    public struct Bone {
+        public int Index;
+        public int ParentIndex;
+        public string Name;
+        public Vector3 Translation;
+        public Quaternion Rotation;
+        public Vector3 Scale;
     }
 
     public enum SklbFormat : uint {

@@ -181,13 +181,14 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
         private ID3D11Device* _pDevice;
         private ID3D11Buffer* _pIndexBuffer;
 
-        public ModelObject(CustomMdlRendererShader shader, MdlFile mdlFile, int variantId = 1, Model.ModelLod lod = Model.ModelLod.High) {
+        public ModelObject(CustomMdlRendererShader shader, MdlFile mdlFile, int variantId = 1,
+            Model.ModelLod lod = Model.ModelLod.High) {
             try {
                 // Ensure that we at least have non-null arrays in case of exceptions.
                 _meshVertices = new ID3D11Buffer*[0];
                 _materials = Array.Empty<Task<Material?>?>();
                 _textures = Array.Empty<Task<Texture2DShaderResource?>?[]>();
-                
+
                 _pDevice = shader._pDevice;
                 _pDevice->AddRef();
                 _mdl = mdlFile;
@@ -297,7 +298,7 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
 
                 var mtrlPathSpan = _mdl.Strings.AsSpan((int) _mdl.MaterialNameOffsets[materialIndex]);
                 mtrlPathSpan = mtrlPathSpan[..mtrlPathSpan.IndexOf((byte) 0)];
-                
+
                 var mtrlPath = Encoding.UTF8.GetString(mtrlPathSpan);
                 if (mtrlPath.StartsWith('/')) {
                     mtrlPath = Material.ResolveRelativeMaterialPath(mtrlPath, _model.VariantId);
@@ -315,12 +316,16 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
                 _materials[materialIndex] = task = loader.ContinueWith(r => {
                     if (!r.IsCompletedSuccessfully || r.Result is not { } mtrlFile)
                         return null;
-                    
+
                     var mat = new Material(mtrlFile);
                     for (var i = 0; i < _model.Materials.Length; i++)
                         _textures[i] = new Task<Texture2DShaderResource?>[mat?.Textures.Length ?? 0];
                     return mat;
                 });
+
+                // Separate this out, since we want the task itself to be in completed state
+                // when this callback is called.
+                task.ContinueWith(_ => TextureLoadStateChanged?.Invoke());
             }
 
             if (task is not {IsCompletedSuccessfully: true, Result: { } mat1})
@@ -483,6 +488,8 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
 
     [StructLayout(LayoutKind.Explicit)]
     public struct CameraParameters {
+        private const int JointMatrixArraySize = 64;
+
         [FieldOffset(0x000)] public Matrix4x4 View = Matrix4x4.Identity;
         [FieldOffset(0x040)] public Matrix4x4 InverseView = Matrix4x4.Identity;
         [FieldOffset(0x080)] public Matrix4x4 ViewProjection = Matrix4x4.Identity;
@@ -499,7 +506,43 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
         [FieldOffset(0x260)] public Matrix4x4 WorldInverseTranspose = Matrix4x4.Identity;
         [FieldOffset(0x2A0)] public Matrix4x4 WorldViewProjection = Matrix4x4.Identity;
 
-        public CameraParameters() { }
+        // this really doesn't belong here, but separating this means one more struct to care
+        [FieldOffset(0x2E0)] public fixed float JointMatrixArrayData[4 * 4 * JointMatrixArraySize];
+
+        public CameraParameters() {
+            for (var i = 0; i < JointMatrixArraySize; i++) {
+                // initialize them with identity matrices
+                JointMatrixArrayData[i * 16 + 0] = 1f;
+                JointMatrixArrayData[i * 16 + 5] = 1f;
+                JointMatrixArrayData[i * 16 + 10] = 1f;
+                JointMatrixArrayData[i * 16 + 15] = 1f;
+            }
+        }
+
+        public Matrix3X4<float> this[int i] {
+            get {
+                if (i is < 0 or >= JointMatrixArraySize)
+                    throw new ArgumentOutOfRangeException(nameof(i), i, null);
+                var value = new Matrix3X4<float>();
+                fixed (void* p = &JointMatrixArrayData[i * 16])
+                    Buffer.MemoryCopy(p, &value, 64, 64);
+                return value;
+            }
+            set {
+                if (i is < 0 or >= JointMatrixArraySize)
+                    throw new ArgumentOutOfRangeException(nameof(i), i, null);
+                fixed (void* p = &JointMatrixArrayData[i * 16])
+                    Buffer.MemoryCopy(&value, p, 64, 64);
+            }
+        }
+
+        public void UpdateJointMatrices(Matrix4x4[] matrices) {
+            if (matrices.Length != JointMatrixArraySize)
+                throw new ArgumentException("Invalid number of items", nameof(matrices));
+            fixed (void* p = matrices)
+            fixed (void* t = JointMatrixArrayData)
+                Buffer.MemoryCopy(p, t, 4 * 4 * JointMatrixArraySize, 4 * 4 * JointMatrixArraySize);
+        }
     }
 
     [StructLayout(LayoutKind.Explicit)]

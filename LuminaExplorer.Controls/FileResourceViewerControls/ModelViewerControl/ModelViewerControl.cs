@@ -11,6 +11,7 @@ using LuminaExplorer.Controls.DirectXStuff;
 using LuminaExplorer.Controls.DirectXStuff.Shaders;
 using LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter;
 using LuminaExplorer.Controls.Util;
+using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.Util.DdsStructs;
@@ -80,6 +81,10 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
                 r.Result.UpdateModel(_mdlFileTask);
             Invalidate();
         }, cts.Token, TaskContinuationOptions.None, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    public void SetSkeleton(SklbFile sklbFile) {
+        
     }
 
     protected override void OnPaintBackground(PaintEventArgs pevent) { }
@@ -178,6 +183,10 @@ public abstract unsafe class MdlRenderer : DirectXRenderer<ModelViewerControl> {
     public abstract void ClearModel();
 
     public abstract void UpdateModel(Task<MdlFile> newModelTask);
+
+    public virtual void UpdateSkeleton(Task<SklbFile> newSklbTask) { }
+
+    public virtual void AddAnimations(Task<PapFile> newPapTask) { }
 
     protected void ModelObjectOnDdsFileRequested(string path, ref Task<DdsFile?>? loader) {
         loader ??= Control.GetTypedFileAsync<TexFile>(path)?.ContinueWith(r =>
@@ -356,7 +365,7 @@ public unsafe class CustomMdlRenderer : MdlRenderer {
                 var occ = Control.ObjectCentricCamera;
                 occ.Update(
                     target: target,
-                    yawFromTarget: 0,
+                    yawFromTarget: MathF.PI,
                     pitchFromTarget: 0,
                     distance: 64 * (
                         target.X * occ.System.Forward.X +
@@ -471,7 +480,7 @@ public class ObjectCentricCamera : ICamera {
         var target = (bboxMin + bboxMax) / 2;
         Update(
             target: target,
-            yawFromTarget: 0,
+            yawFromTarget: MathF.PI,
             pitchFromTarget: 0,
             distance: 64);
     }
@@ -527,7 +536,7 @@ public class ObjectCentricCamera : ICamera {
         float? distance = null) {
         _target = target ?? _target;
         _viewport = viewport ?? _viewport;
-        _yawFromTarget = yawFromTarget ?? _yawFromTarget;
+        _yawFromTarget = (yawFromTarget ?? _yawFromTarget) % (2 * MathF.PI);
         _pitchFromTarget = pitchFromTarget ?? _pitchFromTarget;
         _distance = distance ?? _distance;
 
