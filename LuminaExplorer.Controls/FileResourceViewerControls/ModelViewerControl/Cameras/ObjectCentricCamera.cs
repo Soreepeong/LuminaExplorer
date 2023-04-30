@@ -127,7 +127,7 @@ public class ObjectCentricCamera : ICamera {
         _fovExponent = fovExponent ?? _fovExponent;
         _distanceExponent = distanceExponent ?? _distanceExponent;
         if (resetDistance)
-            _distanceExponent = Vector3.Dot((_targetBboxMin + _targetBboxMax) / 2, System.Forward) * 320;
+            _distanceExponent = Vector3.Dot((_targetBboxMin + _targetBboxMax) / 2, System.Right + System.Up) * 75;
 
         _view = null;
         _projection = null;
