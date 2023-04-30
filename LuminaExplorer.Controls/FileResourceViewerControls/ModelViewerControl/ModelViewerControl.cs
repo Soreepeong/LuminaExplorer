@@ -11,6 +11,7 @@ using LuminaExplorer.Controls.DirectXStuff;
 using LuminaExplorer.Controls.DirectXStuff.Shaders;
 using LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter;
 using LuminaExplorer.Controls.Util;
+using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.Util.DdsStructs;
 using LuminaExplorer.Core.VirtualFileSystem;
@@ -75,7 +76,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
             if (r.IsCompletedSuccessfully)
                 r.Result.UpdateModel(_mdlFileTask);
             Invalidate();
-        }, cts.Token);
+        }, cts.Token, TaskContinuationOptions.None, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
     protected override void OnPaintBackground(PaintEventArgs pevent) { }
@@ -175,12 +176,12 @@ public abstract unsafe class MdlRenderer : DirectXRenderer<ModelViewerControl> {
 
     public abstract void UpdateModel(Task<MdlFile> newModelTask);
 
-    protected void ModelObjectOnTextureRequested(string path, ref Task<DdsFile?>? loader) {
+    protected void ModelObjectOnDdsFileRequested(string path, ref Task<DdsFile?>? loader) {
         loader ??= Control.GetTypedFileAsync<TexFile>(path)?.ContinueWith(r =>
             !r.IsCompletedSuccessfully ? null : r.Result?.ToDdsFileFollowGameDx11Conversion());
     }
 
-    protected void ModelObjectOnMaterialRequested(string path, ref Task<MtrlFile?>? loader) {
+    protected void ModelObjectOnMtrlFileRequested(string path, ref Task<MtrlFile?>? loader) {
         loader ??= Control.GetTypedFileAsync<MtrlFile>(path);
     }
 
@@ -219,6 +220,7 @@ public unsafe class GamePixelShaderMdlRenderer : MdlRenderer {
         ID3D11DeviceContext* pDeviceContext)
         : base(control, pDevice, pDeviceContext) {
         _pool = new(Device, DeviceContext);
+        _pool.ShpkFileRequested += PoolOnShpkFileRequested;
         _shaderState = new(_pool);
         Control.ViewportChanged += ControlOnViewportChanged;
     }
@@ -237,13 +239,13 @@ public unsafe class GamePixelShaderMdlRenderer : MdlRenderer {
         _modelObject?.Task.ContinueWith(r => {
             if (r.IsCompletedSuccessfully) {
                 var modelObject = r.Result;
-                modelObject.TextureRequested -= ModelObjectOnTextureRequested;
-                modelObject.MaterialRequested -= ModelObjectOnMaterialRequested;
+                modelObject.DdsFileRequested -= ModelObjectOnDdsFileRequested;
+                modelObject.MtrlFileRequested -= ModelObjectOnMtrlFileRequested;
                 modelObject.ResourceLoadStateChanged -= ModelObjectOnLoadStateChanged;
             }
         });
         _ = SafeDispose.OneAsync(ref _modelObject);
-        _ = SafeDispose.OneAsync(ref _shaderState);
+        _ = SafeDispose.OneAsync(ref _shaderState!);
         _modelTask = null;
     }
 
@@ -259,8 +261,8 @@ public unsafe class GamePixelShaderMdlRenderer : MdlRenderer {
                 throw r.Exception!;
 
             var modelObject = new ModelObjectWithGameShader(_pool, r.Result);
-            modelObject.TextureRequested += ModelObjectOnTextureRequested;
-            modelObject.MaterialRequested += ModelObjectOnMaterialRequested;
+            modelObject.DdsFileRequested += ModelObjectOnDdsFileRequested;
+            modelObject.MtrlFileRequested += ModelObjectOnMtrlFileRequested;
             modelObject.ResourceLoadStateChanged += ModelObjectOnLoadStateChanged;
             return modelObject;
         }, TaskScheduler.FromCurrentSynchronizationContext()));
@@ -272,6 +274,9 @@ public unsafe class GamePixelShaderMdlRenderer : MdlRenderer {
         if (_modelObject?.IsCompletedSuccessfully is true)
             _modelObject.Result.Draw(_shaderState);
     }
+
+    private void PoolOnShpkFileRequested(string path, ref Task<ShpkFile?>? loader) => 
+        loader ??= Control.GetTypedFileAsync<ShpkFile>(path);
 
     private void ControlOnViewportChanged() {
         // _shaderState.UpdateCamera(Matrix4x4.Identity, Control.Camera.View, Control.Camera.Projection);
@@ -310,9 +315,9 @@ public unsafe class CustomMdlRenderer : MdlRenderer {
         _modelObject?.ContinueWith(r => {
             if (r.IsCompletedSuccessfully) {
                 var modelObject = r.Result;
-                modelObject.TextureRequested -= ModelObjectOnTextureRequested;
+                modelObject.DdsFileRequested -= ModelObjectOnDdsFileRequested;
                 modelObject.TextureLoadStateChanged -= ModelObjectOnLoadStateChanged;
-                modelObject.MaterialRequested -= ModelObjectOnMaterialRequested;
+                modelObject.MtrlFileRequested -= ModelObjectOnMtrlFileRequested;
             }
         });
         _modelObject = null;
@@ -331,9 +336,9 @@ public unsafe class CustomMdlRenderer : MdlRenderer {
 
             _modelObject = Task.Run(() => {
                 var modelObject = new CustomMdlRendererShader.ModelObject(_shader, r.Result);
-                modelObject.TextureRequested += ModelObjectOnTextureRequested;
+                modelObject.DdsFileRequested += ModelObjectOnDdsFileRequested;
                 modelObject.TextureLoadStateChanged += ModelObjectOnLoadStateChanged;
-                modelObject.MaterialRequested += ModelObjectOnMaterialRequested;
+                modelObject.MtrlFileRequested += ModelObjectOnMtrlFileRequested;
                 return modelObject;
             });
             Control.RunOnUiThreadAfter(_modelObject, _ => {

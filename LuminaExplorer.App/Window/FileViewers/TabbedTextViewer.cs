@@ -83,14 +83,25 @@ public class TabbedTextViewer : Form {
                 disd.Clear();
             }
 
-            for (var i = 0; i < shpkFile.ShaderEntries.Length; i++) {
+            for (var i = 0; i < shpkFile.VertexShaderEntries.Length; i++) {
                 if (cts.IsCancellationRequested || cts != _cancellationTokenSource)
                     break;
 
-                names.Add(i < shpkFile.Header.NumVertexShaders
-                    ? $"VS#{i}"
-                    : $"PS#{i - shpkFile.Header.NumVertexShaders}");
-                disd.Add(DisassembleCsoData(shpkFile.ShaderEntries[i].ByteCode, out var d, out var e)
+                names.Add($"VS#{i}");
+                disd.Add(DisassembleCsoData(shpkFile.VertexShaderEntries[i].ByteCode, out var d, out var e)
+                    ? d
+                    : e.ToString());
+
+                if (Environment.TickCount64 >= nextUpdate)
+                    await UpdateResults();
+            }
+
+            for (var i = 0; i < shpkFile.PixelShaderEntries.Length; i++) {
+                if (cts.IsCancellationRequested || cts != _cancellationTokenSource)
+                    break;
+
+                names.Add($"PS#{i}");
+                disd.Add(DisassembleCsoData(shpkFile.PixelShaderEntries[i].ByteCode, out var d, out var e)
                     ? d
                     : e.ToString());
 

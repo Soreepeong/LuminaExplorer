@@ -16,7 +16,7 @@ public class ShcdFile : FileResource, IShaderEntry {
         if (FileHeader.Magic != ShcdHeader.MagicValue)
             throw new InvalidDataException();
         Header = Reader.ReadStructure<ShaderHeader>();
-        InputTables = Reader.ReadStructuresAsArray<InputTable>(Header.NumInputs);
+        InputTables = Reader.ReadStructuresAsArray<ShaderInput>(Header.NumInputs);
         InputNames = InputTables.Select(x => Encoding.UTF8.GetString(
             Data,
             (int) (FileHeader.InputStringBlockOffset + x.InputStringOffset),
@@ -24,7 +24,7 @@ public class ShcdFile : FileResource, IShaderEntry {
     }
 
     public ShaderHeader Header { get; set; }
-    public InputTable[] InputTables { get; set; } = null!;
+    public ShaderInput[] InputTables { get; set; } = null!;
     public string[] InputNames { get; set; } = null!;
 
     public ReadOnlySpan<byte> ByteCode => DataSpan.Slice(

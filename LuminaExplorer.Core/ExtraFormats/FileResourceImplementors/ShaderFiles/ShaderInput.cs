@@ -2,7 +2,7 @@
 
 namespace LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 
-public struct InputTable : IInputTable {
+public struct ShaderInput : IInputTable {
     public InputId InternalId { get; set; }
     public uint InputStringOffset { get; set; }
     public uint InputStringSize { get; set; }

@@ -1,8 +1,11 @@
 ﻿using System;
+using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using Lumina.Data.Files;
 using Lumina.Models.Materials;
 using LuminaExplorer.Controls.DirectXStuff.Resources;
+using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 using LuminaExplorer.Core.Util;
 using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;
@@ -67,6 +70,8 @@ public sealed unsafe class GameShaderPool : DirectXObject {
         base.Dispose(disposing);
     }
 
+    public event ShaderEvents.FileRequested<ShpkFile>? ShpkFileRequested;
+
     public void SetSamplers() {
         fixed (ID3D11SamplerState** ppSamplers = _pSamplers)
             _pDeviceContext->PSSetSamplers(0, (uint) _pSamplers.Length, ppSamplers);
@@ -86,8 +91,27 @@ public sealed unsafe class GameShaderPool : DirectXObject {
             _pDeviceContext->PSSetShaderResources(slot, count, (ID3D11ShaderResourceView**) p);
     }
 
-    public Task<ShaderSet> GetShaderSet(MdlFile mdl, Material material) {
-        var shpk = material.ShaderPack;
-        throw new NotImplementedException();
+    public Task<ShaderSet?>? GetShaderSet(MdlFile mdl, Material material) {
+        Task<ShpkFile?>? task = null;
+        ShpkFileRequested?.Invoke($"shader/sm5/shpk/{material.ShaderPack}", ref task);
+        return task?.ContinueWith(r => {
+            var shpk = r.Result;
+            if (shpk is null)
+                return null;
+
+            var mtrl = material;
+            var key = shpk.MaterialKeys.Select(x => x.DefaultValue).ToArray();
+            foreach (var k in mtrl.File!.ShaderKeys) {
+                for (var i = 0; i < shpk.MaterialKeys.Length; i++)
+                    if (shpk.MaterialKeys[i].Id == k.Category)
+                        key[i] = k.Value;
+            }
+
+            var candidates = shpk.Nodes.Where(x => x.MaterialKeys.SequenceEqual(key)).ToArray();
+
+            Debugger.Break();
+            
+            return new ShaderSet(null!, null!);
+        });
     }
 }

@@ -269,9 +269,9 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
             base.Dispose(disposing);
         }
 
-        public event ShaderEvents.FileRequested<DdsFile>? TextureRequested;
+        public event ShaderEvents.FileRequested<DdsFile>? DdsFileRequested;
 
-        public event ShaderEvents.FileRequested<MtrlFile>? MaterialRequested;
+        public event ShaderEvents.FileRequested<MtrlFile>? MtrlFileRequested;
 
         public event Action? TextureLoadStateChanged;
 
@@ -292,7 +292,7 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
 
             var task = _materials[materialIndex];
             if (task is null) {
-                if (MaterialRequested is null)
+                if (MtrlFileRequested is null)
                     return false;
 
                 var mtrlPathSpan = _mdl.Strings.AsSpan((int) _mdl.MaterialNameOffsets[materialIndex]);
@@ -308,7 +308,7 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
                 }
 
                 Task<MtrlFile?>? loader = null;
-                MaterialRequested?.Invoke(mtrlPath, ref loader);
+                MtrlFileRequested?.Invoke(mtrlPath, ref loader);
                 if (loader is null)
                     return false;
 
@@ -333,7 +333,7 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
 
             var task = _textures[materialIndex][textureIndex];
             if (task is null) {
-                if (TextureRequested is null)
+                if (DdsFileRequested is null)
                     return false;
 
                 var textureDefinition = mat.Textures[textureIndex];
@@ -343,7 +343,7 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
                 }
 
                 Task<DdsFile?>? loader = null;
-                TextureRequested?.Invoke(textureDefinition.TexturePath, ref loader);
+                DdsFileRequested?.Invoke(textureDefinition.TexturePath, ref loader);
                 if (loader is null)
                     return false;
 

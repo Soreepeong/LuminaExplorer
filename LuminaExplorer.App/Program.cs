@@ -92,14 +92,7 @@ static class Program {
         //     Debugger.Break();
         // });
 
-        Task.Run(async () => {
-            var ft = fs.FindFile(fs.RootFolder, "shader/sm5/shpk/character.shpk");
-            await ft;
-            using var l = fs.GetLookup(ft.Result!);
-            return await l.AsFileResource<ShpkFile>();
-        });
-
-        /*/
+        //*/
         var viewer = new Form {
             Size = new(1024, 768)
         };
