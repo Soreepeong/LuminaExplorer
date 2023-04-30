@@ -67,10 +67,13 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         VfsRoot = rootFolder;
         _mdlFileTask = Task.FromResult(mdlFile);
 
-        // _ = TryGetCustomRenderer(out _, true);
-        // _activeRendererTask = _customRendererTask?.Task.ContinueWith(r => (MdlRenderer)r.Result, cts.Token);
+        //*
+        _ = TryGetCustomRenderer(out _, true);
+        _activeRendererTask = _customRendererTask?.Task.ContinueWith(r => (MdlRenderer)r.Result, cts.Token);
+        /*/
         _ = TryGetGameShaderRenderer(out _, true);
         _activeRendererTask = _gameShaderRendererTask?.Task.ContinueWith(r => (MdlRenderer) r.Result, cts.Token);
+        //*/
 
         _activeRendererTask!.ContinueWith(r => {
             if (r.IsCompletedSuccessfully)

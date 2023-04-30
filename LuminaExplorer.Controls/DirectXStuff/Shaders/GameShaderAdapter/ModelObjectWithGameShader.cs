@@ -38,6 +38,15 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
             "Mesh.ReadVertices seems to be expecting Meshes and VertexDeclarations to have same length.");
 
         try {
+            // Ensure that we at least have non-null arrays in case of exceptions.
+            _materials = Array.Empty<Task<Material?>?>();
+            _shaderSets = Array.Empty<Task<ShaderSet?>?>();
+            _pInputLayouts = new ID3D11InputLayout*[0];
+            _textures = Array.Empty<Task<Texture2DShaderResource?>?[]>();
+            _pSamplers = Array.Empty<ID3D11SamplerState*[]>();
+            _pIndexBuffers = new ID3D11Buffer*[0];
+            _pVertexBuffers = new ID3D11Buffer*[0];
+
             _pool = pool;
             _pool.CopyDeviceAndContext(out _pDevice, out _pDeviceContext);
 

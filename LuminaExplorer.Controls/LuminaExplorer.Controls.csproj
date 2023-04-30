@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="DirectXStuff\Shaders\CustomMdlRendererShader.hlsl" />
     <None Remove="DirectXStuff\Shaders\MdlRendererShader.hlsl" />
     <None Remove="Util\tex2d_ps.hlsl" />
     <None Remove="Util\tex2d_vs.hlsl" />
@@ -48,6 +49,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="DirectXStuff\Shaders\CustomMdlRendererShader.hlsl" />
     <EmbeddedResource Include="DirectXStuff\Shaders\DirectXTexRendererShader.hlsl" />
   </ItemGroup>
 

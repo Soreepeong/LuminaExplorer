@@ -183,6 +183,11 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
 
         public ModelObject(CustomMdlRendererShader shader, MdlFile mdlFile, int variantId = 1, Model.ModelLod lod = Model.ModelLod.High) {
             try {
+                // Ensure that we at least have non-null arrays in case of exceptions.
+                _meshVertices = new ID3D11Buffer*[0];
+                _materials = Array.Empty<Task<Material?>?>();
+                _textures = Array.Empty<Task<Texture2DShaderResource?>?[]>();
+                
                 _pDevice = shader._pDevice;
                 _pDevice->AddRef();
                 _mdl = mdlFile;
@@ -190,11 +195,6 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
                 _model = new(mdlFile: mdlFile, lod, variantId);
                 _materials = new Task<Material?>?[_model.Materials.Length];
                 _textures = new Task<Texture2DShaderResource?>[_model.Materials.Length][];
-
-                for (var i = 0; i < _model.Materials.Length; i++) {
-                    var mat = (Material?) _model.Materials[i];
-                    _textures[i] = new Task<Texture2DShaderResource?>[mat?.Textures.Length ?? 0];
-                }
 
                 _meshes = _model.Meshes
                     .Where(x => x.Types.Contains(Mesh.MeshType.Main))
@@ -315,14 +315,18 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
                 _materials[materialIndex] = task = loader.ContinueWith(r => {
                     if (!r.IsCompletedSuccessfully || r.Result is not { } mtrlFile)
                         return null;
-                    return new Material(mtrlFile);
+                    
+                    var mat = new Material(mtrlFile);
+                    for (var i = 0; i < _model.Materials.Length; i++)
+                        _textures[i] = new Task<Texture2DShaderResource?>[mat?.Textures.Length ?? 0];
+                    return mat;
                 });
             }
 
-            if (task is not {IsCompletedSuccessfully: true, Result: { } mat})
+            if (task is not {IsCompletedSuccessfully: true, Result: { } mat1})
                 return false;
 
-            material = mat;
+            material = mat1;
             return true;
         }
 
