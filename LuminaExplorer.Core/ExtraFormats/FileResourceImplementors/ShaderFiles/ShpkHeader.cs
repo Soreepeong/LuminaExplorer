@@ -12,9 +12,9 @@ public struct ShpkHeader {
     public uint NumVertexShaders;
     public uint NumPixelShaders;
     public uint Unknown1;
-    public uint Unknown2;
-    public uint NumScalarParameters;
-    public uint NumResourceParameteres;
+    public uint NumHmm1;
+    public uint NumConstantInputs;
+    public uint NumSamplerInputs;
 
     // or, these are parameters
     public uint Unknown3;
@@ -25,6 +25,12 @@ public struct ShpkHeader {
     public uint Unknown8;
     
     public override string ToString() =>
-        $"{DirectXVersion}: V={NumVertexShaders} P={NumPixelShaders} U1={Unknown1} U2={Unknown2} " +
-        $"NSP={NumScalarParameters} NRP={NumResourceParameteres}";
+        $"{DirectXVersion}: V={NumVertexShaders} P={NumPixelShaders} H1={NumHmm1} U1={Unknown1} " +
+        $"NSP={NumConstantInputs} NRP={NumSamplerInputs}";
+}
+
+public struct Hmm1 {
+    public uint a1;
+    public ushort a2;
+    public ushort a3;
 }

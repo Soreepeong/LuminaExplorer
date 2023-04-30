@@ -8,34 +8,28 @@ using Lumina.Data.Attributes;
 namespace LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 
 [FileExtension(".shcd")]
-public class ShcdFile : FileResource {
-    public ShcdHeader Header;
-    public ShaderHeader ShaderHeader;
-    public InputTable[]? InputTables;
-    public VertexShaderInputTable[]? VertexShaderInputTables;
-    public string[] InputNames = null!;
-
+public class ShcdFile : FileResource, IShaderEntry {
+    public ShcdHeader FileHeader;
+    
     public override void LoadFile() {
-        Header = Reader.ReadStructure<ShcdHeader>();
-        if (Header.Magic != ShcdHeader.MagicValue)
+        FileHeader = Reader.ReadStructure<ShcdHeader>();
+        if (FileHeader.Magic != ShcdHeader.MagicValue)
             throw new InvalidDataException();
-        ShaderHeader = Reader.ReadStructure<ShaderHeader>();
-        if (Header.ShaderType == ShaderType.Vertex && false) {
-            VertexShaderInputTables = Reader.ReadStructuresAsArray<VertexShaderInputTable>(ShaderHeader.NumInputs);
-            InputNames = VertexShaderInputTables.Select(x => Encoding.UTF8.GetString(
-                Data,
-                (int) (Header.InputStringBlockOffset + x.InputStringOffset),
-                (int) x.InputStringSize)).ToArray();
-        } else {
-            InputTables = Reader.ReadStructuresAsArray<InputTable>(ShaderHeader.NumInputs);
-            InputNames = InputTables.Select(x => Encoding.UTF8.GetString(
-                Data,
-                (int) (Header.InputStringBlockOffset + x.InputStringOffset),
-                (int) x.InputStringSize)).ToArray();
-        }
+        Header = Reader.ReadStructure<ShaderHeader>();
+        InputTables = Reader.ReadStructuresAsArray<InputTable>(Header.NumInputs);
+        InputNames = InputTables.Select(x => Encoding.UTF8.GetString(
+            Data,
+            (int) (FileHeader.InputStringBlockOffset + x.InputStringOffset),
+            (int) x.InputStringSize)).ToArray();
     }
 
-    public Span<byte> ByteCode => DataSpan.Slice(
-        (int) (Header.ShaderBytecodeBlockOffset + ShaderHeader.BytecodeOffset),
-        (int) ShaderHeader.BytecodeSize);
+    public ShaderHeader Header { get; set; }
+    public InputTable[] InputTables { get; set; } = null!;
+    public string[] InputNames { get; set; } = null!;
+
+    public ReadOnlySpan<byte> ByteCode => DataSpan.Slice(
+        (int) (FileHeader.ShaderBytecodeBlockOffset + Header.BytecodeOffset),
+        (int) Header.BytecodeSize);
+
+    public ShaderType ShaderType => FileHeader.ShaderType;
 }

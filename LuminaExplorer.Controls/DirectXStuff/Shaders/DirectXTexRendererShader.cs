@@ -81,13 +81,24 @@ public sealed unsafe class DirectXTexRendererShader : DirectXObject {
         }
     }
 
-    protected override void Dispose(bool disposing) {
+    ~DirectXTexRendererShader() => ReleaseUnmanagedResources();
+
+    private void ReleaseUnmanagedResources() {
         SafeRelease(ref _pPixelShader);
         SafeRelease(ref _pVertexShader);
         SafeRelease(ref _pInputLayout);
         for (var i = 0; i < _pInputBuffers.Length; i++)
             SafeRelease(ref _pInputBuffers[i]);
         SafeRelease(ref _pIndexBuffer);
+    }
+
+    private void DisposePrivate(bool disposing) {
+        _ = disposing;
+        ReleaseUnmanagedResources();
+    }
+
+    protected override void Dispose(bool disposing) {
+        DisposePrivate(disposing);
         base.Dispose(disposing);
     }
 

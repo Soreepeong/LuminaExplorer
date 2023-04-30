@@ -5,11 +5,11 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Lumina.Data;
 using Lumina.Data.Files;
-using Lumina.Models.Materials;
-using Lumina.Models.Models;
 using LuminaExplorer.Controls.DirectXStuff;
 using LuminaExplorer.Controls.DirectXStuff.Shaders;
+using LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.Util.DdsStructs;
@@ -20,11 +20,17 @@ using Silk.NET.Direct3D11;
 namespace LuminaExplorer.Controls.FileResourceViewerControls.ModelViewerControl;
 
 public class ModelViewerControl : AbstractFileResourceViewerControl {
-    private ResultDisposingTask<MdlRenderer>? _rendererTask;
+    private ResultDisposingTask<GamePixelShaderMdlRenderer>? _gameShaderRendererTask;
+    private ResultDisposingTask<CustomMdlRenderer>? _customRendererTask;
+
+    private Task<MdlRenderer>? _activeRendererTask;
+
     private CameraManager _cameraManager;
 
     private CancellationTokenSource? _modelTaskCancellationTokenSource;
-    private Task<Model>? _modelTask;
+    internal IVirtualFileSystem? Vfs;
+    internal IVirtualFolder? VfsRoot;
+    private Task<MdlFile>? _mdlFileTask;
 
     public ModelViewerControl() {
         base.BackColor = DefaultBackColor;
@@ -36,9 +42,11 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         if (disposing) {
             _modelTaskCancellationTokenSource?.Cancel();
             _modelTaskCancellationTokenSource = null;
-            _modelTask = null;
+            _mdlFileTask = null;
             _ = SafeDispose.OneAsync(ref _cameraManager!);
-            _ = SafeDispose.OneAsync(ref _rendererTask!);
+            _ = SafeDispose.OneAsync(ref _customRendererTask!);
+            _ = SafeDispose.OneAsync(ref _gameShaderRendererTask!);
+            _ = SafeDispose.OneAsync(ref _customRendererTask!);
         }
 
         base.Dispose(disposing);
@@ -53,43 +61,19 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
     public void SetModel(IVirtualFileSystem vfs, IVirtualFolder rootFolder, MdlFile mdlFile) {
         _modelTaskCancellationTokenSource?.Cancel();
         var cts = _modelTaskCancellationTokenSource = new();
-        _modelTask = Task.Factory.StartNew(async () => {
-            var model = new Model(mdlFile);
-            for (var i = 0; i < model.Materials.Length; i++) {
-                cts.Token.ThrowIfCancellationRequested();
-                var m = model.Materials[i];
-                if (m.File is not null)
-                    continue;
-                var materialPath = (string?) m.MaterialPath;
-                if (materialPath?.StartsWith("/") is true)
-                    materialPath = Material.ResolveRelativeMaterialPath(materialPath, m.VariantId);
-                if (materialPath is null)
-                    continue;
-                if (await vfs.FindFile(rootFolder, materialPath) is not { } file)
-                    continue;
-                cts.Token.ThrowIfCancellationRequested();
-                using var lookup = vfs.GetLookup(file);
-                try {
-                    model.Materials[i] = new(await lookup.AsFileResource<MtrlFile>(cts.Token));
-                } catch (Exception) {
-                    // ignore; maybe show warnings later?
-                }
-            }
 
-            return model;
-        }, cts.Token).Unwrap();
-        _ = TryGetRenderer(out _, true);
-        _rendererTask!.Task.ContinueWith(r => {
+        Vfs = vfs;
+        VfsRoot = rootFolder;
+        _mdlFileTask = Task.FromResult(mdlFile);
+
+        // _ = TryGetCustomRenderer(out _, true);
+        // _activeRendererTask = _customRendererTask?.Task.ContinueWith(r => (MdlRenderer)r.Result, cts.Token);
+        _ = TryGetGameShaderRenderer(out _, true);
+        _activeRendererTask = _gameShaderRendererTask?.Task.ContinueWith(r => (MdlRenderer) r.Result, cts.Token);
+
+        _activeRendererTask!.ContinueWith(r => {
             if (r.IsCompletedSuccessfully)
-                r.Result.UpdateModel(_modelTask, async texPath => {
-                    var file = await vfs.FindFile(rootFolder, texPath);
-                    if (file is null)
-                        return null;
-
-                    using var lookup = vfs.GetLookup(file);
-                    var tex = await lookup.AsFileResource<TexFile>(cts.Token);
-                    return tex.ToDdsFileFollowGameDx11Conversion();
-                });
+                r.Result.UpdateModel(_mdlFileTask);
             Invalidate();
         }, cts.Token);
     }
@@ -110,9 +94,26 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         Invalidate();
     }
 
-    private bool TryGetRenderer([MaybeNullWhen(false)] out MdlRenderer renderer, bool startInitializing = false) {
-        if (_rendererTask?.IsCompletedSuccessfully is true) {
-            renderer = _rendererTask.Result;
+    private bool TryGetRenderer([MaybeNullWhen(false)] out MdlRenderer renderer) {
+        if (_activeRendererTask is null) {
+            renderer = null!;
+            return false;
+        }
+
+        if (_activeRendererTask?.IsCompletedSuccessfully is true) {
+            renderer = _activeRendererTask.Result;
+            return true;
+        }
+
+        renderer = null!;
+        return false;
+    }
+
+    public bool TryGetCustomRenderer(
+        [MaybeNullWhen(false)] out CustomMdlRenderer renderer,
+        bool startInitializing = false) {
+        if (_customRendererTask?.IsCompletedSuccessfully is true) {
+            renderer = _customRendererTask.Result;
             return true;
         }
 
@@ -120,8 +121,8 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         if (!startInitializing)
             return false;
 
-        _rendererTask ??= new(Task
-            .Run(() => new MdlRenderer(this))
+        _customRendererTask ??= new(Task
+            .Run(() => new CustomMdlRenderer(this))
             .ContinueWith(r => {
                 if (r.IsCompletedSuccessfully)
                     r.Result.UiThreadInitialize();
@@ -129,20 +130,166 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
             }, UiTaskScheduler));
         return false;
     }
+
+    public bool TryGetGameShaderRenderer(
+        [MaybeNullWhen(false)] out GamePixelShaderMdlRenderer renderer,
+        bool startInitializing = false) {
+        if (_gameShaderRendererTask?.IsCompletedSuccessfully is true) {
+            renderer = _gameShaderRendererTask.Result;
+            return true;
+        }
+
+        renderer = null!;
+        if (!startInitializing)
+            return false;
+
+        _gameShaderRendererTask ??= new(Task
+            .Run(() => new GamePixelShaderMdlRenderer(this))
+            .ContinueWith(r => {
+                if (r.IsCompletedSuccessfully)
+                    r.Result.UiThreadInitialize();
+                return r.Result;
+            }, UiTaskScheduler));
+        return false;
+    }
+
+    internal Task<T?>? GetTypedFileAsync<T>(string path) where T : FileResource {
+        if (Vfs is not { } vfs || VfsRoot is not { } vfsRoot || _modelTaskCancellationTokenSource?.Token is not { } cts)
+            return null;
+        return Task.Factory.StartNew(async () => {
+            var file = await vfs.FindFile(vfsRoot, path);
+            if (file is null)
+                return null;
+
+            using var lookup = vfs.GetLookup(file);
+            return await lookup.AsFileResource<T>(cts);
+        }, cts).Unwrap();
+    }
 }
 
-public unsafe class MdlRenderer : DirectXRenderer<ModelViewerControl> {
-    private MdlRendererShader _shader;
-    private MdlRendererShader.State _shaderState;
-    private Task<Model>? _modelTask;
-    private Task<MdlRendererShader.ModelObject>? _modelObject;
+public abstract unsafe class MdlRenderer : DirectXRenderer<ModelViewerControl> {
+    protected MdlRenderer(ModelViewerControl control, ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext)
+        : base(control, true, pDevice, pDeviceContext) { }
 
-    public MdlRenderer(ModelViewerControl control)
+    public abstract void ClearModel();
+
+    public abstract void UpdateModel(Task<MdlFile> newModelTask);
+
+    protected void ModelObjectOnTextureRequested(string path, ref Task<DdsFile?>? loader) {
+        loader ??= Control.GetTypedFileAsync<TexFile>(path)?.ContinueWith(r =>
+            !r.IsCompletedSuccessfully ? null : r.Result?.ToDdsFileFollowGameDx11Conversion());
+    }
+
+    protected void ModelObjectOnMaterialRequested(string path, ref Task<MtrlFile?>? loader) {
+        loader ??= Control.GetTypedFileAsync<MtrlFile>(path);
+    }
+
+    protected void ModelObjectOnLoadStateChanged() {
+        Control.Invalidate();
+    }
+
+    protected override void Draw3D(ID3D11RenderTargetView* pRenderTarget) {
+        Span<float> colors = stackalloc float[4];
+        colors[0] = 1f * Control.BackColor.R / 255;
+        colors[1] = 1f * Control.BackColor.G / 255;
+        colors[2] = 1f * Control.BackColor.B / 255;
+        colors[3] = 1f * Control.BackColor.A / 255;
+
+        DeviceContext->ClearRenderTargetView(pRenderTarget, ref colors[0]);
+    }
+
+    protected override void Draw2D(ID2D1RenderTarget* pRenderTarget) {
+        // empty
+    }
+}
+
+public unsafe class GamePixelShaderMdlRenderer : MdlRenderer {
+    private GameShaderPool _pool;
+    private Task<MdlFile>? _modelTask;
+    private ResultDisposingTask<ModelObjectWithGameShader>? _modelObject;
+    private GameShaderState _shaderState;
+
+    public GamePixelShaderMdlRenderer(ModelViewerControl control)
         // ReSharper disable once IntroduceOptionalParameters.Global
         : this(control, null, null) { }
 
-    public MdlRenderer(ModelViewerControl control, ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext)
-        : base(control, true, pDevice, pDeviceContext) {
+    public GamePixelShaderMdlRenderer(
+        ModelViewerControl control,
+        ID3D11Device* pDevice,
+        ID3D11DeviceContext* pDeviceContext)
+        : base(control, pDevice, pDeviceContext) {
+        _pool = new(Device, DeviceContext);
+        _shaderState = new(_pool);
+        Control.ViewportChanged += ControlOnViewportChanged;
+    }
+
+    protected override void Dispose(bool disposing) {
+        if (disposing) {
+            ClearModel();
+            _ = SafeDispose.OneAsync(ref _shaderState!);
+            _ = SafeDispose.OneAsync(ref _pool!);
+        }
+
+        base.Dispose(disposing);
+    }
+
+    public override void ClearModel() {
+        _modelObject?.Task.ContinueWith(r => {
+            if (r.IsCompletedSuccessfully) {
+                var modelObject = r.Result;
+                modelObject.TextureRequested -= ModelObjectOnTextureRequested;
+                modelObject.MaterialRequested -= ModelObjectOnMaterialRequested;
+                modelObject.ResourceLoadStateChanged -= ModelObjectOnLoadStateChanged;
+            }
+        });
+        _ = SafeDispose.OneAsync(ref _modelObject);
+        _ = SafeDispose.OneAsync(ref _shaderState);
+        _modelTask = null;
+    }
+
+    public override void UpdateModel(Task<MdlFile> newModelTask) {
+        if (_modelTask == newModelTask)
+            return;
+
+        ClearModel();
+        _modelTask = newModelTask;
+
+        _modelObject = new(newModelTask.ContinueWith(r => {
+            if (!r.IsCompletedSuccessfully)
+                throw r.Exception!;
+
+            var modelObject = new ModelObjectWithGameShader(_pool, r.Result);
+            modelObject.TextureRequested += ModelObjectOnTextureRequested;
+            modelObject.MaterialRequested += ModelObjectOnMaterialRequested;
+            modelObject.ResourceLoadStateChanged += ModelObjectOnLoadStateChanged;
+            return modelObject;
+        }, TaskScheduler.FromCurrentSynchronizationContext()));
+    }
+
+    protected override void Draw3D(ID3D11RenderTargetView* pRenderTarget) {
+        base.Draw3D(pRenderTarget);
+        // TODO
+        if (_modelObject?.IsCompletedSuccessfully is true)
+            _modelObject.Result.Draw(_shaderState);
+    }
+
+    private void ControlOnViewportChanged() {
+        // _shaderState.UpdateCamera(Matrix4x4.Identity, Control.Camera.View, Control.Camera.Projection);
+    }
+}
+
+public unsafe class CustomMdlRenderer : MdlRenderer {
+    private CustomMdlRendererShader _shader;
+    private CustomMdlRendererShader.State _shaderState;
+    private Task<MdlFile>? _modelTask;
+    private Task<CustomMdlRendererShader.ModelObject>? _modelObject;
+
+    public CustomMdlRenderer(ModelViewerControl control)
+        // ReSharper disable once IntroduceOptionalParameters.Global
+        : this(control, null, null) { }
+
+    public CustomMdlRenderer(ModelViewerControl control, ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext)
+        : base(control, pDevice, pDeviceContext) {
         _shader = new(Device, DeviceContext);
         _shaderState = new(Device, DeviceContext);
         Control.ViewportChanged += ControlOnViewportChanged;
@@ -158,13 +305,20 @@ public unsafe class MdlRenderer : DirectXRenderer<ModelViewerControl> {
         base.Dispose(disposing);
     }
 
-    public void ClearModel() {
+    public override void ClearModel() {
         _modelTask = null;
-        _modelObject?.ContinueWith(r => r.Result.TextureLoadStateChanged -= ResultOnTextureLoadStateChanged);
+        _modelObject?.ContinueWith(r => {
+            if (r.IsCompletedSuccessfully) {
+                var modelObject = r.Result;
+                modelObject.TextureRequested -= ModelObjectOnTextureRequested;
+                modelObject.TextureLoadStateChanged -= ModelObjectOnLoadStateChanged;
+                modelObject.MaterialRequested -= ModelObjectOnMaterialRequested;
+            }
+        });
         _modelObject = null;
     }
 
-    public void UpdateModel(Task<Model> newModelTask, Func<string, Task<DdsFile?>> ddsCallback) {
+    public override void UpdateModel(Task<MdlFile> newModelTask) {
         if (_modelTask == newModelTask)
             return;
 
@@ -176,15 +330,17 @@ public unsafe class MdlRenderer : DirectXRenderer<ModelViewerControl> {
                 return;
 
             _modelObject = Task.Run(() => {
-                var modelObject = new MdlRendererShader.ModelObject(_shader, r.Result, ddsCallback);
-                modelObject.TextureLoadStateChanged += ResultOnTextureLoadStateChanged;
+                var modelObject = new CustomMdlRendererShader.ModelObject(_shader, r.Result);
+                modelObject.TextureRequested += ModelObjectOnTextureRequested;
+                modelObject.TextureLoadStateChanged += ModelObjectOnLoadStateChanged;
+                modelObject.MaterialRequested += ModelObjectOnMaterialRequested;
                 return modelObject;
             });
             Control.RunOnUiThreadAfter(_modelObject, _ => {
                 if (_modelTask != newModelTask)
                     return;
-                
-                var bb = _modelTask.Result.File!.ModelBoundingBoxes;
+
+                var bb = _modelTask.Result.ModelBoundingBoxes;
                 var target = new Vector3(
                     (bb.Min[0] + bb.Max[0]) / 2f,
                     (bb.Min[1] + bb.Max[1]) / 2f,
@@ -204,25 +360,10 @@ public unsafe class MdlRenderer : DirectXRenderer<ModelViewerControl> {
         });
     }
 
-    private void ResultOnTextureLoadStateChanged() {
-        Control.Invalidate();
-    }
-
     protected override void Draw3D(ID3D11RenderTargetView* pRenderTarget) {
-        Span<float> colors = stackalloc float[4];
-        colors[0] = 1f * Control.BackColor.R / 255;
-        colors[1] = 1f * Control.BackColor.G / 255;
-        colors[2] = 1f * Control.BackColor.B / 255;
-        colors[3] = 1f * Control.BackColor.A / 255;
-
-        DeviceContext->ClearRenderTargetView(pRenderTarget, ref colors[0]);
-
+        base.Draw3D(pRenderTarget);
         if (_modelObject?.IsCompletedSuccessfully is true)
             _shader.Draw(_shaderState, _modelObject.Result);
-    }
-
-    protected override void Draw2D(ID2D1RenderTarget* pRenderTarget) {
-        // empty
     }
 
     private void ControlOnViewportChanged() {
@@ -231,12 +372,14 @@ public unsafe class MdlRenderer : DirectXRenderer<ModelViewerControl> {
 }
 
 public sealed class CameraManager : IDisposable {
-    private static readonly System3D _system3D = new(new(0, 0, -1), new(0, 1, 0));
+    public readonly System3D System3D;
 
     private readonly AbstractFileResourceViewerControl _control;
 
-    public CameraManager(AbstractFileResourceViewerControl control) {
+    public CameraManager(AbstractFileResourceViewerControl control, System3D? system3D = null) {
+        System3D = system3D ?? new(new(0, 0, -1), new(0, 1, 0), new(1, 0, 0));
         _control = control;
+        ObjectCentricCamera = new(System3D);
         _control.MouseActivity.UseLeftDrag = true;
         _control.MouseActivity.UseInfiniteLeftDrag = true;
         _control.MouseActivity.UseRightDrag = true;
@@ -254,7 +397,7 @@ public sealed class CameraManager : IDisposable {
 
     public event Action? ViewportChanged;
 
-    public ObjectCentricCamera ObjectCentricCamera { get; } = new(_system3D);
+    public ObjectCentricCamera ObjectCentricCamera { get; }
 
     public ICamera Camera => ObjectCentricCamera;
 
@@ -264,8 +407,9 @@ public sealed class CameraManager : IDisposable {
             var pitch = ObjectCentricCamera.PitchFromTarget + delta.Y * MathF.PI / 720;
             ObjectCentricCamera.PitchFromTarget = Math.Clamp(pitch, MathF.PI / -2, MathF.PI / 2);
         } else if (_control.MouseActivity.FirstHeldButton == MouseButtons.Right) {
-            ObjectCentricCamera.Target += _system3D.Up * delta.Y / 12f;
+            ObjectCentricCamera.Target += System3D.Up * delta.Y / 12f;
         }
+
         ViewportChanged?.Invoke();
     }
 
@@ -283,10 +427,12 @@ public sealed class CameraManager : IDisposable {
 public readonly struct System3D {
     public readonly Vector3 Forward;
     public readonly Vector3 Up;
+    public readonly Vector3 Right;
 
-    public System3D(Vector3 forward, Vector3 up) {
+    public System3D(Vector3 forward, Vector3 up, Vector3 right) {
         Forward = forward;
         Up = up;
+        Right = right;
     }
 }
 

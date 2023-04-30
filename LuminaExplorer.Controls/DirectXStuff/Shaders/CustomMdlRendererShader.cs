@@ -1,12 +1,12 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading.Tasks;
-using Lumina.Data.Parsing;
+using Lumina.Data.Files;
 using Lumina.Models.Materials;
 using Lumina.Models.Models;
 using LuminaExplorer.Controls.DirectXStuff.Resources;
@@ -19,23 +19,21 @@ using Silk.NET.Maths;
 
 namespace LuminaExplorer.Controls.DirectXStuff.Shaders;
 
-public unsafe class MdlRendererShader : DirectXObject {
-    private readonly byte[] _bytecodeVs;
+public unsafe class CustomMdlRendererShader : DirectXObject {
+    private readonly ID3D11SamplerState*[] _pSamplers;
     private ID3D11Device* _pDevice;
     private ID3D11DeviceContext* _pDeviceContext;
     private ID3D11PixelShader* _pPixelShader;
     private ID3D11VertexShader* _pVertexShader;
     private ID3D11InputLayout* _pInputLayout;
-    private readonly ID3D11SamplerState*[] _pSamplers;
+    private Texture2DShaderResource _dummy;
 
-    private readonly Dictionary<MdlStructs.VertexDeclarationStruct, nint> _inputLayoutDict = new();
-
-    public MdlRendererShader(ID3D11Device* pDevice, ID3D11DeviceContext* pContext) {
+    public CustomMdlRendererShader(ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext) {
         try {
             _pDevice = pDevice;
             _pDevice->AddRef();
 
-            _pDeviceContext = pContext;
+            _pDeviceContext = pDeviceContext;
             _pDeviceContext->AddRef();
 
             var samplerDesc = new SamplerDesc {
@@ -49,12 +47,9 @@ public unsafe class MdlRendererShader : DirectXObject {
                 MaxLOD = float.MaxValue,
                 ComparisonFunc = ComparisonFunc.Never,
             };
-            fixed (ID3D11SamplerState** ppSamplers = _pSamplers = new ID3D11SamplerState*[4]) {
-                ThrowH(pDevice->CreateSamplerState(&samplerDesc, ppSamplers + 0));
-                ThrowH(pDevice->CreateSamplerState(&samplerDesc, ppSamplers + 1));
-                ThrowH(pDevice->CreateSamplerState(&samplerDesc, ppSamplers + 2));
-                ThrowH(pDevice->CreateSamplerState(&samplerDesc, ppSamplers + 3));
-                ThrowH(pDevice->CreateSamplerState(&samplerDesc, ppSamplers + 4));
+            fixed (ID3D11SamplerState** ppSamplers = _pSamplers = new ID3D11SamplerState*[5]) {
+                for (var i = 0; i < _pSamplers.Length; i++)
+                    ThrowH(pDevice->CreateSamplerState(&samplerDesc, ppSamplers + i));
             }
 
             var bytecode = GetType().CompileShaderFromAssemblyResource("ps_4_0", "main_ps");
@@ -62,7 +57,7 @@ public unsafe class MdlRendererShader : DirectXObject {
             fixed (void* pBytecode = bytecode)
                 ThrowH(pDevice->CreatePixelShader(pBytecode, (nuint) bytecode.Length, null, p2));
 
-            _bytecodeVs = bytecode = GetType().CompileShaderFromAssemblyResource("vs_4_0", "main_vs");
+            bytecode = GetType().CompileShaderFromAssemblyResource("vs_4_0", "main_vs");
             fixed (ID3D11VertexShader** ppVertexShader = &_pVertexShader)
             fixed (ID3D11InputLayout** ppInputLayout = &_pInputLayout)
             fixed (byte* pBytecode = bytecode)
@@ -94,16 +89,19 @@ public unsafe class MdlRendererShader : DirectXObject {
                         (nuint) bytecode.Length,
                         ppInputLayout));
             }
+
+            // Some materials refer to dummy.tex; make them point to this.
+            fixed (float* pDummy = stackalloc float[16])
+                _dummy = new(_pDevice, Format.FormatR8G8B8A8Unorm, 4, 4, 16, (nint) (&pDummy));
         } catch (Exception) {
-            Dispose();
+            DisposePrivate(true);
             throw;
         }
     }
 
-    protected override void Dispose(bool disposing) {
-        foreach (var v in _inputLayoutDict.Values)
-            ((ID3D11InputLayout*) v)->Release();
-        _inputLayoutDict.Clear();
+    ~CustomMdlRendererShader() => ReleaseUnmanagedResources();
+
+    private void ReleaseUnmanagedResources() {
         for (var i = 0; i < _pSamplers.Length; i++)
             SafeRelease(ref _pSamplers[i]);
         SafeRelease(ref _pPixelShader);
@@ -111,6 +109,16 @@ public unsafe class MdlRendererShader : DirectXObject {
         SafeRelease(ref _pInputLayout);
         SafeRelease(ref _pDevice);
         SafeRelease(ref _pDeviceContext);
+    }
+
+    private void DisposePrivate(bool disposing) {
+        if (disposing)
+            SafeDispose.One(ref _dummy!);
+        ReleaseUnmanagedResources();
+    }
+
+    protected override void Dispose(bool disposing) {
+        DisposePrivate(disposing);
         base.Dispose(disposing);
     }
 
@@ -124,7 +132,7 @@ public unsafe class MdlRendererShader : DirectXObject {
             _pDeviceContext->PSSetSamplers(0, (uint) _pSamplers.Length, ppSamplers);
 
         state.BindConstantBuffers();
-        
+
         _pDeviceContext->IASetIndexBuffer(modelObject.IndexBuffer, Format.FormatR16Uint, 0);
 
         for (var i = 0; modelObject.GetVertexBuffer(i, out var pVertexBuffer); i++) {
@@ -134,7 +142,9 @@ public unsafe class MdlRendererShader : DirectXObject {
             if (modelObject.TryGetMaterial(i, out var materialIndex, out var material)) {
                 for (var j = 0; j < material.Textures.Length; j++) {
                     var t = material.Textures[j];
-                    var pTexture = modelObject.GetTexture(materialIndex, j);
+                    if (!modelObject.TryGetTexture(materialIndex, j, out var pTexture))
+                        pTexture = _dummy.ShaderResourceView;
+
                     switch (t.TextureUsageSimple) {
                         case Texture.Usage.Diffuse:
                             _pDeviceContext->PSSetShaderResources(0, 1, pTexture);
@@ -161,138 +171,32 @@ public unsafe class MdlRendererShader : DirectXObject {
         }
     }
 
-    public ID3D11InputLayout* GetInputLayout(MdlStructs.VertexDeclarationStruct mv) {
-        lock (_inputLayoutDict) {
-            fixed (byte* pBytecode = _bytecodeVs)
-            fixed (byte* pszPosition = "POSITION"u8.ToArray())
-            fixed (byte* pszNormal = "NORMAL"u8.ToArray())
-            fixed (byte* pszTexCoord = "TEXCOORD"u8.ToArray())
-            fixed (byte* pszBlendWeight = "BLENDWEIGHT"u8.ToArray())
-            fixed (byte* pszBlendIndices = "BLENDINDICES"u8.ToArray())
-            fixed (byte* pszColor = "COLOR"u8.ToArray())
-            fixed (byte* pszTangent = "TANGENT"u8.ToArray()) {
-                if (_inputLayoutDict.TryGetValue(mv, out var pInputLayoutUntyped))
-                    return (ID3D11InputLayout*) pInputLayoutUntyped;
-
-                Span<InputElementDesc> descriptors = stackalloc InputElementDesc[8];
-                var i = 0;
-                for (; i < mv.VertexElements.Length; i++) {
-                    var ve = mv.VertexElements[i];
-                    var usage = (Vertex.VertexUsage) ve.Usage;
-                    var type = (Vertex.VertexType) ve.Type;
-                    descriptors[i] = new(
-                        semanticName: usage switch {
-                            Vertex.VertexUsage.Position => pszPosition,
-                            Vertex.VertexUsage.BlendWeights => pszBlendWeight,
-                            Vertex.VertexUsage.BlendIndices => pszBlendIndices,
-                            Vertex.VertexUsage.Normal => pszNormal,
-                            Vertex.VertexUsage.UV => pszTexCoord,
-                            Vertex.VertexUsage.Tangent2 => pszTangent,
-                            Vertex.VertexUsage.Tangent1 => pszTangent,
-                            Vertex.VertexUsage.Color => pszColor,
-                            _ => throw new NotSupportedException(),
-                        },
-                        semanticIndex: usage == Vertex.VertexUsage.Tangent2 ? 1u : 0u,
-                        format: type switch {
-                            Vertex.VertexType.Single3 => Format.FormatR32G32B32Float,
-                            Vertex.VertexType.Single4 => Format.FormatR32G32B32Float,
-                            Vertex.VertexType.UInt => Format.FormatR32Uint,
-                            Vertex.VertexType.ByteFloat4 => Format.FormatR8G8B8A8Unorm,
-                            Vertex.VertexType.Half2 => Format.FormatR16G16Float,
-                            Vertex.VertexType.Half4 => Format.FormatR16G16B16A16Float,
-                            _ => throw new NotSupportedException(),
-                        },
-                        inputSlot: 0u,
-                        alignedByteOffset: ve.Offset,
-                        inputSlotClass: InputClassification.PerVertexData);
-                }
-
-                if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.Position))
-                    descriptors[i++] = new(pszPosition, 0, Format.FormatR32G32B32A32Float, 0, 0,
-                        InputClassification.PerVertexData);
-                if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.BlendWeights))
-                    descriptors[i++] = new(pszBlendWeight, 0, Format.FormatR32G32B32A32Float, 0, 0,
-                        InputClassification.PerVertexData);
-                if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.BlendIndices))
-                    descriptors[i++] = new(pszBlendIndices, 0, Format.FormatR32G32B32A32Float, 0, 0,
-                        InputClassification.PerVertexData);
-                if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.Normal))
-                    descriptors[i++] = new(pszNormal, 0, Format.FormatR32G32B32A32Float, 0, 0,
-                        InputClassification.PerVertexData);
-                if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.UV))
-                    descriptors[i++] = new(pszTexCoord, 0, Format.FormatR32G32B32A32Float, 0, 0,
-                        InputClassification.PerVertexData);
-                if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.Tangent2))
-                    descriptors[i++] = new(pszTangent, 1, Format.FormatR32G32B32A32Float, 0, 0,
-                        InputClassification.PerVertexData);
-                if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.Tangent1))
-                    descriptors[i++] = new(pszTangent, 0, Format.FormatR32G32B32A32Float, 0, 0,
-                        InputClassification.PerVertexData);
-                if (mv.VertexElements.All(x => x.Usage != (uint) Vertex.VertexUsage.Color))
-                    descriptors[i] = new(pszColor, 0, Format.FormatR32G32B32A32Float, 0, 0,
-                        InputClassification.PerVertexData);
-
-                ID3D11InputLayout* pInputLayout = null;
-                fixed (InputElementDesc* pDesc = descriptors)
-                    ThrowH(_pDevice->CreateInputLayout(
-                        pDesc,
-                        (uint) descriptors.Length,
-                        pBytecode,
-                        (nuint) _bytecodeVs.Length,
-                        &pInputLayout));
-
-                _inputLayoutDict.Add(mv, (nint) pInputLayout);
-                return pInputLayout;
-            }
-        }
-    }
-
     public class ModelObject : DirectXObject {
+        private readonly MdlFile _mdl;
         private readonly Model _model;
         private readonly Mesh[] _meshes;
+        private readonly Task<Material?>?[] _materials;
         private readonly ID3D11Buffer*[] _meshVertices;
-        private readonly Task<Texture2DShaderResource?>[][] _textures;
+        private Task<Texture2DShaderResource?>?[ /* Material Index*/][ /* Texture Index */] _textures;
+        private ID3D11Device* _pDevice;
         private ID3D11Buffer* _pIndexBuffer;
-        private Texture2DShaderResource _dummy;
 
-        public ModelObject(MdlRendererShader shader, Model model, Func<string, Task<DdsFile?>> ddsCallback) {
-            var dummyData = new Matrix4x4();
-
+        public ModelObject(CustomMdlRendererShader shader, MdlFile mdlFile, int variantId = 1, Model.ModelLod lod = Model.ModelLod.High) {
             try {
-                _dummy = new(shader._pDevice, Format.FormatR8G8B8A8Unorm, 4, 4, 16, (nint) (&dummyData));
-                _model = model;
-                _textures = new Task<Texture2DShaderResource?>[model.Materials.Length][];
+                _pDevice = shader._pDevice;
+                _pDevice->AddRef();
+                _mdl = mdlFile;
 
-                for (var i = 0; i < model.Materials.Length; i++) {
-                    var mat = (Material?) model.Materials[i];
+                _model = new(mdlFile: mdlFile, lod, variantId);
+                _materials = new Task<Material?>?[_model.Materials.Length];
+                _textures = new Task<Texture2DShaderResource?>[_model.Materials.Length][];
+
+                for (var i = 0; i < _model.Materials.Length; i++) {
+                    var mat = (Material?) _model.Materials[i];
                     _textures[i] = new Task<Texture2DShaderResource?>[mat?.Textures.Length ?? 0];
-                    if (mat is null)
-                        continue;
-
-                    for (var j = 0; j < mat.Textures.Length; j++) {
-                        var m = mat.Textures[j];
-                        if (m.TexturePath == "dummy.tex") {
-                            _textures[i][j] = Task.FromResult((Texture2DShaderResource?) null);
-                            continue;
-                        }
-
-                        var pDevice = shader._pDevice;
-                        pDevice->AddRef();
-                        _textures[i][j] = ddsCallback(m.TexturePath).ContinueWith(r => {
-                            try {
-                                if (!r.IsCompletedSuccessfully || r.Result is null)
-                                    return null;
-                                return new Texture2DShaderResource(pDevice, r.Result);
-                            } finally {
-                                pDevice->Release();
-                            }
-                        });
-
-                        _textures[i][j].ContinueWith(_ => TextureLoadStateChanged?.Invoke());
-                    }
                 }
 
-                _meshes = model.Meshes
+                _meshes = _model.Meshes
                     .Where(x => x.Types.Contains(Mesh.MeshType.Main))
                     .Where(x => x.Vertices.Any())
                     .ToArray();
@@ -327,14 +231,13 @@ public unsafe class MdlRendererShader : DirectXObject {
                             (uint) BindFlag.VertexBuffer);
                         ThrowH(shader._pDevice->CreateBuffer(&vertexBufferDesc, &vertexData, ppVertexBuffer));
                     }
-
                 }
 
-                fixed (void* pIndexData = &model.File!.Data[model.File!.FileHeader.IndexOffset[(int) model.Lod]])
+                fixed (void* pIndexData = &_mdl.Data[_mdl.FileHeader.IndexOffset[(int) _model.Lod]])
                 fixed (ID3D11Buffer** ppIndexBuffer = &_pIndexBuffer) {
                     var indexData = new SubresourceData(pIndexData);
                     var indexBufferDesc = new BufferDesc(
-                        model.File.FileHeader.IndexBufferSize[(int) model.Lod],
+                        _mdl.FileHeader.IndexBufferSize[(int) _model.Lod],
                         Usage.Default,
                         (uint) BindFlag.IndexBuffer);
                     ThrowH(shader._pDevice->CreateBuffer(&indexBufferDesc, &indexData, ppIndexBuffer));
@@ -345,9 +248,34 @@ public unsafe class MdlRendererShader : DirectXObject {
             }
         }
 
+        ~ModelObject() => ReleaseUnmanagedResources();
+
+        private void ReleaseUnmanagedResources() {
+            for (var i = 0; i < _meshVertices.Length; i++)
+                SafeRelease(ref _meshVertices[i]);
+            SafeRelease(ref _pIndexBuffer);
+            SafeRelease(ref _pDevice);
+        }
+
+        private void DisposeInner(bool disposing) {
+            if (disposing)
+                SafeDispose.Enumerable(ref _textures!);
+
+            ReleaseUnmanagedResources();
+        }
+
+        protected override void Dispose(bool disposing) {
+            DisposeInner(disposing);
+            base.Dispose(disposing);
+        }
+
+        public event ShaderEvents.FileRequested<DdsFile>? TextureRequested;
+
+        public event ShaderEvents.FileRequested<MtrlFile>? MaterialRequested;
+
         public event Action? TextureLoadStateChanged;
 
-        public ID3D11Buffer* IndexBuffer => _pIndexBuffer; 
+        public ID3D11Buffer* IndexBuffer => _pIndexBuffer;
 
         public bool GetVertexBuffer(int i, out ID3D11Buffer* pVertexBuffer) {
             pVertexBuffer = null;
@@ -360,43 +288,98 @@ public unsafe class MdlRendererShader : DirectXObject {
 
         public bool TryGetMaterial(int meshIndex, out int materialIndex, [MaybeNullWhen(false)] out Material material) {
             materialIndex = _model.File!.Meshes[_meshes[meshIndex].MeshIndex].MaterialIndex;
-            material = _model.Materials[materialIndex];
+            material = null!;
+
+            var task = _materials[materialIndex];
+            if (task is null) {
+                if (MaterialRequested is null)
+                    return false;
+
+                var mtrlPathSpan = _mdl.Strings.AsSpan((int) _mdl.MaterialNameOffsets[materialIndex]);
+                mtrlPathSpan = mtrlPathSpan[..mtrlPathSpan.IndexOf((byte) 0)];
+                
+                var mtrlPath = Encoding.UTF8.GetString(mtrlPathSpan);
+                if (mtrlPath.StartsWith('/')) {
+                    mtrlPath = Material.ResolveRelativeMaterialPath(mtrlPath, _model.VariantId);
+                    if (mtrlPath is null) {
+                        _materials[materialIndex] = Task.FromResult((Material?) null);
+                        return false;
+                    }
+                }
+
+                Task<MtrlFile?>? loader = null;
+                MaterialRequested?.Invoke(mtrlPath, ref loader);
+                if (loader is null)
+                    return false;
+
+                _materials[materialIndex] = task = loader.ContinueWith(r => {
+                    if (!r.IsCompletedSuccessfully || r.Result is not { } mtrlFile)
+                        return null;
+                    return new Material(mtrlFile);
+                });
+            }
+
+            if (task is not {IsCompletedSuccessfully: true, Result: { } mat})
+                return false;
+
+            material = mat;
             return true;
         }
 
-        public ID3D11ShaderResourceView* GetTexture(int materialIndex, int modelIndex) =>
-            (_textures[materialIndex][modelIndex] is {IsCompletedSuccessfully: true, Result: { } r}
-                ? r
-                : _dummy).ShaderResourceView;
+        public bool TryGetTexture(int materialIndex, int textureIndex, out ID3D11ShaderResourceView* pTexture) {
+            pTexture = null;
+            if (_materials[materialIndex] is not {IsCompletedSuccessfully: true, Result: { } mat})
+                return false;
+
+            var task = _textures[materialIndex][textureIndex];
+            if (task is null) {
+                if (TextureRequested is null)
+                    return false;
+
+                var textureDefinition = mat.Textures[textureIndex];
+                if (textureDefinition.TexturePath == "dummy.tex") {
+                    _textures[materialIndex][textureIndex] = Task.FromResult((Texture2DShaderResource?) null);
+                    return false;
+                }
+
+                Task<DdsFile?>? loader = null;
+                TextureRequested?.Invoke(textureDefinition.TexturePath, ref loader);
+                if (loader is null)
+                    return false;
+
+                var pDevice = _pDevice;
+                pDevice->AddRef();
+                _textures[materialIndex][textureIndex] = task = loader.ContinueWith(r => {
+                    try {
+                        if (!r.IsCompletedSuccessfully || r.Result is not { } ddsFile)
+                            return null;
+                        return new Texture2DShaderResource(pDevice, ddsFile);
+                    } finally {
+                        pDevice->Release();
+                    }
+                });
+
+                // Separate this out, since we want the task itself to be in completed state
+                // when this callback is called.
+                task.ContinueWith(_ => TextureLoadStateChanged?.Invoke());
+            }
+
+            if (task is {IsCompletedSuccessfully: true, Result: { } result}) {
+                pTexture = result.ShaderResourceView;
+                return true;
+            }
+
+            pTexture = null;
+            return false;
+        }
 
         public int GetNumIndices(int i) => _meshes[i].Indices.Length;
 
         public Submesh[] GetSubmeshes(int i) => _meshes[i].Submeshes;
-
-        private void DisposeInner(bool disposing) {
-            if (disposing) {
-                SafeDispose.One(ref _dummy!);
-                for (var i = 0; i < _textures.Length; i++) {
-                    foreach (var t1 in _textures[i])
-                        t1.Dispose();
-
-                    _textures[i] = Array.Empty<Task<Texture2DShaderResource?>>();
-                }
-            }
-
-            for (var i = 0; i < _meshVertices.Length; i++)
-                SafeRelease(ref _meshVertices[i]);
-            SafeRelease(ref _pIndexBuffer);
-        }
-
-        protected override void Dispose(bool disposing) {
-            DisposeInner(disposing);
-            base.Dispose(disposing);
-        }
     }
 
     public sealed class State : IDisposable {
-        private ID3D11DeviceContext* _pContext;
+        private ID3D11DeviceContext* _pDeviceContext;
         private ConstantBufferResource<CameraParameters> _cameraBufferResource;
         private ConstantBufferResource<LightParameters> _lightBufferResource;
         private readonly ID3D11Buffer*[] _buffers = new ID3D11Buffer*[2];
@@ -404,12 +387,12 @@ public unsafe class MdlRendererShader : DirectXObject {
         private CameraParameters _camera = new();
         private LightParameters _light = new();
 
-        public State(ID3D11Device* pDevice, ID3D11DeviceContext* pContext) {
+        public State(ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext) {
             try {
-                _pContext = pContext;
-                _pContext->AddRef();
-                _cameraBufferResource = new(pDevice, pContext);
-                _lightBufferResource = new(pDevice, pContext);
+                _pDeviceContext = pDeviceContext;
+                _pDeviceContext->AddRef();
+                _cameraBufferResource = new(pDevice, pDeviceContext);
+                _lightBufferResource = new(pDevice, pDeviceContext);
 
                 _buffers[0] = _cameraBufferResource.Buffer;
                 _buffers[1] = _lightBufferResource.Buffer;
@@ -429,7 +412,7 @@ public unsafe class MdlRendererShader : DirectXObject {
                 SafeDispose.One(ref _lightBufferResource!);
             }
 
-            SafeRelease(ref _pContext);
+            SafeRelease(ref _pDeviceContext);
         }
 
         public void Dispose() {
@@ -460,8 +443,8 @@ public unsafe class MdlRendererShader : DirectXObject {
                 if (_lightBufferResource.UpdateRequired)
                     _lightBufferResource.UpdateData(_light);
 
-                _pContext->VSSetConstantBuffers(0, (uint) _buffers.Length, ppBuffers);
-                _pContext->PSSetConstantBuffers(0, (uint) _buffers.Length, ppBuffers);
+                _pDeviceContext->VSSetConstantBuffers(0, (uint) _buffers.Length, ppBuffers);
+                _pDeviceContext->PSSetConstantBuffers(0, (uint) _buffers.Length, ppBuffers);
             }
         }
 
@@ -496,21 +479,23 @@ public unsafe class MdlRendererShader : DirectXObject {
 
     [StructLayout(LayoutKind.Explicit)]
     public struct CameraParameters {
-        [FieldOffset(0x000)] public Matrix4x4 View;
-        [FieldOffset(0x040)] public Matrix4x4 InverseView;
-        [FieldOffset(0x080)] public Matrix4x4 ViewProjection;
-        [FieldOffset(0x0C0)] public Matrix4x4 InverseViewProjection;
-        [FieldOffset(0x100)] public Matrix4x4 Projection;
-        [FieldOffset(0x140)] public Matrix4x4 InverseProjection;
-        [FieldOffset(0x180)] public Matrix4x4 MainViewToProjection;
-        [FieldOffset(0x1C0)] public Vector3 EyePosition;
-        [FieldOffset(0x1D0)] public Vector3 LookAtVector;
+        [FieldOffset(0x000)] public Matrix4x4 View = Matrix4x4.Identity;
+        [FieldOffset(0x040)] public Matrix4x4 InverseView = Matrix4x4.Identity;
+        [FieldOffset(0x080)] public Matrix4x4 ViewProjection = Matrix4x4.Identity;
+        [FieldOffset(0x0C0)] public Matrix4x4 InverseViewProjection = Matrix4x4.Identity;
+        [FieldOffset(0x100)] public Matrix4x4 Projection = Matrix4x4.Identity;
+        [FieldOffset(0x140)] public Matrix4x4 InverseProjection = Matrix4x4.Identity;
+        [FieldOffset(0x180)] public Matrix4x4 MainViewToProjection = Matrix4x4.Identity;
+        [FieldOffset(0x1C0)] public Vector3 EyePosition = Vector3.Zero;
+        [FieldOffset(0x1D0)] public Vector3 LookAtVector = Vector3.Zero;
 
-        [FieldOffset(0x1E0)] public Matrix4x4 WorldView;
+        [FieldOffset(0x1E0)] public Matrix4x4 WorldView = Matrix4x4.Identity;
 
-        [FieldOffset(0x220)] public Matrix4x4 World;
-        [FieldOffset(0x260)] public Matrix4x4 WorldInverseTranspose;
-        [FieldOffset(0x2A0)] public Matrix4x4 WorldViewProjection;
+        [FieldOffset(0x220)] public Matrix4x4 World = Matrix4x4.Identity;
+        [FieldOffset(0x260)] public Matrix4x4 WorldInverseTranspose = Matrix4x4.Identity;
+        [FieldOffset(0x2A0)] public Matrix4x4 WorldViewProjection = Matrix4x4.Identity;
+
+        public CameraParameters() { }
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -527,20 +512,20 @@ public unsafe class MdlRendererShader : DirectXObject {
         [FieldOffset(0x20)] public Vector3 AmbientColor = new(0.05333332f, 0.09882354f, 0.1819608f);
         [FieldOffset(0x30)] public Vector3 SpecularColor = Vector3.One;
         [FieldOffset(0x3C)] public float SpecularPower = 64;
-        [FieldOffset(0x40)] 
-        public DirectionalLight Light0 = new() {
+
+        [FieldOffset(0x40)] public DirectionalLight Light0 = new() {
             Direction = new(0.5f, 0.25f, 1),
             Diffuse = Vector4.One,
             Specular = Vector4.One * 0.75f,
         };
-        [FieldOffset(0x70)] 
-        public DirectionalLight Light1 = new() {
+
+        [FieldOffset(0x70)] public DirectionalLight Light1 = new() {
             Direction = new(0, -1, 0),
             Diffuse = Vector4.One,
             Specular = Vector4.One * 0.75f,
         };
-        [FieldOffset(0xA0)] 
-        public DirectionalLight Light2 = new() {
+
+        [FieldOffset(0xA0)] public DirectionalLight Light2 = new() {
             Direction = new(-0.5f, 0.25f, -1),
             Diffuse = Vector4.One,
             Specular = Vector4.One * 0.75f,

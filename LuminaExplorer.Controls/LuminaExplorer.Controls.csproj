@@ -49,11 +49,6 @@
 
   <ItemGroup>
     <EmbeddedResource Include="DirectXStuff\Shaders\DirectXTexRendererShader.hlsl" />
-    <EmbeddedResource Include="DirectXStuff\Shaders\MdlRendererShader.hlsl" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ClCompile Include="DirectXStuff\Shaders\MdlRendererShader.hlsl" />
   </ItemGroup>
 
 </Project>

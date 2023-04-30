@@ -10,5 +10,10 @@ public struct ShaderHeader {
 
     public int NumInputs => NumConstants + NumSamplers + NumUnknown1 + NumUnknown2;
 
-    public override string ToString() => $"C={NumConstants} S={NumSamplers} U1={NumUnknown1} U2={NumUnknown2}";
+    public override string ToString() {
+        if (NumUnknown1 == 0 && NumUnknown2 == 0)
+            return $"C={NumConstants} S={NumSamplers}";
+        else
+            return $"C={NumConstants} S={NumSamplers} ?={NumUnknown1} ??={NumUnknown2}";
+    }
 }

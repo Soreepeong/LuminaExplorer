@@ -5,5 +5,5 @@ public enum ShaderType : ushort {
     Pixel = 0x0100,
     Geometry = 0x0200,
     HullShader = 0x0400,
-    DomainShader = 0x0500,
+    DomainShader = 0x0500, 
 }

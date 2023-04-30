@@ -45,7 +45,7 @@ public class TabbedTextViewer : Form {
                     if (cts.IsCancellationRequested || cts != _cancellationTokenSource || !r.IsCompletedSuccessfully)
                         return;
 
-                    _viewerControl.SetTexts(new[] {shcdFile.Header.ShaderType.ToString()}, r.Result);
+                    _viewerControl.SetTexts(new[] {shcdFile.FileHeader.ShaderType.ToString()}, r.Result);
                     ShowWithParent(opener);
                 }, _cancellationTokenSource.Token, TaskContinuationOptions.None,
                 TaskScheduler.FromCurrentSynchronizationContext());
