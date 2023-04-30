@@ -49,8 +49,8 @@ public sealed class MouseActivityTracker : IDisposable {
     public event Action? DragEnd;
 
     public event PanDelegate? Pan;
-    public event ZoomDelegate? ZoomDrag;
-    public event ZoomDelegate? ZoomWheel;
+    public event ZoomDelegate? DoubleClickDragZoom;
+    public event ZoomDelegate? WheelZoom;
 
     public event BarrieredClickDelegate? LeftImmediateClick;
     public event BarrieredClickDelegate? RightImmediateClick;
@@ -123,7 +123,7 @@ public sealed class MouseActivityTracker : IDisposable {
 
     public WheelZoomMode UseWheelZoom { get; set; }
 
-    public bool UseDragZoom { get; set; }
+    public bool UseDoubleClickDragZoom { get; set; }
 
     public bool Enabled {
         get => _enabled;
@@ -162,7 +162,7 @@ public sealed class MouseActivityTracker : IDisposable {
             case MouseButtons.Left: {
                 IsLeftHeld = true;
                 IsLeftDoubleDown = IsDoubleDownOrUp();
-                IsDraggingZoom = UseDragZoom && IsLeftDoubleDown;
+                IsDraggingZoom = UseDoubleClickDragZoom && IsLeftDoubleDown;
                 startDrag = _useLeftDrag;
                 _clickTimerFireLeftClickAfter = long.MaxValue;
                 break;
@@ -170,7 +170,7 @@ public sealed class MouseActivityTracker : IDisposable {
             case MouseButtons.Right: {
                 IsRightHeld = true;
                 IsRightDoubleDown = IsDoubleDownOrUp();
-                IsDraggingZoom = UseDragZoom && IsRightDoubleDown;
+                IsDraggingZoom = UseDoubleClickDragZoom && IsRightDoubleDown;
                 startDrag = _useRightDrag;
                 _clickTimerFireRightClickAfter = long.MaxValue;
                 break;
@@ -178,7 +178,7 @@ public sealed class MouseActivityTracker : IDisposable {
             case MouseButtons.Middle: {
                 IsMiddleHeld = true;
                 IsMiddleDoubleDown = IsDoubleDownOrUp();
-                IsDraggingZoom = UseDragZoom && IsMiddleDoubleDown;
+                IsDraggingZoom = UseDoubleClickDragZoom && IsMiddleDoubleDown;
                 startDrag = _useMiddleDrag;
                 _clickTimerFireMiddleClickAfter = long.MaxValue;
                 break;
@@ -227,16 +227,16 @@ public sealed class MouseActivityTracker : IDisposable {
         if (IsDragging && !delta.IsEmpty) {
             var controlAbs = _control.PointToScreen(new());
 
-            if (UseDragZoom && (
-                    IsMiddleHeld ||
+            if (UseDoubleClickDragZoom && (
                     FirstHeldButton switch {
                         MouseButtons.Left => IsLeftDoubleDown,
+                        MouseButtons.Middle => IsMiddleDoubleDown,
                         MouseButtons.Right => IsRightDoubleDown,
                         _ => false,
                     })) {
                 var dn = delta.X + delta.Y;
                 if (dn != 0)
-                    ZoomDrag?.Invoke(dragOrigin, dn);
+                    DoubleClickDragZoom?.Invoke(dragOrigin, dn);
             } else {
                 Pan?.Invoke(delta);
             }
@@ -367,7 +367,7 @@ public sealed class MouseActivityTracker : IDisposable {
         if (e.Delta != 0 && (
                 UseWheelZoom is WheelZoomMode.Always ||
                 (UseWheelZoom is WheelZoomMode.RequireControlKey && Control.ModifierKeys.HasFlag(Keys.Control))))
-            ZoomWheel?.Invoke(e.Location, e.Delta);
+            WheelZoom?.Invoke(e.Location, e.Delta);
     }
 
     private void OnMouseLeave(object? sender, EventArgs e) {

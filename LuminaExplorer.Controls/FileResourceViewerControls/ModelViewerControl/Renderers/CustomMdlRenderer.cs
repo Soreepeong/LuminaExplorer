@@ -2,6 +2,7 @@
 using System.Numerics;
 using System.Threading.Tasks;
 using Lumina.Data.Files;
+using Lumina.Data.Parsing;
 using LuminaExplorer.Controls.DirectXStuff.Resources;
 using LuminaExplorer.Controls.DirectXStuff.Shaders;
 using LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter.VertexShaderInputParameters;
@@ -89,41 +90,24 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
                 if (_modelTask != newModelTask)
                     return;
 
-                var bb = _modelTask.Result.ModelBoundingBoxes;
-                var target = new Vector3(
-                    (bb.Min[0] + bb.Max[0]) / 2f,
-                    (bb.Min[1] + bb.Max[1]) / 2f,
-                    (bb.Min[2] + bb.Max[2]) / 2f);
-                var occ = Control.ObjectCentricCamera;
-                occ.Update(
-                    target: target,
-                    yawFromTarget: MathF.PI,
-                    pitchFromTarget: 0,
-                    distance: 64 * (
-                        target.X * occ.System.Forward.X +
-                        target.Y + occ.System.Forward.Y +
-                        target.Z + occ.System.Forward.Z));
-                UpdateCamera();
+                ResetCamera(_modelTask.Result.ModelBoundingBoxes);
             });
         });
     }
 
-    private void ParamCameraOnDataPull(ConstantBufferResource<CameraParameter> sender) {
+    private void ParamCameraOnDataPull(ConstantBufferResource<CameraParameter> sender) =>
         _paramCamera.UpdateData(CameraParameter.FromViewProjection(
             Control.Camera.View,
             Control.Camera.Projection));
-    }
 
-    private void ParamWorldViewMatrixOnDataPull(ConstantBufferResource<WorldViewMatrix> sender) {
+    private void ParamWorldViewMatrixOnDataPull(ConstantBufferResource<WorldViewMatrix> sender) => 
         _paramWorldViewMatrix.UpdateData(WorldViewMatrix.FromWorldView(Matrix4x4.Identity, Control.Camera.View));
-    }
 
-    private void ParamWorldMiscOnDataPull(ConstantBufferResource<CustomMdlRendererShader.WorldMisc> sender) {
+    private void ParamWorldMiscOnDataPull(ConstantBufferResource<CustomMdlRendererShader.WorldMisc> sender) =>
         _paramWorldMisc.UpdateData(CustomMdlRendererShader.WorldMisc.FromWorldViewProjection(
             Matrix4x4.Identity,
             Control.Camera.View,
             Control.Camera.Projection));
-    }
 
     private void ParamJointMatrixArrayOnDataPull(ConstantBufferResource<JointMatrixArray> sender) {
         // todo: fill this when animating
@@ -139,6 +123,18 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
             _shader.BindLight(_paramLight.Buffer);
             _shader.Draw(_modelObject.Result);
         }
+    }
+
+    private void ResetCamera(MdlStructs.BoundingBoxStruct bboxTarget) {
+        var occ = Control.ObjectCentricCamera;
+        occ.Update(
+            targetOffset: Vector3.Zero,
+            targetBboxMin: new(bboxTarget.Min.AsSpan()),
+            targetBboxMax: new(bboxTarget.Max.AsSpan()),
+            yaw: MathF.PI,
+            pitch: 0,
+            resetDistance:true);
+        UpdateCamera();
     }
 
     private void UpdateCamera() {

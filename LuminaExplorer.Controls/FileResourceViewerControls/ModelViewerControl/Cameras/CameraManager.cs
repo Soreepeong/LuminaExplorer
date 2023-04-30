@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Drawing;
+using System.Numerics;
 using System.Windows.Forms;
 using LuminaExplorer.Controls.Util;
 
@@ -16,11 +17,18 @@ public sealed class CameraManager : IDisposable {
         ObjectCentricCamera = new(System3D);
         _control.MouseActivity.UseLeftDrag = true;
         _control.MouseActivity.UseInfiniteLeftDrag = true;
+        _control.MouseActivity.UseLeftDouble = true;
+        _control.MouseActivity.UseLeftDouble = true;
         _control.MouseActivity.UseRightDrag = true;
         _control.MouseActivity.UseInfiniteRightDrag = true;
+        _control.MouseActivity.UseMiddleDrag = true;
+        _control.MouseActivity.UseInfiniteMiddleDrag = true;
         _control.MouseActivity.UseWheelZoom = MouseActivityTracker.WheelZoomMode.Always;
+        _control.MouseActivity.UseDoubleClickDragZoom = true;
+        _control.MouseActivity.LeftDoubleClick += MouseActivityOnLeftDoubleClick;
         _control.MouseActivity.Pan += MouseActivityOnPan;
-        _control.MouseActivity.ZoomWheel += MouseActivityOnZoomWheel;
+        _control.MouseActivity.DoubleClickDragZoom += MouseActivityOnDoubleClickDragZoom;
+        _control.MouseActivity.WheelZoom += MouseActivityOnWheelZoom;
         _control.ClientSizeChanged += ControlOnClientSizeChanged;
     }
 
@@ -36,19 +44,41 @@ public sealed class CameraManager : IDisposable {
     public ICamera Camera => ObjectCentricCamera;
 
     private void MouseActivityOnPan(Point delta) {
-        if (_control.MouseActivity.FirstHeldButton == MouseButtons.Left) {
-            ObjectCentricCamera.YawFromTarget += delta.X * MathF.PI / 720;
-            var pitch = ObjectCentricCamera.PitchFromTarget + delta.Y * MathF.PI / 720;
-            ObjectCentricCamera.PitchFromTarget = Math.Clamp(pitch, MathF.PI / -2, MathF.PI / 2);
-        } else if (_control.MouseActivity.FirstHeldButton == MouseButtons.Right) {
-            ObjectCentricCamera.Target += System3D.Up * delta.Y / 12f;
+        switch (_control.MouseActivity.FirstHeldButton) {
+            case MouseButtons.Left:
+                ObjectCentricCamera.Pitch += delta.Y * MathF.PI / 720;
+                ObjectCentricCamera.Yaw +=
+                    (ObjectCentricCamera.IsUpsideDown ? -1 : 1) * delta.X * MathF.PI / 720;
+                break;
+            case MouseButtons.Right:
+                ObjectCentricCamera.TargetOffset += System3D.Right * delta.X / 120f - System3D.Up * delta.Y / 120f;
+                break;
+            case MouseButtons.Middle:
+                ObjectCentricCamera.FovExponent += (delta.X + delta.Y) / 1200f;
+                break;
         }
 
         ViewportChanged?.Invoke();
     }
 
-    private void MouseActivityOnZoomWheel(Point origin, int delta) {
-        ObjectCentricCamera.Distance = MathF.Max(ObjectCentricCamera.Distance + delta / 12f, 1f);
+    private void MouseActivityOnLeftDoubleClick(Point cursor) {
+        ObjectCentricCamera.Update(
+            targetOffset: Vector3.Zero,
+            yaw: MathF.PI,
+            pitch: 0,
+            roll: 0,
+            fovExponent: 0,
+            resetDistance: true);
+        ViewportChanged?.Invoke();
+    }
+
+    private void MouseActivityOnDoubleClickDragZoom(Point origin, int delta) {
+        ObjectCentricCamera.Roll += delta / 120f;
+        ViewportChanged?.Invoke();
+    }
+
+    private void MouseActivityOnWheelZoom(Point origin, int delta) {
+        ObjectCentricCamera.DistanceExponent = MathF.Max(ObjectCentricCamera.DistanceExponent + delta / 12f, 1f);
         ViewportChanged?.Invoke();
     }
 

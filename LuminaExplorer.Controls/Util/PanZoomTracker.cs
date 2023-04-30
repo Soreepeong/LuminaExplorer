@@ -27,8 +27,8 @@ public sealed class PanZoomTracker : IDisposable {
         _defaultScaleMode = scaleModeDefault ?? new FitInClientScaleMode(false);
         MouseActivity = mouseActivityTracker;
         MouseActivity.Pan += MouseActivityTrackerOnPan;
-        MouseActivity.ZoomDrag += MouseActivityTrackerOnZoomDrag;
-        MouseActivity.ZoomWheel += MouseActivityTrackerOnZoomWheel;
+        MouseActivity.DoubleClickDragZoom += MouseActivityTrackerOnDoubleClickDragZoom;
+        MouseActivity.WheelZoom += MouseActivityTrackerOnWheelZoom;
         MouseActivity.LeftDoubleClick += MouseActivityOnLeftDoubleClick;
         MouseActivity.DragEnd += MouseActivityOnDragEnd;
         Control.ClientSizeChanged += ControlOnClientSizeChanged;
@@ -41,8 +41,8 @@ public sealed class PanZoomTracker : IDisposable {
 
     public void Dispose() {
         MouseActivity.Pan -= MouseActivityTrackerOnPan;
-        MouseActivity.ZoomDrag -= MouseActivityTrackerOnZoomDrag;
-        MouseActivity.ZoomWheel -= MouseActivityTrackerOnZoomWheel;
+        MouseActivity.DoubleClickDragZoom -= MouseActivityTrackerOnDoubleClickDragZoom;
+        MouseActivity.WheelZoom -= MouseActivityTrackerOnWheelZoom;
         MouseActivity.LeftDoubleClick -= MouseActivityOnLeftDoubleClick;
         MouseActivity.DragEnd -= MouseActivityOnDragEnd;
         Control.ClientSizeChanged -= ControlOnClientSizeChanged;
@@ -350,7 +350,7 @@ public sealed class PanZoomTracker : IDisposable {
         UpdateScaleMode(_scaleMode, DefaultOrigin) ||
         UpdatePan(Pan);
 
-    private void MouseActivityTrackerOnZoomWheel(Point origin, int delta) {
+    private void MouseActivityTrackerOnWheelZoom(Point origin, int delta) {
         var wheelDelta = SystemInformation.MouseWheelScrollDelta;
         var normalizedDelta =
             Math.Sign(delta) * (int) Math.Ceiling((float) Math.Abs(delta) * ZoomExponentWheelUnit / wheelDelta);
@@ -382,7 +382,7 @@ public sealed class PanZoomTracker : IDisposable {
         }
     }
 
-    private void MouseActivityTrackerOnZoomDrag(Point origin, int delta) {
+    private void MouseActivityTrackerOnDoubleClickDragZoom(Point origin, int delta) {
         var multiplier = 1 << (
             (MouseActivity.IsLeftHeld ? 1 : 0) +
             (MouseActivity.IsRightHeld ? 1 : 0) +
@@ -391,12 +391,21 @@ public sealed class PanZoomTracker : IDisposable {
     }
 
     private void MouseActivityTrackerOnPan(Point delta) {
-        if (MouseActivity.FirstHeldButton == MouseButtons.Left)
-            UpdatePan(new(Pan.X + delta.X * PanSpeedMultiplier, Pan.Y + delta.Y * PanSpeedMultiplier));
-        else
-            UpdateRotation(
-                (_rotation * 180 / MathF.PI + (delta.X + delta.Y)) * MathF.PI / 180,
-                MouseActivity.DragOrigin ?? DefaultOrigin);
+        switch (MouseActivity.FirstHeldButton) {
+            case MouseButtons.Left:
+                UpdatePan(new(Pan.X + delta.X * PanSpeedMultiplier, Pan.Y + delta.Y * PanSpeedMultiplier));
+                break;
+            case MouseButtons.Right:
+                UpdateRotation(
+                    (_rotation * 180 / MathF.PI + (delta.X + delta.Y)) * MathF.PI / 180,
+                    MouseActivity.DragOrigin ?? DefaultOrigin);
+                break;
+            case MouseButtons.Middle:
+                MouseActivityTrackerOnDoubleClickDragZoom(
+                    Point.Truncate(MouseActivity.DragOrigin ?? DefaultOrigin),
+                    delta.X + delta.Y);
+                break;
+        }
     }
 
     private void MouseActivityOnLeftDoubleClick(Point cursor) {

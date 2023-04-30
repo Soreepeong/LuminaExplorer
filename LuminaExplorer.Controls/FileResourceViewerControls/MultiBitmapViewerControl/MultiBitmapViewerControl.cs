@@ -22,7 +22,7 @@ public partial class MultiBitmapViewerControl : AbstractFileResourceViewerContro
         MouseActivity.UseRightDrag = true;
         MouseActivity.UseLeftDouble = true;
         MouseActivity.UseWheelZoom = MouseActivityTracker.WheelZoomMode.RequireControlKey;
-        MouseActivity.UseDragZoom = true;
+        MouseActivity.UseDoubleClickDragZoom = true;
         MouseActivity.UseInfiniteLeftDrag = true;
         MouseActivity.UseInfiniteRightDrag = true;
         MouseActivity.UseInfiniteMiddleDrag = true;
