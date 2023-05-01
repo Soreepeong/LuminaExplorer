@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using System;
+using System.Threading.Tasks;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
@@ -81,7 +82,7 @@ public unsafe class GamePixelShaderMdlRenderer : BaseMdlRenderer {
     private void PoolOnShpkFileRequested(string path, ref Task<ShpkFile?>? loader) =>
         loader ??= Control.GetTypedFileAsync<ShpkFile>(path);
 
-    private void ControlOnViewportChanged() {
+    private void ControlOnViewportChanged(object? sender, EventArgs eventArgs) {
         // _shaderState.UpdateCamera(Matrix4x4.Identity, Control.Camera.View, Control.Camera.Projection);
     }
 }

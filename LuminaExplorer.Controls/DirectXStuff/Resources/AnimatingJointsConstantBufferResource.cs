@@ -28,6 +28,8 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
     private readonly Quaternion[] _scratchRotation;
     private readonly Vector3[] _scratchScale;
 
+    private float _animationSpeed;
+
     public AnimatingJointsConstantBufferResource(
         ID3D11Device* pDevice,
         ID3D11DeviceContext* pDeviceContext,
@@ -78,7 +80,35 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
 
     public bool HasActiveAnimation => _animationStates.Any(x => x.Speed != 0);
 
-    public void ChangeAnimation(IAnimation animation) => _animationStates.Add(new(animation));
+    public float AnimationSpeed {
+        get => _animationSpeed;
+        set {
+            _animationSpeed = value;
+            foreach (var a in _animationStates)
+                a.Speed = value;
+        }
+    }
+
+    public void ChangeAnimations(IAnimation[]? animations) {
+        var now = Environment.TickCount64;
+        if (animations is null) {
+            foreach (var s in _animationStates)
+                s.EndTick = (long) (now + AnimationFadeTime.TotalMilliseconds);
+        } else {
+            var added = animations.Where(x => _animationStates.All(y => y.Animation != x)).ToArray();
+            var removed = _animationStates.Where(x => animations.All(y => x.Animation != y)).ToArray();
+            var unchanged = _animationStates.Where(x => animations.Any(y => x.Animation == y)).ToArray();
+            _animationStates.AddRange(added.Select(x => new AnimationState(x)));
+            foreach (var x in removed.Where(x => x.EndTick == long.MaxValue))
+                x.EndTick = (long) (now + AnimationFadeTime.TotalMilliseconds);
+            foreach (var a in unchanged.Where(a => a.EndTick != long.MaxValue)) {
+                a.BlendStartTick = now - Math.Max(now - a.EndTick, 0);
+                a.EndTick = long.MaxValue;
+            }
+
+            _animationStates.Sort((x, y) => x.EndTick.CompareTo(y.EndTick));
+        }
+    }
 
     public void UpdateAnimationStateAndGetBuffers(Span<nint> into) {
         UpdateAnimationState();
@@ -100,6 +130,10 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
             return false;
 
         var now = Environment.TickCount64;
+        
+        _animationStates.RemoveAll(x => x.EndTick <= now);
+        if (!_animationStates.Any())
+            return false;
 
         // Pass 1. Resolve relative poses.
         if (_animationStates.Count == 1) {
@@ -115,14 +149,18 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
                 } else
                     _activeJointMatrices[j] = _sklb.Bones[j].BindPoseRelative;
             }
-            
         } else {
-            Span<float> weights = stackalloc float[_animationStates.Count];
             var startIndex = _animationStates.Count - 1;
             for (; startIndex >= 0; startIndex--) {
-                weights[startIndex] = (float) Math.Clamp(
-                    (now -_animationStates[startIndex].BlendStartTime) / AnimationFadeTime.TotalMilliseconds, 0, 1);
-                if (weights[startIndex] >= 1)
+                var state = _animationStates[startIndex];
+                var weight = (float) Math.Clamp(
+                    Math.Min(
+                        now - state.BlendStartTick,
+                        state.EndTick - now
+                    ) / AnimationFadeTime.TotalMilliseconds,
+                    0,
+                    1);
+                if (weight >= 1)
                     break;
             }
 
@@ -138,7 +176,13 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
             foreach (var state in _animationStates.Skip(startIndex)) {
                 var t = state.Time;
                 var anim = state.Animation;
-                var weight = (float) Math.Clamp((now - state.BlendStartTime) / AnimationFadeTime.TotalMilliseconds, 0, 1);
+                var weight = (float) Math.Clamp(
+                    Math.Min(
+                        now - state.BlendStartTick,
+                        state.EndTick - now
+                    ) / AnimationFadeTime.TotalMilliseconds,
+                    0,
+                    1);
                 for (var j = 0; j < _activeJointMatrices.Length; j++) {
                     Quaternion rotation;
                     Vector3 scale, translation;
@@ -152,14 +196,15 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
                         rotation = _sklb.Bones[j].Rotation;
                         translation = _sklb.Bones[j].Translation;
                     }
+
                     _scratchScale[j] = Vector3.Lerp(_scratchScale[j], scale, weight);
                     _scratchRotation[j] = Quaternion.Lerp(_scratchRotation[j], rotation, weight);
                     _scratchTranslation[j] = Vector3.Lerp(_scratchTranslation[j], translation, weight);
                 }
             }
-            
+
             _animationStates.RemoveRange(0, startIndex);
-            
+
             for (var j = 0; j < _activeJointMatrices.Length; j++) {
                 _activeJointMatrices[j] =
                     Matrix4x4.CreateScale(_scratchScale[j]) *
@@ -205,14 +250,17 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
         private float _speed = 1f;
 
         public readonly IAnimation Animation;
-        public readonly long BlendStartTime = Environment.TickCount64;
+        public long BlendStartTick = Environment.TickCount64;
 
-        public long BaseTickDelta;
+        public float TimeDelta;
         public long BaseTick = Environment.TickCount64;
+        public long EndTick = long.MaxValue;
 
         public AnimationState(IAnimation animation) => Animation = animation;
 
-        public float Time => ((Environment.TickCount64 - BaseTick) * _speed + BaseTickDelta) / 1000;
+        public float Time => Animation.Duration == 0
+            ? 0
+            : ((Environment.TickCount64 - BaseTick) * _speed / 1000 + TimeDelta) % Animation.Duration;
 
         public float Speed {
             get => _speed;
@@ -220,9 +268,9 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
                 if (Equals(_speed, value))
                     return;
 
-                BaseTickDelta = (long) ((Environment.TickCount64 - BaseTick) / _speed);
-                _speed = value;
+                TimeDelta = Time;
                 BaseTick = Environment.TickCount64;
+                _speed = value;
             }
         }
     }

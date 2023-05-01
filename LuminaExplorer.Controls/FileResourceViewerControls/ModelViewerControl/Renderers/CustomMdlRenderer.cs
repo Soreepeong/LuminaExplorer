@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 using Lumina.Data.Files;
@@ -23,7 +24,7 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
     private ConstantBufferResource<CustomMdlRendererShader.LightParameters> _paramLight;
     private Task<MdlFile>? _mdlTask;
     private Task<SklbFile>? _sklbTask;
-    private Task<IAnimation>? _animationTask;
+    private Task<IAnimation>[]? _animationTasks;
     private Task<CustomMdlRendererShader.ModelObject>? _modelObject;
 
     private ResultDisposingTask<AnimatingJointsConstantBufferResource>? _animator;
@@ -42,7 +43,9 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
         _paramWorldMisc = new(Device, DeviceContext);
         _paramWorldMisc.DataPull += ParamWorldMiscOnDataPull;
         _paramLight = new(Device, DeviceContext, false, CustomMdlRendererShader.LightParameters.Default);
-        Control.ViewportChanged += UpdateCamera;
+        Control.ViewportChanged += (_, _) => ResetCamera();
+        Control.AnimationSpeedChanged += (_, _) => UpdateAnimationSpeed();
+        Control.AnimationPlayingChanged += (_, _) => UpdateAnimationSpeed();
     }
 
     protected override void Dispose(bool disposing) {
@@ -96,26 +99,31 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
                 return modelObject;
             });
 
-            _sklbTask = Task.WhenAll(_modelObject, Control.ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(Control.GetTypedFileAsync<EstFile>)).ContinueWith(_ => {
-                if (_mdlTask != mdlTask)
-                    throw new OperationCanceledException();
-                if (!Control.ModelInfoResolverTask.Result.TryFindSklbPath(mdlTask.Result.FilePath.Path, out var sklbPath))
-                    throw new OperationCanceledException();
-                if (_sklbCache.TryGet(sklbPath, out var sklb))
-                    return Task.FromResult<SklbFile?>(sklb);
-                return Control.GetTypedFileAsync<SklbFile>(sklbPath);
-            }).Unwrap().ContinueWith(r2 => {
-                if (r2.IsFaulted)
-                    throw r2.Exception!;
-                if (!r2.IsCompletedSuccessfully || r2.Result is null)
-                    throw new("No associated skeleton file found");
-                if (!Control.ModelInfoResolverTask.Result.TryFindSklbPath(mdlTask.Result.FilePath.Path, out var sklbPath))
-                    throw new FailFastException("?");
-                _sklbCache.Add(sklbPath, r2.Result);
+            _sklbTask = Task
+                .WhenAll(_modelObject,
+                    Control.ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(Control.GetTypedFileAsync<EstFile>))
+                .ContinueWith(_ => {
+                    if (_mdlTask != mdlTask)
+                        throw new OperationCanceledException();
+                    if (!Control.ModelInfoResolverTask.Result.TryFindSklbPath(mdlTask.Result.FilePath.Path,
+                            out var sklbPath))
+                        throw new OperationCanceledException();
+                    if (_sklbCache.TryGet(sklbPath, out var sklb))
+                        return Task.FromResult<SklbFile?>(sklb);
+                    return Control.GetTypedFileAsync<SklbFile>(sklbPath);
+                }).Unwrap().ContinueWith(r2 => {
+                    if (r2.IsFaulted)
+                        throw r2.Exception!;
+                    if (!r2.IsCompletedSuccessfully || r2.Result is null)
+                        throw new("No associated skeleton file found");
+                    if (!Control.ModelInfoResolverTask.Result.TryFindSklbPath(mdlTask.Result.FilePath.Path,
+                            out var sklbPath))
+                        throw new FailFastException("?");
+                    _sklbCache.Add(sklbPath, r2.Result);
 
-                LoadAnimationIfPossible();
-                return r2.Result;
-            });
+                    LoadAnimationIfPossible();
+                    return r2.Result;
+                });
 
             Control.RunOnUiThreadAfter(_modelObject, r2 => {
                 if (_mdlTask != mdlTask || !r2.IsCompletedSuccessfully)
@@ -126,11 +134,11 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
         });
     }
 
-    public override void SetAnimation(Task<IAnimation> papTask) {
-        if (_animationTask == papTask)
+    public override void SetAnimations(Task<IAnimation>[]? papTask) {
+        if (_animationTasks == papTask)
             return;
 
-        _animationTask = papTask;
+        _animationTasks = papTask;
         LoadAnimationIfPossible();
     }
 
@@ -143,15 +151,32 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
                 _animator = animator = new(Task.Run(() => new AnimatingJointsConstantBufferResource(
                     Device, DeviceContext, mdlTask.Result, sklbTask.Result)));
                 Control.RunOnUiThreadAfter(animator.Task, _ => Control.Invalidate());
+                UpdateAnimationSpeed();
             }
 
-            var animationTask = _animationTask;
-            if (animationTask is not null) {
-                Control.RunOnUiThreadAfter(Task.WhenAll(animator.Task, animationTask).ContinueWith(_ => {
-                    if (mdlTask != _mdlTask || sklbTask != _sklbTask || animationTask != _animationTask || animator != _animator)
+            var animationTasks = _animationTasks;
+            if (animationTasks is not null) {
+                Control.RunOnUiThreadAfter(
+                    Task.WhenAll(animationTasks.Cast<Task>().Append(animator.Task))
+                        .ContinueWith(_ => {
+                            if (mdlTask != _mdlTask ||
+                                sklbTask != _sklbTask ||
+                                animationTasks != _animationTasks ||
+                                animator != _animator)
+                                throw new OperationCanceledException();
+
+                            animator.Result.ChangeAnimations(animationTasks
+                                .Where(x => x.IsCompletedSuccessfully)
+                                .Select(x => x.Result)
+                                .ToArray());
+                        }), _ => Control.Invalidate());
+            } else {
+                Control.RunOnUiThreadAfter(animator.Task.ContinueWith(_ => {
+                    if (mdlTask != _mdlTask || sklbTask != _sklbTask || animationTasks != _animationTasks ||
+                        animator != _animator)
                         throw new OperationCanceledException();
 
-                    animator.Result.ChangeAnimation(animationTask.Result);
+                    animator.Result.ChangeAnimations(null);
                 }), _ => Control.Invalidate());
             }
         }
@@ -179,7 +204,7 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
             _shader.BindMiscWorldCamera(_paramWorldMisc.Buffer);
             _shader.BindLight(_paramLight.Buffer);
 
-            if (_animator is {IsCompletedSuccessfully: true, Result.HasActiveAnimation: true}) {
+            if (_animator is {IsCompletedSuccessfully: true}) {
                 Span<nint> jointBuffers = stackalloc nint[_animator.Result.BufferCount];
                 _animator.Result.UpdateAnimationStateAndGetBuffers(jointBuffers);
                 _shader.Draw(_modelObject.Result, jointBuffers);
@@ -200,11 +225,19 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
             yaw: 0,
             pitch: 0,
             resetDistance: true);
-        UpdateCamera();
+        ResetCamera();
     }
 
-    private void UpdateCamera() {
+    private void ResetCamera() {
         _paramCamera.EnablePull = _paramWorldViewMatrix.EnablePull = _paramWorldMisc.EnablePull = true;
         Control.Invalidate();
+    }
+
+    private void UpdateAnimationSpeed() {
+        _animator?.Task.ContinueWith(r => {
+            if (r.IsCompletedSuccessfully)
+                r.Result.AnimationSpeed = Control.AnimationSpeed * (Control.AnimationPlaying ? 1 : 0);
+            Control.Invalidate();
+        }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 }

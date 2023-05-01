@@ -83,13 +83,13 @@ public class ObjectCentricCamera : ICamera {
     public float ScaledDistance => MathF.Pow(2, _distanceExponent / 64f);
 
     public Matrix4x4 RotationMatrix =>
-        Matrix4x4.CreateRotationX(_pitch) * Matrix4x4.CreateRotationY(-_yaw); 
+        Matrix4x4.CreateRotationX(_pitch) * Matrix4x4.CreateRotationY(-_yaw);
 
     public bool IsUpsideDown => _pitch is >= MathF.PI / 2 and <= MathF.PI * 3 / 2;
 
     public Matrix4x4 View {
         get {
-            _view ??= 
+            _view ??=
                 Matrix4x4.CreateTranslation((_targetBboxMin + _targetBboxMax) / -2) *
                 Matrix4x4.CreateLookAt(
                     cameraPosition: Vector3.Transform(System.Forward * ScaledDistance, RotationMatrix),
@@ -104,7 +104,8 @@ public class ObjectCentricCamera : ICamera {
 
     public Matrix4x4 Projection => _projection ??= _viewport.X <= 0 || _viewport.Y <= 0
         ? Matrix4x4.Identity
-        : Matrix4x4.CreatePerspectiveFieldOfView(MathF.Pow(10, _fovExponent) / 10, _viewport.X / _viewport.Y, 0.1f, 10000.0f);
+        : Matrix4x4.CreatePerspectiveFieldOfView(MathF.Pow(10, _fovExponent) / 10, _viewport.X / _viewport.Y, 0.1f,
+            10000.0f);
 
     public void Update(
         Vector3? targetOffset = null,
@@ -126,8 +127,11 @@ public class ObjectCentricCamera : ICamera {
         _roll = MiscUtils.PositiveMod(roll ?? _roll, MathF.PI * 2);
         _fovExponent = fovExponent ?? _fovExponent;
         _distanceExponent = distanceExponent ?? _distanceExponent;
-        if (resetDistance)
-            _distanceExponent = Vector3.Dot((_targetBboxMin + _targetBboxMax) / 2, System.Right + System.Up) * 75;
+        if (resetDistance) {
+            _distanceExponent = MathF.Log2(Vector3.Dot(
+                Vector3.Abs(_targetBboxMax - _targetBboxMin) / 2,
+                Vector3.Abs(System.Up)) * 32) * 64;
+        }
 
         _view = null;
         _projection = null;

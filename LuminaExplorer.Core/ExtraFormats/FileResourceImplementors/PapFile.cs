@@ -93,7 +93,8 @@ public class PapFile : FileResource {
     public class PapAnimation {
         public string Name;
         public short Unknown20;
-        public int Index;
+        public ushort Index;
+        public short Unknown24;
         public short Unknown26;
 
         public PapAnimation(BinaryReader r) {
@@ -101,6 +102,7 @@ public class PapFile : FileResource {
             Name = Encoding.UTF8.GetString(nameBytes, 0, nameBytes.TakeWhile(x => x != 0).Count());
             r.ReadInto(out Unknown20);
             r.ReadInto(out Index);
+            r.ReadInto(out Unknown24);
             r.ReadInto(out Unknown26);
         }
     }

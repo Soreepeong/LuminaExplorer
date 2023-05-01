@@ -57,6 +57,8 @@ public class Nurbs {
     private int _FindSpan(float t) {
         if (t >= _knots[_controlPoints.Count])
             return _controlPoints.Count - 1;
+        if (t < 0)
+            return 0;
 
         var low = _degree;
         var high = _controlPoints.Count;

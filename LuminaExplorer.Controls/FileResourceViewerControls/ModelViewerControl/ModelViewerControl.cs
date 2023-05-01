@@ -27,7 +27,9 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
     private CancellationTokenSource? _mdlCancel;
     private Task<MdlFile>? _mdlFileTask;
     private CancellationTokenSource? _animationCancel;
-    private Task<IAnimation>? _animationTask;
+    private Task<IAnimation>[]? _animationTasks;
+    private float _animationSpeed = 1f;
+    private bool _animationPlaying = true;
 
     public ModelViewerControl() {
         base.BackColor = DefaultBackColor;
@@ -51,7 +53,11 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         base.Dispose(disposing);
     }
 
-    public event Action? ViewportChanged;
+    public event EventHandler? ViewportChanged;
+
+    public event EventHandler? AnimationPlayingChanged; 
+
+    public event EventHandler? AnimationSpeedChanged;
 
     public ICamera Camera => _cameraManager.Camera;
 
@@ -84,10 +90,30 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         }, cts.Token, TaskContinuationOptions.None, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
-    public Task<IAnimation>? Animation {
-        get => _animationTask;
+    public bool AnimationPlaying {
+        get => _animationPlaying;
         set {
-            if (value == _animationTask)
+            if (_animationPlaying == value)
+                return;
+            _animationPlaying = value;
+            AnimationPlayingChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public float AnimationSpeed {
+        get => _animationSpeed;
+        set {
+            if (Equals(_animationSpeed, value))
+                return;
+            _animationSpeed = value;
+            AnimationSpeedChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public Task<IAnimation>[]? Animations {
+        get => _animationTasks;
+        set {
+            if (value == _animationTasks)
                 return;
 
             _animationCancel?.Cancel();
@@ -97,13 +123,13 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
 
             _ = TryGetCustomRenderer(out _, true);
             var cts = _animationCancel = new();
-            _animationTask = value;
+            _animationTasks = value;
             _activeRendererTask!.ContinueWith(
                 r => {
-                    if (!r.IsCompletedSuccessfully || _animationTask != value)
+                    if (!r.IsCompletedSuccessfully || _animationTasks != value)
                         return;
 
-                    r.Result.SetAnimation(value);
+                    r.Result.SetAnimations(value);
                     Invalidate();
                 },
                 cts.Token,
@@ -126,7 +152,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
     }
 
     private void OnCameraManagerOnViewportChanged() {
-        ViewportChanged?.Invoke();
+        ViewportChanged?.Invoke(this, EventArgs.Empty);
         Invalidate();
     }
 

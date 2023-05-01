@@ -96,8 +96,11 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
             }
 
             // Some materials refer to dummy.tex; make them point to this.
-            fixed (float* pDummy = stackalloc float[16])
+            fixed (uint* pDummy = stackalloc uint[16]) {
+                for (var i = 0; i < 16; i++)
+                    pDummy[i] = 0xFF000000;
                 _dummy = new(_pDevice, Format.FormatR8G8B8A8Unorm, 4, 4, 16, (nint) (&pDummy));
+            }
         } catch (Exception) {
             DisposePrivate(true);
             throw;
