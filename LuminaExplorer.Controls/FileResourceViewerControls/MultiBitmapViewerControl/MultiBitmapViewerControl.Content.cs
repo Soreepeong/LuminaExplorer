@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Lumina.Data;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
-using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.Util.DdsStructs;
 using WicNet;

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -27,34 +28,38 @@ public class SklbFile : FileResource {
     public Node HavokRootNode = null!;
     public readonly Dictionary<Tuple<string, int>, Definition> HavokDefinitions = new();
 
+    public Exception? LoadException { get; private set; }
+
     public override void LoadFile() {
-        Reader.ReadInto(out Magic);
-        Reader.ReadInto(out Version);
+        try {
+            Reader.ReadInto(out Magic);
+            Reader.ReadInto(out Version);
 
-        VersionedHeader = Version switch {
-            SklbFormat.K0021 => Reader.ReadStructure<Sklb0021>(),
-            SklbFormat.K0031 => Reader.ReadStructure<Sklb0031>(),
-            _ => throw new NotSupportedException()
-        };
+            VersionedHeader = Version switch {
+                SklbFormat.K0021 => Reader.ReadStructure<Sklb0021>(),
+                SklbFormat.K0031 => Reader.ReadStructure<Sklb0031>(),
+                _ => throw new NotSupportedException()
+            };
 
-        AlphMagic = Reader.WithSeek(VersionedHeader.AlphOffset).ReadUInt32();
-        if (AlphMagic == AlphMagicValue) {
-            var bart = Reader.ReadStructuresAsArray<ushort>((VersionedHeader.HavokOffset - VersionedHeader.AlphOffset - 4) / 2);
-            var tmp = new List<ushort[]>();
-            for (var i = 0; i < bart.Length;) {
-                var count = bart[i++];
-                tmp.Add(bart[i..(i + count)]);
-                i += count;
+            AlphMagic = Reader.WithSeek(VersionedHeader.AlphOffset).ReadUInt32();
+            if (AlphMagic == AlphMagicValue) {
+                var bart = Reader.ReadStructuresAsArray<ushort>((VersionedHeader.HavokOffset -
+                    VersionedHeader.AlphOffset -
+                    4) / 2);
+                var tmp = new List<ushort[]>();
+                for (var i = 0; i < bart.Length;) {
+                    var count = bart[i++];
+                    tmp.Add(bart[i..(i + count)]);
+                    i += count;
+                }
+
+                AlphData = tmp.ToArray();
             }
 
-            AlphData = tmp.ToArray();
-        }
-        
-        HavokData = Data[VersionedHeader.HavokOffset..];
+            HavokData = Data[VersionedHeader.HavokOffset..];
 
-        try {
             HavokRootNode = Parser.Parse(HavokData, HavokDefinitions);
-            
+
             /*
              * root.namedVariants[0].variant.skeletons[0]
              *     .name => who cares
@@ -81,55 +86,74 @@ public class SklbFile : FileResource {
                 throw new();
             foreach (var (boneValue, parentIndexValue, referencePoseValue) in bones.Values.Zip(
                          parentIndices.Values, referencePoses.Values)) {
-                var bone = new Bone {
-                    Index = resultBones.Count
-                };
-
                 if (boneValue is not ValueNode boneNode)
                     throw new();
                 if (boneNode.Node.AsMap.GetValueOrDefault("name") is not ValueString name)
                     throw new();
-                bone.Name = name.Value;
-                
                 if (parentIndexValue is not ValueInt parentIndex)
                     throw new();
-                bone.ParentIndex = parentIndex.Value;
-                
                 if (referencePoseValue is not ValueArray poseFloats)
                     throw new();
-                bone.Translation.X = poseFloats.Values[0] is ValueFloat tx ? tx.Value : throw new();
-                bone.Translation.Y = poseFloats.Values[1] is ValueFloat ty ? ty.Value : throw new();
-                bone.Translation.Z = poseFloats.Values[2] is ValueFloat tz ? tz.Value : throw new();
-                bone.Rotation.X = poseFloats.Values[4] is ValueFloat rx ? rx.Value : throw new();
-                bone.Rotation.Y = poseFloats.Values[5] is ValueFloat ry ? ry.Value : throw new();
-                bone.Rotation.Z = poseFloats.Values[6] is ValueFloat rz ? rz.Value : throw new();
-                bone.Rotation.W = poseFloats.Values[7] is ValueFloat rw ? rw.Value : throw new();
-                bone.Scale.X = poseFloats.Values[8] is ValueFloat sx ? sx.Value : throw new();
-                bone.Scale.Y = poseFloats.Values[9] is ValueFloat sy ? sy.Value : throw new();
-                bone.Scale.Z = poseFloats.Values[10] is ValueFloat sz ? sz.Value : throw new();
 
-                resultBones.Add(bone);
+                resultBones.Add(new(
+                    resultBones.Count,
+                    parentIndex.Value == -1 ? null : resultBones[parentIndex.Value],
+                    name.Value,
+                    new(poseFloats.Values[0] is ValueFloat tx ? tx.Value : throw new(),
+                        poseFloats.Values[1] is ValueFloat ty ? ty.Value : throw new(),
+                        poseFloats.Values[2] is ValueFloat tz ? tz.Value : throw new()),
+                    /* Discard poseFloats.Values[3] */
+                    new(poseFloats.Values[4] is ValueFloat rx ? rx.Value : throw new(),
+                        poseFloats.Values[5] is ValueFloat ry ? ry.Value : throw new(),
+                        poseFloats.Values[6] is ValueFloat rz ? rz.Value : throw new(),
+                        poseFloats.Values[7] is ValueFloat rw ? rw.Value : throw new()),
+                    new(poseFloats.Values[8] is ValueFloat sx ? sx.Value : throw new(),
+                        poseFloats.Values[9] is ValueFloat sy ? sy.Value : throw new(),
+                        poseFloats.Values[10] is ValueFloat sz ? sz.Value : throw new())
+                    /* Discard poseFloats.Values[11] */));
             }
 
             Bones = resultBones.ToArray();
-
-        } catch (Exception) {
-            // pass
+        } catch (Exception e) {
+            LoadException = e;
         }
     }
 
-    public struct Bone {
-        public int Index;
-        public int ParentIndex;
-        public string Name;
-        public Vector3 Translation;
-        public Quaternion Rotation;
-        public Vector3 Scale;
+    public bool TryGetBoneByName(string name, [MaybeNullWhen(false)] out Bone bone) =>
+        (bone = Bones.FirstOrDefault(x => x.Name == name)) != null;
 
-        public Matrix4x4 Matrix => 
-            Matrix4x4.CreateScale(Scale) *
-            Matrix4x4.CreateFromQuaternion(Rotation) *
-            Matrix4x4.CreateTranslation(Translation);
+    public class Bone {
+        public readonly int Index;
+        public readonly Bone? Parent;
+        public readonly string Name;
+        public readonly Vector3 Translation;
+        public readonly Quaternion Rotation;
+        public readonly Vector3 Scale;
+
+        public readonly Matrix4x4 BindPoseRelative;
+        public readonly Matrix4x4 BindPoseAbsolute;
+        public readonly Matrix4x4 BindPoseAbsoluteInverse;
+
+        public Bone(int index, Bone? parent, string name, Vector3 translation, Quaternion rotation, Vector3 scale) {
+            Index = index;
+            Parent = parent;
+            Name = name;
+            Translation = translation;
+            Rotation = rotation;
+            Scale = scale;
+
+            BindPoseRelative =
+                Matrix4x4.CreateScale(Scale) *
+                Matrix4x4.CreateFromQuaternion(Rotation) *
+                Matrix4x4.CreateTranslation(Translation);
+            if (parent is null)
+                BindPoseAbsolute = BindPoseRelative;
+            else
+                BindPoseAbsolute = BindPoseRelative * parent.BindPoseAbsolute;
+            BindPoseAbsoluteInverse = Matrix4x4.Invert(BindPoseAbsolute, out var inverted)
+                ? inverted
+                : throw new InvalidDataException();
+        }
     }
 
     public enum SklbFormat : uint {

@@ -79,11 +79,11 @@ public sealed partial class SqpackFileSystem {
         }
     }
 
-    public Task<IVirtualFile?> FindFile(IVirtualFolder root, params string[] pathComponents) => Task.Run(async () => {
+    public Task<IVirtualFolder?> LocateFolder(IVirtualFolder root, params string[] pathComponents) => Task.Run(async () => {
         pathComponents = NormalizePath(pathComponents).Split('/');
         var folder = root;
 
-        foreach (var pathComponent in pathComponents.SkipLast(1)) {
+        foreach (var pathComponent in pathComponents) {
             if (pathComponent == ".")
                 continue;
             if (pathComponent == "..") {
@@ -97,6 +97,15 @@ public sealed partial class SqpackFileSystem {
             if (folder is null)
                 return null;
         }
+
+        return folder;
+    });
+
+    public Task<IVirtualFile?> LocateFile(IVirtualFolder root, params string[] pathComponents) => Task.Run(async () => {
+        pathComponents = NormalizePath(pathComponents).Split('/');
+        var folder = await LocateFolder(root, pathComponents.SkipLast(1).ToArray());
+        if (folder is null)
+            return null;
 
         var files = GetFiles(await AsFoldersResolved(folder));
 

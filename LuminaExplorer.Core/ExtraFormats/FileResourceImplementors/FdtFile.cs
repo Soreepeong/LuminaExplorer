@@ -4,7 +4,6 @@ using System.Text;
 using Lumina.Data;
 using Lumina.Data.Attributes;
 using LuminaExplorer.Core.Util;
-using Microsoft.Extensions.Primitives;
 
 namespace LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
 

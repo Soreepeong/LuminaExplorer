@@ -6,6 +6,8 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Lumina.Data;
 using Lumina.Data.Attributes;
+using LuminaExplorer.Core.ExtraFormats.GenericAnimation;
+using LuminaExplorer.Core.ExtraFormats.HavokAnimation;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile.Value;
 using LuminaExplorer.Core.Util;
@@ -19,28 +21,33 @@ public class PapFile : FileResource {
     public byte[] HavokData = null!;
     public byte[] Timeline = null!;
 
-    public Node HavokRootNode = null!;
     public readonly Dictionary<Tuple<string, int>, Definition> HavokDefinitions = new();
+    public Node HavokRootNode = null!;
+    public AnimationSet[] AnimationBindings = null!;
+
+    public Exception? LoadException { get; private set; }
 
     public override void LoadFile() {
-        Header = new(Reader);
-        if (Header.Magic != PapHeader.MagicValue)
-            throw new InvalidDataException();
-        
-        Reader.BaseStream.Position = Header.InfoOffset;
-        Animations = Enumerable.Range(0, Header.AnimationCount).Select(_ => new PapAnimation(Reader)).ToList();
-
-        HavokData = Data[Header.HavokDataOffset..Header.TimelineOffset];
-        Timeline = Data[Header.TimelineOffset..];
-
         try {
+            Header = new(Reader);
+            if (Header.Magic != PapHeader.MagicValue)
+                throw new InvalidDataException();
+
+            Reader.BaseStream.Position = Header.InfoOffset;
+            Animations = Enumerable.Range(0, Header.AnimationCount).Select(_ => new PapAnimation(Reader)).ToList();
+
+            HavokData = Data[Header.HavokDataOffset..Header.TimelineOffset];
+            Timeline = Data[Header.TimelineOffset..];
+
             HavokRootNode = Parser.Parse(HavokData, HavokDefinitions);
-        } catch (Exception) {
-            // pass
+
+            AnimationBindings = Animations.Select((_, i) => AnimationSet.Decode(GetAnimationBindingNode(i))).ToArray();
+        } catch (Exception e) {
+            LoadException = e;
         }
     }
 
-    public Node GetAnimationBinding(int bindingIndex) {
+    public Node GetAnimationBindingNode(int bindingIndex) {
         if (bindingIndex < 0)
             throw new ArgumentOutOfRangeException(nameof(bindingIndex), bindingIndex, null);
         if (HavokRootNode.AsMap.GetValueOrDefault("namedVariants") is not ValueArray namedVariants)
@@ -61,9 +68,9 @@ public class PapFile : FileResource {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct PapHeader {
         public const uint MagicValue = 0x20706170;
-        
+
         public uint Magic;
-        public uint Version;  // always 0x00020001?
+        public uint Version; // always 0x00020001?
         public short AnimationCount;
         public ushort ModelId;
         public SkeletonTargetModelClassification ModelClassification;

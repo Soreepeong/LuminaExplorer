@@ -89,7 +89,7 @@ public class PhysicalFileSystem : IVirtualFileSystem {
 
     public int GetKnownFolderCount(IVirtualFolder folder) => (folder as BasePhysicalFolder)!.Folders.Value.Count;
 
-    public Task<IVirtualFile?> FindFile(IVirtualFolder root, params string[] pathComponents) {
+    public Task<IVirtualFolder?> LocateFolder(IVirtualFolder root, params string[] pathComponents) {
         return Task.Run(async () => {
             var path = NormalizePath(pathComponents).Split('/');
             var folder = root;
@@ -109,7 +109,16 @@ public class PhysicalFileSystem : IVirtualFileSystem {
                     return null;
             }
 
-            return (IVirtualFile?) ((BasePhysicalFolder) folder).Files.Value
+            return folder;
+        });
+    }
+
+    public Task<IVirtualFile?> LocateFile(IVirtualFolder root, params string[] pathComponents) {
+        return Task.Run(async () => {
+            var path = NormalizePath(pathComponents).Split('/');
+            var folder = await LocateFolder(root, path.SkipLast(1).ToArray());
+
+            return (IVirtualFile?) (folder as BasePhysicalFolder)?.Files.Value
                 .FirstOrDefault(x =>
                     string.Compare(x.Name, pathComponents.Last(), StringComparison.InvariantCultureIgnoreCase) == 0);
         });

@@ -1,16 +1,47 @@
 using System;
+using System.Text;
 
 namespace LuminaExplorer.Core.Util;
 
 public static class MiscUtils {
+    public static int PositiveMod(int dividend, int divisor) {
+        var r = dividend % divisor;
+        return r >= 0 ? r : divisor + r;
+    }
+
     public static float PositiveMod(float dividend, float divisor) {
         var r = dividend % divisor;
-        return r > 0 ? r : divisor + r;
+        return r >= 0 ? r : divisor + r;
     }
-    
+
     public static float DivRem(float dividend, float divisor, out float remainder) {
         remainder = dividend % divisor;
         return (int) Math.Floor(dividend / divisor);
+    }
+
+    public static unsafe string GetStringNullTerminated(this Encoding encoding, ReadOnlySpan<byte> data) {
+        // can IsSingleByte + encoding.GetMaxByteCount() be used to determine this value?
+        var len = 0;
+        switch (encoding.CodePage) {
+            case 1200 or 1201:
+                fixed (byte* pData = &data.GetPinnableReference()) {
+                    var span2 = new ReadOnlySpan<ushort>(pData, data.Length / 2);
+                    while (len < span2.Length && span2[len] != 0)
+                        len++;
+                    return encoding.GetString(data[..(len * 2)]);
+                }
+            case 12000 or 12001:
+                fixed (byte* pData = &data.GetPinnableReference()) {
+                    var span2 = new ReadOnlySpan<uint>(pData, data.Length / 4);
+                    while (len < span2.Length && span2[len] != 0)
+                        len++;
+                    return encoding.GetString(data[..(len * 4)]);
+                }
+            default:
+                while (len < data.Length && data[len] != 0)
+                    len++;
+                return encoding.GetString(data[..len]);
+        }
     }
 
     public static int CompareNullable<T>(T? v1, T? v2) where T : class, IComparable<T> {

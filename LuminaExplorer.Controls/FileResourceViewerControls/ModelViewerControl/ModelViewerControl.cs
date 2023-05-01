@@ -21,10 +21,12 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
 
     private CameraManager _cameraManager;
 
-    private CancellationTokenSource? _modelTaskCancellationTokenSource;
     internal IVirtualFileSystem? Vfs;
     internal IVirtualFolder? VfsRoot;
+    private CancellationTokenSource? _mdlCancel;
     private Task<MdlFile>? _mdlFileTask;
+    private CancellationTokenSource? _papCancel;
+    private Task<PapFile>? _papFileTask;
 
     public ModelViewerControl() {
         base.BackColor = DefaultBackColor;
@@ -34,8 +36,10 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
 
     protected override void Dispose(bool disposing) {
         if (disposing) {
-            _modelTaskCancellationTokenSource?.Cancel();
-            _modelTaskCancellationTokenSource = null;
+            _mdlCancel?.Cancel();
+            _mdlCancel = null;
+            _papCancel?.Cancel();
+            _papCancel = null;
             _mdlFileTask = null;
             _ = SafeDispose.OneAsync(ref _cameraManager!);
             _ = SafeDispose.OneAsync(ref _customRendererTask!);
@@ -52,13 +56,16 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
 
     public ObjectCentricCamera ObjectCentricCamera => _cameraManager.ObjectCentricCamera;
 
-    public void SetModel(IVirtualFileSystem vfs, IVirtualFolder rootFolder, MdlFile mdlFile) {
-        _modelTaskCancellationTokenSource?.Cancel();
-        var cts = _modelTaskCancellationTokenSource = new();
+    public void SetModel(IVirtualFileSystem vfs, IVirtualFolder rootFolder, Task<MdlFile> mdlFileTask) {
+        if (_mdlFileTask == mdlFileTask)
+            return;
+
+        _mdlCancel?.Cancel();
+        var cts = _mdlCancel = new();
 
         Vfs = vfs;
         VfsRoot = rootFolder;
-        _mdlFileTask = Task.FromResult(mdlFile);
+        _mdlFileTask = mdlFileTask;
 
         //*
         _ = TryGetCustomRenderer(out _, true);
@@ -70,12 +77,38 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
 
         _activeRendererTask!.ContinueWith(r => {
             if (r.IsCompletedSuccessfully)
-                r.Result.UpdateModel(_mdlFileTask);
+                r.Result.SetModel(_mdlFileTask);
             Invalidate();
         }, cts.Token, TaskContinuationOptions.None, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
-    public void SetSkeleton(SklbFile sklbFile) { }
+    public Task<PapFile>? Animation {
+        get => _papFileTask;
+        set {
+            if (value == _papFileTask)
+                return;
+
+            _papCancel?.Cancel();
+            _papCancel = null;
+            if (value is null)
+                return;
+
+            _ = TryGetCustomRenderer(out _, true);
+            var cts = _papCancel = new();
+            _papFileTask = value;
+            _activeRendererTask!.ContinueWith(
+                r => {
+                    if (!r.IsCompletedSuccessfully || _papFileTask != value)
+                        return;
+
+                    r.Result.SetAnimation(value);
+                    Invalidate();
+                },
+                cts.Token,
+                TaskContinuationOptions.None,
+                TaskScheduler.FromCurrentSynchronizationContext());
+        }
+    }
 
     protected override void OnPaintBackground(PaintEventArgs pevent) { }
 
@@ -153,10 +186,10 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
     }
 
     internal Task<T?> GetTypedFileAsync<T>(string path) where T : FileResource {
-        if (Vfs is not { } vfs || VfsRoot is not { } vfsRoot || _modelTaskCancellationTokenSource?.Token is not { } cts)
+        if (Vfs is not { } vfs || VfsRoot is not { } vfsRoot || _mdlCancel?.Token is not { } cts)
             return Task.FromResult((T?) null);
         return Task.Factory.StartNew(async () => {
-            var file = await vfs.FindFile(vfsRoot, path);
+            var file = await vfs.LocateFile(vfsRoot, path);
             if (file is null)
                 return null;
 

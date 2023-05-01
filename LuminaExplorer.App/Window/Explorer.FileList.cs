@@ -11,7 +11,6 @@ using Lumina.Data;
 using Lumina.Data.Files;
 using LuminaExplorer.App.Utils;
 using LuminaExplorer.App.Window.FileViewers;
-using LuminaExplorer.Controls.FileResourceViewerControls.ModelViewerControl;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 using LuminaExplorer.Core.Util;
@@ -377,13 +376,9 @@ public partial class Explorer {
                             break;
                         }
                         case MdlFile f: {
-                            var c = new ModelViewerControl {Dock = DockStyle.Fill};
-                            c.SetModel(_vfs, _vfs.RootFolder, f);
-                            var viewer = new Form {
-                                Controls = {c},
-                                Size = new(1024, 768)
-                            };
-                            viewer.Show();
+                            var viewer = new ModelViewer();
+                            viewer.SetFile(tree, tree.RootFolder, file, f);
+                            viewer.ShowRelativeTo(_explorer);;
                             break;
                         }
                     }

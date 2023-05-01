@@ -52,14 +52,14 @@ public unsafe class GamePixelShaderMdlRenderer : BaseMdlRenderer {
         _modelTask = null;
     }
 
-    public override void UpdateModel(Task<MdlFile> newModelTask) {
-        if (_modelTask == newModelTask)
+    public override void SetModel(Task<MdlFile> mdlTask) {
+        if (_modelTask == mdlTask)
             return;
 
         ClearModel();
-        _modelTask = newModelTask;
+        _modelTask = mdlTask;
 
-        _modelObject = new(newModelTask.ContinueWith(r => {
+        _modelObject = new(mdlTask.ContinueWith(r => {
             if (!r.IsCompletedSuccessfully)
                 throw r.Exception!;
 

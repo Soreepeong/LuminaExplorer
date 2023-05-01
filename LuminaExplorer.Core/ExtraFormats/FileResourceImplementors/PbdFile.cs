@@ -26,13 +26,15 @@ public class PbdFile : FileResource {
         for (var i = 0; i < entryCount; i++) {
             var hbdi = HeadersByDeformer[i];
             var hbsi = HeadersBySkeleton[hbdi.SkeletonIndex];
-            Deformers[i] = new(Reader, hbdi, hbsi, hbdi.ParentDeformerIndex == 0xFFFF ? null : Deformers[hbdi.ParentDeformerIndex]);
+            Deformers[i] = new(Reader, hbdi, hbsi,
+                hbdi.ParentDeformerIndex == 0xFFFF ? null : Deformers[hbdi.ParentDeformerIndex]);
         }
     }
 
     public Deformer RootDeformer => Deformers.Single(x => x.Parent is null);
 
-    public bool TryGetDeformerBySkeletonId(XivHumanSkeletonId skeletonId, [MaybeNullWhen(false)] out Deformer deformer) {
+    public bool TryGetDeformerBySkeletonId(XivHumanSkeletonId skeletonId,
+        [MaybeNullWhen(false)] out Deformer deformer) {
         foreach (var (s, d) in HeadersBySkeleton.Zip(Deformers)) {
             if (s.SkeletonId == skeletonId) {
                 deformer = d;
@@ -71,7 +73,7 @@ public class PbdFile : FileResource {
         public ushort HbdUnk3;
 
         public List<Deformer> Children = new();
-        
+
         public int BoneCount = 0;
         public string[] BoneNames = Array.Empty<string>();
         public Matrix4x4[] Matrices = Array.Empty<Matrix4x4>();
@@ -81,14 +83,15 @@ public class PbdFile : FileResource {
 
         public Deformer() { }
 
-        public Deformer(BinaryReader reader, HeaderByDeformerId hbdi, HeaderBySkeletonId hbsi, Deformer? parentDeformer) {
+        public Deformer(BinaryReader reader, HeaderByDeformerId hbdi, HeaderBySkeletonId hbsi,
+            Deformer? parentDeformer) {
             SkeletonId = hbsi.SkeletonId;
             DeformerId = hbsi.DeformerId;
             BaseScale = hbsi.BaseScale;
             Parent = parentDeformer;
             HbdUnk2 = hbdi.Unknown2;
             HbdUnk3 = hbdi.Unknown3;
-            
+
             Parent?.Children.Add(this);
 
             if (hbsi.Offset == 0)
@@ -111,7 +114,7 @@ public class PbdFile : FileResource {
                     reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(),
                     0, 0, 0, 1
                 );
-                
+
                 var transposed = Matrix4x4.Transpose(Matrices[i]);
                 if (!Matrix4x4.Decompose(transposed, out Scales[i], out Rotations[i], out Translations[i])) {
                     // s @ r @ t = m

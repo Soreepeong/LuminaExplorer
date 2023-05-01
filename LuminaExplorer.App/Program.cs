@@ -1,22 +1,11 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Text.Json;
-using System.Threading.Tasks;
 using System.Windows.Forms;
-using Lumina.Data.Files;
-using Lumina.Data.Parsing;
-using Lumina.Models.Materials;
 using LuminaExplorer.App.Window;
-using LuminaExplorer.App.Window.FileViewers;
-using LuminaExplorer.Controls.FileResourceViewerControls.ModelViewerControl;
-using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 using LuminaExplorer.Core.SqPackPath;
-using LuminaExplorer.Core.VirtualFileSystem;
-using LuminaExplorer.Core.VirtualFileSystem.Physical;
 using LuminaExplorer.Core.VirtualFileSystem.Sqpack;
 
 namespace LuminaExplorer.App;
@@ -92,7 +81,7 @@ static class Program {
         //     Debugger.Break();
         // });
 
-        //*/
+        /*/
         var viewer = new Form {
             Size = new(1024, 768),
         };
@@ -105,7 +94,7 @@ static class Program {
             });
             t.Wait();
             var c = new ModelViewerControl { Dock = DockStyle.Fill };
-            c.SetModel(fs, fs.RootFolder, t.Result);
+            c.SetModel(fs, fs.RootFolder, Task.FromResult(t.Result));
             viewer.Controls.Add(c);
         };
         Application.Run(viewer);

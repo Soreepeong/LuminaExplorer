@@ -19,9 +19,9 @@ public static class VirtualFileSystemExtensions {
         this IVirtualFileSystem ivfs,
         IVirtualFolder rootFolder,
         string query,
-        Action<IVirtualFileSystem.SearchProgress> progressCallback,
-        Action<IVirtualFolder> folderFoundCallback,
-        Action<IVirtualFile> fileFoundCallback,
+        Action<IVirtualFileSystem.SearchProgress>? progressCallback,
+        Action<IVirtualFolder>? folderFoundCallback,
+        Action<IVirtualFile>? fileFoundCallback,
         int numThreads = default,
         TimeSpan timeoutPerEntry = default,
         CancellationToken cancellationToken = default) => Task.Factory.StartNew(async () => {
@@ -87,7 +87,7 @@ public static class VirtualFileSystemExtensions {
 
             progress.LastObject = @object;
             if (progress.Stopwatch.ElapsedMilliseconds >= nextProgressReportedMilliseconds) {
-                progressCallback(progress);
+                progressCallback?.Invoke(progress);
                 nextProgressReportedMilliseconds = progress.Stopwatch.ElapsedMilliseconds + 200;
             }
 
@@ -115,7 +115,7 @@ public static class VirtualFileSystemExtensions {
                                 case IVirtualFolder folder:
                                     if (await matcher.Matches(ivfs, folder, stopwatch, timeoutPerEntry,
                                             cancellationToken))
-                                        return () => folderFoundCallback(folder);
+                                        return () => folderFoundCallback?.Invoke(folder);
                                     else
                                         return null;
                                 case IVirtualFile file:
@@ -133,7 +133,7 @@ public static class VirtualFileSystemExtensions {
                                             return () => {
                                                 // Force name resolution
                                                 _ = file.Name;
-                                                fileFoundCallback(file);
+                                                fileFoundCallback?.Invoke(file);
                                             };
                                         else
                                             return null;
@@ -163,7 +163,7 @@ public static class VirtualFileSystemExtensions {
         await Task.WhenAll(activeTasks);
 
         progress.Completed = true;
-        progressCallback(progress);
+        progressCallback?.Invoke(progress);
     }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
 
     internal static bool GetFileResourceTypeByMagic(uint magic, [MaybeNullWhen(false)] out Type type) {

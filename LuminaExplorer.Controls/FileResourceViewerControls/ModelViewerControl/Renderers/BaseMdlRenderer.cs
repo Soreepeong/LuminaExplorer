@@ -15,11 +15,9 @@ public abstract unsafe class BaseMdlRenderer : DirectXRenderer<ModelViewerContro
 
     public abstract void ClearModel();
 
-    public abstract void UpdateModel(Task<MdlFile> newModelTask);
+    public abstract void SetModel(Task<MdlFile> mdlTask);
 
-    public virtual void UpdateSkeleton(Task<SklbFile> newSklbTask) { }
-
-    public virtual void AddAnimations(Task<PapFile> newPapTask) { }
+    public virtual void SetAnimation(Task<PapFile> papTask) { }
 
     protected void ModelObjectOnDdsFileRequested(string path, ref Task<DdsFile?>? loader) {
         loader ??= Control.GetTypedFileAsync<TexFile>(path)?.ContinueWith(r =>

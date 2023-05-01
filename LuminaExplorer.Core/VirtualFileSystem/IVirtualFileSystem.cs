@@ -28,7 +28,8 @@ public interface IVirtualFileSystem : IDisposable {
     public IVirtualFolder[] GetTreeFromRoot(IVirtualFolder folder);
     public bool HasNoSubfolder(IVirtualFolder folder);
     public int GetKnownFolderCount(IVirtualFolder folder);
-    public Task<IVirtualFile?> FindFile(IVirtualFolder root, params string[] pathComponents);
+    public Task<IVirtualFolder?> LocateFolder(IVirtualFolder root, params string[] pathComponents);
+    public Task<IVirtualFile?> LocateFile(IVirtualFolder root, params string[] pathComponents);
     public List<IVirtualFile> GetFiles(IVirtualFolder folder);
     public List<IVirtualFolder> GetFolders(IVirtualFolder folder);
 

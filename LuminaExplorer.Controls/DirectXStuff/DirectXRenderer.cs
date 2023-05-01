@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Drawing;
+using System.Threading;
 using System.Windows.Forms;
 using LuminaExplorer.Controls.DirectXStuff.Resources;
 using LuminaExplorer.Controls.Util;
@@ -37,6 +38,9 @@ public abstract unsafe class DirectXRenderer<T> : DirectXObject where T : Contro
 
     private nint _controlHandle;
 
+    private CancellationTokenSource? _autoInvalidateCancellationTokenSource;
+    private Thread? _autoInvalidateThread;
+
     protected DirectXRenderer(T control, bool useDepthStencil, ID3D11Device* pDevice = null,
         ID3D11DeviceContext* pDeviceContext = null) {
         Control = control;
@@ -45,7 +49,7 @@ public abstract unsafe class DirectXRenderer<T> : DirectXObject where T : Contro
             Device = pDevice is not null ? pDevice : SharedD3D11Device;
             DeviceContext = pDeviceContext is not null ? pDeviceContext : SharedD3D11DeviceContext;
             _useDepthStencil = useDepthStencil;
-            
+
             // Below: entirely copied from SaintCoinach
             var blendDesc = new BlendDesc();
             blendDesc.RenderTarget.Element0 = new(
@@ -93,6 +97,7 @@ public abstract unsafe class DirectXRenderer<T> : DirectXObject where T : Contro
 
     protected override void Dispose(bool disposing) {
         if (disposing) {
+            _autoInvalidateCancellationTokenSource?.Cancel();
             Control.ClientSizeChanged -= ControlOnClientSizeChanged;
             Control.ForeColorChanged -= ControlOnForeColorChanged;
             Control.BackColorChanged -= ControlOnBackColorChanged;
@@ -119,6 +124,35 @@ public abstract unsafe class DirectXRenderer<T> : DirectXObject where T : Contro
     public ID3D11DeviceContext* DeviceContext { get; }
 
     public Exception? LastException { get; protected set; }
+
+    protected bool AutoInvalidate {
+        get => _autoInvalidateThread != null;
+        set {
+            if (value == (_autoInvalidateThread != null))
+                return;
+            
+            _autoInvalidateCancellationTokenSource?.Cancel();
+            _autoInvalidateCancellationTokenSource = null;
+            _autoInvalidateThread = null;
+            if (!value)
+                return;
+
+            var cts = _autoInvalidateCancellationTokenSource = new();
+            _autoInvalidateThread = new(() => {
+                try {
+                    IDXGIOutput* pOutput = null;
+                    ThrowH(_pDxgiSwapChain->GetContainingOutput(&pOutput));
+                    while (!cts.IsCancellationRequested) {
+                        pOutput->WaitForVBlank();
+                        Control.Invalidate();
+                    }
+                } catch (Exception) {
+                    // swallow
+                }
+            });
+            _autoInvalidateThread.Start();
+        }
+    }
 
     protected ID2D1Brush* ForeColorBrush => GetOrCreateSolidColorBrush(ref _pForeColorBrush, Control.ForeColor);
 

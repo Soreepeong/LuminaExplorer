@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using JetBrains.Annotations;
-using LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter.VertexShaderInputParameters;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 
 namespace LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter; 

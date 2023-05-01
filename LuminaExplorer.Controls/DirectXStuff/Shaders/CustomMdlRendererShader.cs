@@ -10,6 +10,7 @@ using Lumina.Data.Files;
 using Lumina.Models.Materials;
 using Lumina.Models.Models;
 using LuminaExplorer.Controls.DirectXStuff.Resources;
+using LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter.VertexShaderInputParameters;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.Util.DdsStructs;
@@ -28,6 +29,7 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
     private ID3D11VertexShader* _pVertexShader;
     private ID3D11InputLayout* _pInputLayout;
     private Texture2DShaderResource _dummy;
+    private ConstantBufferResource<JointMatrixArray> _identityJointMatrixArray;
 
     public CustomMdlRendererShader(ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext) {
         try {
@@ -36,6 +38,8 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
 
             _pDeviceContext = pDeviceContext;
             _pDeviceContext->AddRef();
+
+            _identityJointMatrixArray = new(pDevice, pDeviceContext, false, JointMatrixArray.Default);
 
             var samplerDesc = new SamplerDesc {
                 Filter = Filter.MinMagMipLinear,
@@ -113,8 +117,11 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
     }
 
     private void DisposePrivate(bool disposing) {
-        if (disposing)
+        if (disposing) {
             SafeDispose.One(ref _dummy!);
+            SafeDispose.One(ref _identityJointMatrixArray!);
+        }
+
         ReleaseUnmanagedResources();
     }
 
@@ -149,9 +156,10 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
             var submeshes = modelObject.GetSubmeshes(i);
             _pDeviceContext->IASetVertexBuffers(0, 1, pVertexBuffer, (uint) Unsafe.SizeOf<VsInput>(), 0);
             
-            if (boneTableIndex != ushort.MaxValue)
+            if (0 <= boneTableIndex && boneTableIndex < pJointTableBuffers.Length)
                 BindJointMatrixArray((ID3D11Buffer*) pJointTableBuffers[boneTableIndex]);
-            // todo: if it's not skinned, then reset this to identity (or this is unnecessary maybe)
+            else
+                BindJointMatrixArray(_identityJointMatrixArray.Buffer);
 
             if (modelObject.TryGetMaterial(i, out var materialIndex, out var material)) {
                 for (var j = 0; j < material.Textures.Length; j++) {
