@@ -8,6 +8,7 @@ using Lumina.Data.Files;
 using LuminaExplorer.Controls.FileResourceViewerControls.ModelViewerControl.Cameras;
 using LuminaExplorer.Controls.FileResourceViewerControls.ModelViewerControl.Renderers;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
+using LuminaExplorer.Core.ExtraFormats.GenericAnimation;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.VirtualFileSystem;
 
@@ -25,8 +26,8 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
     internal IVirtualFolder? VfsRoot;
     private CancellationTokenSource? _mdlCancel;
     private Task<MdlFile>? _mdlFileTask;
-    private CancellationTokenSource? _papCancel;
-    private Task<PapFile>? _papFileTask;
+    private CancellationTokenSource? _animationCancel;
+    private Task<IAnimation>? _animationTask;
 
     public ModelViewerControl() {
         base.BackColor = DefaultBackColor;
@@ -38,8 +39,8 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         if (disposing) {
             _mdlCancel?.Cancel();
             _mdlCancel = null;
-            _papCancel?.Cancel();
-            _papCancel = null;
+            _animationCancel?.Cancel();
+            _animationCancel = null;
             _mdlFileTask = null;
             _ = SafeDispose.OneAsync(ref _cameraManager!);
             _ = SafeDispose.OneAsync(ref _customRendererTask!);
@@ -67,6 +68,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         VfsRoot = rootFolder;
         _mdlFileTask = mdlFileTask;
 
+        ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(GetTypedFileAsync<EstFile>);
         //*
         _ = TryGetCustomRenderer(out _, true);
         _activeRendererTask = _customRendererTask?.Task.ContinueWith(r => (BaseMdlRenderer) r.Result, cts.Token);
@@ -82,23 +84,23 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         }, cts.Token, TaskContinuationOptions.None, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
-    public Task<PapFile>? Animation {
-        get => _papFileTask;
+    public Task<IAnimation>? Animation {
+        get => _animationTask;
         set {
-            if (value == _papFileTask)
+            if (value == _animationTask)
                 return;
 
-            _papCancel?.Cancel();
-            _papCancel = null;
+            _animationCancel?.Cancel();
+            _animationCancel = null;
             if (value is null)
                 return;
 
             _ = TryGetCustomRenderer(out _, true);
-            var cts = _papCancel = new();
-            _papFileTask = value;
+            var cts = _animationCancel = new();
+            _animationTask = value;
             _activeRendererTask!.ContinueWith(
                 r => {
-                    if (!r.IsCompletedSuccessfully || _papFileTask != value)
+                    if (!r.IsCompletedSuccessfully || _animationTask != value)
                         return;
 
                     r.Result.SetAnimation(value);
@@ -109,6 +111,8 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
                 TaskScheduler.FromCurrentSynchronizationContext());
         }
     }
+
+    public Task<ModelInfoResolver>? ModelInfoResolverTask { get; set; }
 
     protected override void OnPaintBackground(PaintEventArgs pevent) { }
 

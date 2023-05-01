@@ -8,9 +8,11 @@ using System.Windows.Forms;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
+using LuminaExplorer.Core.ExtraFormats.GenericAnimation;
 using LuminaExplorer.Core.ObjectRepresentationWrapper;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.VirtualFileSystem;
+using LuminaExplorer.Core.VirtualFileSystem.Sqpack;
 
 namespace LuminaExplorer.App.Window.FileViewers;
 
@@ -31,7 +33,7 @@ public partial class ModelViewer : Form {
 
     private CancellationTokenSource? _loadCancelTokenSource;
     
-    private readonly List<Task<PapFile>> _animations = new();
+    private readonly List<Task<IAnimation>> _animations = new();
     private int _currentAnimationIndex = -1;
 
     public ModelViewer() {
@@ -182,21 +184,80 @@ public partial class ModelViewer : Form {
             if (!r.IsCompletedSuccessfully)
                 return;
 
+            mdlFile = r.Result;
+
             if (file.Parent.Parent?.Parent?.Parent?.Parent is { } modelBaseFolder &&
                 await vfs.LocateFolder(modelBaseFolder, "animation/") is { } animationFolder) {
                 void OnFileFound(IVirtualFile papFile) {
                     using var lookup = vfs.GetLookup(papFile);
-                    var animationTask = lookup.AsFileResource<PapFile>(cts.Token);
-                    Viewer.RunOnUiThread(() => {
-                        _animations.Add(animationTask);
-                        if (Viewer.Animation is null) {
-                            _currentAnimationIndex = 0;
-                            Viewer.Animation = animationTask;
+                    var papTask = lookup.AsFileResource<PapFile>(cts.Token);
+                    Viewer.RunOnUiThreadAfter(papTask, r2 => {
+                        foreach (var animation in r2.Result.AnimationBindings) {
+                            var animationTask = Task.FromResult((IAnimation)animation);
+                            _animations.Add(animationTask);
+                            if (Viewer.Animation is null) {
+                                _currentAnimationIndex = 0;
+                                Viewer.Animation = animationTask;
+                            }
                         }
                     });
                 }
 
-                await vfs.Search(animationFolder, "*.pap", null, null, OnFileFound, cancellationToken: cts.Token);
+                await Task.WhenAll(
+                    vfs.Search(animationFolder, "*.pap", null, null, OnFileFound, cancellationToken: cts.Token),
+                    Viewer.ModelInfoResolverTask!.ContinueWith(async ra => {
+                        if (!ra.IsCompletedSuccessfully)
+                            return;
+                        
+                        var charaFolder = await vfs.LocateFolder(root, "chara/");
+                        if (charaFolder is null)
+                            return;
+
+                        if (!ra.Result.TryFindSklbPath(mdlFile!.FilePath.Path, out var sklbPath))
+                            return;
+
+                        var sklbFile = await vfs.LocateFile(root, sklbPath);
+                        if (sklbFile is null)
+                            return;
+                        SklbFile sklb;
+                        using (var lookup = vfs.GetLookup(sklbFile))
+                            sklb = await lookup.AsFileResource<SklbFile>(cts.Token);
+                        
+                        foreach (var f in vfs.GetFolders(await vfs.AsFoldersResolved(charaFolder))) {
+                            if (f is not SqpackFolder {IsUnknownContainer: true} unknownFolder)
+                                continue;
+                            
+                            // brute force paps
+                            foreach (var f2 in vfs.GetFolders(await vfs.AsFoldersResolved(unknownFolder))) {
+                                foreach (var f3 in vfs.GetFiles(f2)) {
+                                    cts.Token.ThrowIfCancellationRequested();
+                                    try {
+                                        using var lookup = vfs.GetLookup(f3);
+                                        var papTask = lookup.AsFileResource<PapFile>(cts.Token);
+                                        await Viewer.RunOnUiThreadAfter(papTask, r2 => {
+                                            if (!papTask.IsCompletedSuccessfully)
+                                                return;
+                                            if (papTask.Result.Header.ModelClassification !=
+                                                sklb.VersionedHeader.ModelClassification)
+                                                return;
+                                            if (papTask.Result.Header.ModelId != sklb.VersionedHeader.ModelId)
+                                                return;
+                                            foreach (var animation in r2.Result.AnimationBindings) {
+                                                var animationTask = Task.FromResult((IAnimation) animation);
+                                                _animations.Add(animationTask);
+                                                if (Viewer.Animation is null) {
+                                                    _currentAnimationIndex = 0;
+                                                    Viewer.Animation = animationTask;
+                                                }
+                                            }
+                                        });
+                                    } catch (Exception e) when (e is not OperationCanceledException) {
+                                        // pass
+                                    }
+                                }
+                            }
+                        }
+                    }, cts.Token));
             }
         }, cts.Token);
     }

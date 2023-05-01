@@ -7,7 +7,7 @@ using LuminaExplorer.Controls.DirectXStuff.Resources;
 using LuminaExplorer.Controls.DirectXStuff.Shaders;
 using LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter.VertexShaderInputParameters;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
-using LuminaExplorer.Core.ExtraFormats.HavokAnimation;
+using LuminaExplorer.Core.ExtraFormats.GenericAnimation;
 using LuminaExplorer.Core.Util;
 using Silk.NET.Direct3D11;
 
@@ -15,7 +15,6 @@ namespace LuminaExplorer.Controls.FileResourceViewerControls.ModelViewerControl.
 
 public unsafe class CustomMdlRenderer : BaseMdlRenderer {
     private readonly LruCache<string, SklbFile> _sklbCache = new(128, true);
-    private readonly Task<ModelInfoResolver> _modelInfoResolver;
 
     private CustomMdlRendererShader _shader;
     private ConstantBufferResource<CameraParameter> _paramCamera;
@@ -24,7 +23,7 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
     private ConstantBufferResource<CustomMdlRendererShader.LightParameters> _paramLight;
     private Task<MdlFile>? _mdlTask;
     private Task<SklbFile>? _sklbTask;
-    private Task<PapFile>? _papTask;
+    private Task<IAnimation>? _animationTask;
     private Task<CustomMdlRendererShader.ModelObject>? _modelObject;
 
     private ResultDisposingTask<AnimatingJointsConstantBufferResource>? _animator;
@@ -35,7 +34,6 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
 
     public CustomMdlRenderer(ModelViewerControl control, ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext)
         : base(control, pDevice, pDeviceContext) {
-        _modelInfoResolver = ModelInfoResolver.GetResolver(control.GetTypedFileAsync<EstFile>);
         _shader = new(Device, DeviceContext);
         _paramCamera = new(Device, DeviceContext);
         _paramCamera.DataPull += ParamCameraOnDataPull;
@@ -98,10 +96,10 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
                 return modelObject;
             });
 
-            _sklbTask = Task.WhenAll(_modelObject, _modelInfoResolver).ContinueWith(_ => {
+            _sklbTask = Task.WhenAll(_modelObject, Control.ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(Control.GetTypedFileAsync<EstFile>)).ContinueWith(_ => {
                 if (_mdlTask != mdlTask)
                     throw new OperationCanceledException();
-                if (!_modelInfoResolver.Result.TryFindSklbPath(mdlTask.Result.FilePath.Path, out var sklbPath))
+                if (!Control.ModelInfoResolverTask.Result.TryFindSklbPath(mdlTask.Result.FilePath.Path, out var sklbPath))
                     throw new OperationCanceledException();
                 if (_sklbCache.TryGet(sklbPath, out var sklb))
                     return Task.FromResult<SklbFile?>(sklb);
@@ -111,7 +109,7 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
                     throw r2.Exception!;
                 if (!r2.IsCompletedSuccessfully || r2.Result is null)
                     throw new("No associated skeleton file found");
-                if (!_modelInfoResolver.Result.TryFindSklbPath(mdlTask.Result.FilePath.Path, out var sklbPath))
+                if (!Control.ModelInfoResolverTask.Result.TryFindSklbPath(mdlTask.Result.FilePath.Path, out var sklbPath))
                     throw new FailFastException("?");
                 _sklbCache.Add(sklbPath, r2.Result);
 
@@ -128,11 +126,11 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
         });
     }
 
-    public override void SetAnimation(Task<PapFile> papTask) {
-        if (_papTask == papTask)
+    public override void SetAnimation(Task<IAnimation> papTask) {
+        if (_animationTask == papTask)
             return;
 
-        _papTask = papTask;
+        _animationTask = papTask;
         LoadAnimationIfPossible();
     }
 
@@ -147,13 +145,13 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
                 Control.RunOnUiThreadAfter(animator.Task, _ => Control.Invalidate());
             }
 
-            var papTask = _papTask;
-            if (papTask is not null) {
-                Control.RunOnUiThreadAfter(Task.WhenAll(animator.Task, papTask).ContinueWith(_ => {
-                    if (mdlTask != _mdlTask || sklbTask != _sklbTask || papTask != _papTask || animator != _animator)
+            var animationTask = _animationTask;
+            if (animationTask is not null) {
+                Control.RunOnUiThreadAfter(Task.WhenAll(animator.Task, animationTask).ContinueWith(_ => {
+                    if (mdlTask != _mdlTask || sklbTask != _sklbTask || animationTask != _animationTask || animator != _animator)
                         throw new OperationCanceledException();
 
-                    animator.Result.ChangeAnimation(AnimationSet.Decode(papTask.Result.GetAnimationBindingNode(0)));
+                    animator.Result.ChangeAnimation(animationTask.Result);
                 }), _ => Control.Invalidate());
             }
         }

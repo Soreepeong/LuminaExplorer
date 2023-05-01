@@ -31,7 +31,7 @@ public class SqpackFolder : IEquatable<SqpackFolder>, IVirtualFolder {
 
     public bool FileNamesResolveAttempted { get; internal set; }
 
-    public bool IsUnknownContainer => Name == UnknownContainerName;
+    public bool IsUnknownContainer => Name == UnknownContainerName + "/";
 
     public bool IsUnknownFolder => Name.StartsWith("~") && Name.EndsWith(NotNormalSuffix);
 

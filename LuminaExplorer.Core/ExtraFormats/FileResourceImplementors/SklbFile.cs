@@ -164,6 +164,8 @@ public class SklbFile : FileResource {
     public interface ISklbVersionedHeader {
         public int AlphOffset { get; }
         public int HavokOffset { get; }
+        public SkeletonTargetModelClassification ModelClassification { get; }
+        public int ModelId { get; }
     }
 
     public struct SklbVersionedHeaderCommon00210031 {
