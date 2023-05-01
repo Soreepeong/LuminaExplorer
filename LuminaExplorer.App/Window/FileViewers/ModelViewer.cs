@@ -121,7 +121,7 @@ public partial class ModelViewer : Form {
             case Keys.PageDown:
                 if (!_source.Any())
                     break;
-                var direction = e.KeyCode == Keys.PageUp ? 1 : -1;
+                var direction = e.KeyCode == Keys.PageDown ? 1 : -1;
                 int index;
                 if (AnimationListView.SelectedIndices.Count == 0)
                     index = 0;

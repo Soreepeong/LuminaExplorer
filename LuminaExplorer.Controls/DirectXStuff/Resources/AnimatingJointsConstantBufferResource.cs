@@ -102,7 +102,7 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
             foreach (var x in removed.Where(x => x.EndTick == long.MaxValue))
                 x.EndTick = (long) (now + AnimationFadeTime.TotalMilliseconds);
             foreach (var a in unchanged.Where(a => a.EndTick != long.MaxValue)) {
-                a.BlendStartTick = now - Math.Max(now - a.EndTick, 0);
+                a.BlendStartTick = now - Math.Max(a.EndTick - now, 0);
                 a.EndTick = long.MaxValue;
             }
 
