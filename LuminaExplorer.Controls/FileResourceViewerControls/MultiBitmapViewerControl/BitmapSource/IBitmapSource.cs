@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
-using LuminaExplorer.Core.Util.DdsStructs;
+using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
 using WicNet;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;

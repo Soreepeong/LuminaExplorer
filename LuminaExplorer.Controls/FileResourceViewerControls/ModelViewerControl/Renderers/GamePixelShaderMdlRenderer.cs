@@ -2,7 +2,9 @@
 using System.Threading.Tasks;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter;
+using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
+using LuminaExplorer.Core.ExtraFormats.GenericAnimation;
 using LuminaExplorer.Core.Util;
 using Silk.NET.Direct3D11;
 
@@ -31,7 +33,7 @@ public unsafe class GamePixelShaderMdlRenderer : BaseMdlRenderer {
 
     protected override void Dispose(bool disposing) {
         if (disposing) {
-            ClearModel();
+            ModelTask = null;
             _ = SafeDispose.OneAsync(ref _shaderState!);
             _ = SafeDispose.OneAsync(ref _pool!);
         }
@@ -39,38 +41,49 @@ public unsafe class GamePixelShaderMdlRenderer : BaseMdlRenderer {
         base.Dispose(disposing);
     }
 
-    public override void ClearModel() {
-        _modelObject?.Task.ContinueWith(r => {
-            if (r.IsCompletedSuccessfully) {
-                var modelObject = r.Result;
-                modelObject.DdsFileRequested -= ModelObjectOnDdsFileRequested;
-                modelObject.MtrlFileRequested -= ModelObjectOnMtrlFileRequested;
-                modelObject.ResourceLoadStateChanged -= ModelObjectOnLoadStateChanged;
+    public override Task<MdlFile>? ModelTask {
+        get => _modelTask;
+        set {
+            if (value == _modelTask)
+                return;
+
+            void ClearModel() {
+                _modelObject?.Task.ContinueWith(r => {
+                    if (r.IsCompletedSuccessfully) {
+                        var modelObject = r.Result;
+                        modelObject.DdsFileRequested -= ModelObjectOnDdsFileRequested;
+                        modelObject.MtrlFileRequested -= ModelObjectOnMtrlFileRequested;
+                        modelObject.ResourceLoadStateChanged -= ModelObjectOnLoadStateChanged;
+                    }
+                });
+                _ = SafeDispose.OneAsync(ref _modelObject);
+                _ = SafeDispose.OneAsync(ref _shaderState!);
+                _modelTask = null;
             }
-        });
-        _ = SafeDispose.OneAsync(ref _modelObject);
-        _ = SafeDispose.OneAsync(ref _shaderState!);
-        _modelTask = null;
+            
+            if (value is null) {
+                ClearModel();
+            } else {
+                ClearModel();
+                _modelTask = value;
+
+                _modelObject = new(value.ContinueWith(r => {
+                    if (!r.IsCompletedSuccessfully)
+                        throw r.Exception!;
+
+                    var modelObject = new ModelObjectWithGameShader(_pool, r.Result);
+                    modelObject.DdsFileRequested += ModelObjectOnDdsFileRequested;
+                    modelObject.MtrlFileRequested += ModelObjectOnMtrlFileRequested;
+                    modelObject.ResourceLoadStateChanged += ModelObjectOnLoadStateChanged;
+                    return modelObject;
+                }, TaskScheduler.FromCurrentSynchronizationContext()));
+            }
+        }
     }
 
-    public override void SetModel(Task<MdlFile> mdlTask) {
-        if (_modelTask == mdlTask)
-            return;
-
-        ClearModel();
-        _modelTask = mdlTask;
-
-        _modelObject = new(mdlTask.ContinueWith(r => {
-            if (!r.IsCompletedSuccessfully)
-                throw r.Exception!;
-
-            var modelObject = new ModelObjectWithGameShader(_pool, r.Result);
-            modelObject.DdsFileRequested += ModelObjectOnDdsFileRequested;
-            modelObject.MtrlFileRequested += ModelObjectOnMtrlFileRequested;
-            modelObject.ResourceLoadStateChanged += ModelObjectOnLoadStateChanged;
-            return modelObject;
-        }, TaskScheduler.FromCurrentSynchronizationContext()));
-    }
+    public override Task<SklbFile>? SkeletonTask => null;
+    
+    public override Task<IAnimation>[]? AnimationsTask { get; set; }
 
     protected override void Draw3D(ID3D11RenderTargetView* pRenderTarget) {
         base.Draw3D(pRenderTarget);

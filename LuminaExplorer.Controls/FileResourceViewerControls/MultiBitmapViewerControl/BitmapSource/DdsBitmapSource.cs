@@ -7,8 +7,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 using LuminaExplorer.Controls.Util;
+using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
 using LuminaExplorer.Core.Util;
-using LuminaExplorer.Core.Util.DdsStructs;
 using WicNet;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
@@ -255,7 +255,7 @@ public sealed class DdsBitmapSource : IBitmapSource {
         if (_ddsFile.Header.PixelFormat.Flags != DdsPixelFormatFlags.FourCc)
             sb.Append(_ddsFile.Header.PixelFormat.Flags & ~DdsPixelFormatFlags.FourCc).Append("; ");
 
-        sb.Append($"{_ddsFile.DataOffset + _ddsFile.Data.Length:##,###} Bytes");
+        sb.Append($"{_ddsFile.DataOffset + _ddsFile.Body.Length:##,###} Bytes");
         if (_ddsFile.Header.Flags.HasFlag(DdsHeaderFlags.MipmapCount))
             sb.Append("; ").Append(_ddsFile.NumMipmaps).Append(" Mipmaps");
         sb.AppendLine();

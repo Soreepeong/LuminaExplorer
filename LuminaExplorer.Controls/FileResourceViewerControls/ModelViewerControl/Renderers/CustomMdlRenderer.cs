@@ -50,7 +50,7 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
 
     protected override void Dispose(bool disposing) {
         if (disposing) {
-            ClearModel();
+            ModelTask = null;
             _ = SafeDispose.OneAsync(ref _shader!);
             _ = SafeDispose.OneAsync(ref _paramCamera!);
             _ = SafeDispose.OneAsync(ref _paramWorldViewMatrix!);
@@ -61,85 +61,97 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
         base.Dispose(disposing);
     }
 
-    public override void ClearModel() {
-        _mdlTask = null;
-        _modelObject?.ContinueWith(r => {
-            if (r.IsCompletedSuccessfully) {
-                var modelObject = r.Result;
-                modelObject.DdsFileRequested -= ModelObjectOnDdsFileRequested;
-                modelObject.TextureLoadStateChanged -= ModelObjectOnLoadStateChanged;
-                modelObject.MtrlFileRequested -= ModelObjectOnMtrlFileRequested;
-            }
-        });
-        _modelObject = null;
-        _ = SafeDispose.OneAsync(ref _animator);
-    }
-
-    public override void SetModel(Task<MdlFile> mdlTask) {
-        if (_mdlTask == mdlTask)
-            return;
-
-        var prevTask = _mdlTask;
-        _mdlTask = mdlTask;
-
-        mdlTask.ContinueWith(r => {
-            if (_mdlTask != mdlTask)
-                return;
-            if (prevTask?.IsCompletedSuccessfully is true && r.Result.FilePath == prevTask.Result.FilePath)
+    public override Task<MdlFile>? ModelTask {
+        get => _mdlTask;
+        set {
+            if (value == _mdlTask)
                 return;
 
-            ClearModel();
-            _mdlTask = mdlTask;
-
-            _modelObject = Task.Run(() => {
-                var modelObject = new CustomMdlRendererShader.ModelObject(_shader, r.Result);
-                modelObject.DdsFileRequested += ModelObjectOnDdsFileRequested;
-                modelObject.TextureLoadStateChanged += ModelObjectOnLoadStateChanged;
-                modelObject.MtrlFileRequested += ModelObjectOnMtrlFileRequested;
-                return modelObject;
-            });
-
-            _sklbTask = Task
-                .WhenAll(_modelObject,
-                    Control.ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(Control.GetTypedFileAsync<EstFile>))
-                .ContinueWith(_ => {
-                    if (_mdlTask != mdlTask)
-                        throw new OperationCanceledException();
-                    if (!Control.ModelInfoResolverTask.Result.TryFindSklbPath(mdlTask.Result.FilePath.Path,
-                            out var sklbPath))
-                        throw new OperationCanceledException();
-                    if (_sklbCache.TryGet(sklbPath, out var sklb))
-                        return Task.FromResult<SklbFile?>(sklb);
-                    return Control.GetTypedFileAsync<SklbFile>(sklbPath);
-                }).Unwrap().ContinueWith(r2 => {
-                    if (r2.IsFaulted)
-                        throw r2.Exception!;
-                    if (!r2.IsCompletedSuccessfully || r2.Result is null)
-                        throw new("No associated skeleton file found");
-                    if (!Control.ModelInfoResolverTask.Result.TryFindSklbPath(mdlTask.Result.FilePath.Path,
-                            out var sklbPath))
-                        throw new FailFastException("?");
-                    _sklbCache.Add(sklbPath, r2.Result);
-
-                    LoadAnimationIfPossible();
-                    return r2.Result;
+            void ClearModel() {
+                _mdlTask = null;
+                _modelObject?.ContinueWith(r => {
+                    if (r.IsCompletedSuccessfully) {
+                        var modelObject = r.Result;
+                        modelObject.DdsFileRequested -= ModelObjectOnDdsFileRequested;
+                        modelObject.TextureLoadStateChanged -= ModelObjectOnLoadStateChanged;
+                        modelObject.MtrlFileRequested -= ModelObjectOnMtrlFileRequested;
+                    }
                 });
+                _modelObject = null;
+                _ = SafeDispose.OneAsync(ref _animator);
+            }
 
-            Control.RunOnUiThreadAfter(_modelObject, r2 => {
-                if (_mdlTask != mdlTask || !r2.IsCompletedSuccessfully)
-                    return;
+            if (value is null) {
+                ClearModel();
+            } else {
+                var prevTask = _mdlTask;
+                _mdlTask = value;
 
-                ResetCamera(_mdlTask.Result.ModelBoundingBoxes);
-            });
-        });
+                value.ContinueWith(r => {
+                    if (_mdlTask != value)
+                        return;
+                    if (prevTask?.IsCompletedSuccessfully is true && r.Result.FilePath == prevTask.Result.FilePath)
+                        return;
+
+                    ClearModel();
+                    _mdlTask = value;
+
+                    _modelObject = Task.Run(() => {
+                        var modelObject = new CustomMdlRendererShader.ModelObject(_shader, r.Result);
+                        modelObject.DdsFileRequested += ModelObjectOnDdsFileRequested;
+                        modelObject.TextureLoadStateChanged += ModelObjectOnLoadStateChanged;
+                        modelObject.MtrlFileRequested += ModelObjectOnMtrlFileRequested;
+                        return modelObject;
+                    });
+
+                    _sklbTask = Task
+                        .WhenAll(_modelObject,
+                            Control.ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(Control.GetTypedFileAsync<EstFile>))
+                        .ContinueWith(_ => {
+                            if (_mdlTask != value)
+                                throw new OperationCanceledException();
+                            if (!Control.ModelInfoResolverTask.Result.TryFindSklbPath(value.Result.FilePath.Path,
+                                    out var sklbPath))
+                                throw new OperationCanceledException();
+                            if (_sklbCache.TryGet(sklbPath, out var sklb))
+                                return Task.FromResult<SklbFile?>(sklb);
+                            return Control.GetTypedFileAsync<SklbFile>(sklbPath);
+                        }).Unwrap().ContinueWith(r2 => {
+                            if (r2.IsFaulted)
+                                throw r2.Exception!;
+                            if (!r2.IsCompletedSuccessfully || r2.Result is null)
+                                throw new("No associated skeleton file found");
+                            if (!Control.ModelInfoResolverTask.Result.TryFindSklbPath(value.Result.FilePath.Path,
+                                    out var sklbPath))
+                                throw new FailFastException("?");
+                            _sklbCache.Add(sklbPath, r2.Result);
+
+                            LoadAnimationIfPossible();
+                            return r2.Result;
+                        });
+
+                    Control.RunOnUiThreadAfter(_modelObject, r2 => {
+                        if (_mdlTask != value || !r2.IsCompletedSuccessfully)
+                            return;
+
+                        ResetCamera(_mdlTask.Result.ModelBoundingBoxes);
+                    });
+                });
+            }
+        }
     }
 
-    public override void SetAnimations(Task<IAnimation>[]? papTask) {
-        if (_animationTasks == papTask)
-            return;
+    public override Task<SklbFile>? SkeletonTask => _sklbTask;
 
-        _animationTasks = papTask;
-        LoadAnimationIfPossible();
+    public override Task<IAnimation>[]? AnimationsTask {
+        get => _animationTasks;
+        set {
+            if (_animationTasks == value)
+                return;
+
+            _animationTasks = value;
+            LoadAnimationIfPossible();            
+        }
     }
 
     private void LoadAnimationIfPossible() {

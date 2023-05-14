@@ -2,8 +2,9 @@
 using System.Threading.Tasks;
 using Lumina.Data.Files;
 using LuminaExplorer.Controls.DirectXStuff;
+using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
+using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
 using LuminaExplorer.Core.ExtraFormats.GenericAnimation;
-using LuminaExplorer.Core.Util.DdsStructs;
 using Silk.NET.Direct2D;
 using Silk.NET.Direct3D11;
 
@@ -13,11 +14,11 @@ public abstract unsafe class BaseMdlRenderer : DirectXRenderer<ModelViewerContro
     protected BaseMdlRenderer(ModelViewerControl control, ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext)
         : base(control, true, pDevice, pDeviceContext) { }
 
-    public abstract void ClearModel();
+    public abstract Task<MdlFile>? ModelTask { get; set; }
 
-    public abstract void SetModel(Task<MdlFile> mdlTask);
+    public abstract Task<SklbFile>? SkeletonTask { get; }
 
-    public virtual void SetAnimations(Task<IAnimation>[]? animationTask) { }
+    public abstract Task<IAnimation>[]? AnimationsTask { get; set; }
 
     protected void ModelObjectOnDdsFileRequested(string path, ref Task<DdsFile?>? loader) {
         loader ??= Control.GetTypedFileAsync<TexFile>(path)?.ContinueWith(r =>

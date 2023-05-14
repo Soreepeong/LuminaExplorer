@@ -1,18 +1,23 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using BrightIdeasSoftware;
 using JetBrains.Annotations;
 using Lumina.Data.Files;
+using Lumina.Models.Materials;
+using Lumina.Models.Models;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
 using LuminaExplorer.Core.ExtraFormats.GenericAnimation;
+using LuminaExplorer.Core.ExtraFormats.GltfInterop;
 using LuminaExplorer.Core.ObjectRepresentationWrapper;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.VirtualFileSystem;
@@ -23,6 +28,8 @@ namespace LuminaExplorer.App.Window.FileViewers;
 public partial class ModelViewer : Form {
     private const int MinimumDefaultWidth = 1280;
     private const int MinimumDefaultHeight = 720;
+
+    private static readonly Guid ModelViewerSaveToGuid = Guid.Parse("afab3c8d-6d9f-4813-afaf-a49536297d7e");
 
     private readonly CancellationTokenSource _closeToken = new();
 
@@ -222,7 +229,7 @@ public partial class ModelViewer : Form {
                         return;
                     for (var i = 0; i < papFile.Animations.Count; i++) {
                         AnimationListView.AddObject(new AnimationListEntry(papFile, i));
-                        if (AnimationListView.SelectedIndices.Count == 0) 
+                        if (AnimationListView.SelectedIndices.Count == 0)
                             AnimationListView.SelectedIndices.Add(0);
                     }
                 }
@@ -285,6 +292,94 @@ public partial class ModelViewer : Form {
 
         SetBounds(rc.X, rc.Y, rc.Width, rc.Height);
         Show();
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData) {
+        switch (keyData) {
+            case Keys.S | Keys.Control: {
+                if (Viewer.ModelTask?.IsCompletedSuccessfully is not true)
+                    return true;
+                
+                var model = new Model(Viewer.ModelTask.Result);
+                Debug.Assert(model.File is not null);
+
+                using var sfd = new SaveFileDialog();
+                sfd.OverwritePrompt = true;
+                sfd.ClientGuid = ModelViewerSaveToGuid;
+                sfd.Title = $"Save {Path.GetFileNameWithoutExtension(model.File.FilePath)}";
+                sfd.AddExtension = true;
+                sfd.FileName = $"{Path.GetFileNameWithoutExtension(model.File.FilePath)}.glb";
+                sfd.OverwritePrompt = true;
+                sfd.Filter = ".glb file|*.glb";
+                if (sfd.ShowDialog() == DialogResult.OK) {
+                    var fileName = sfd.FileName;
+                    Task.Factory.StartNew(async () => {
+                        try {
+                            var tuple = new GltfTuple();
+                            int? skinIndexNullable = Viewer.SkeletonTask is { } skeletonTask
+                                ? tuple.AttachSkin(await skeletonTask)
+                                : null;
+
+                            for (var i = 0; i < model.Materials.Length; i++) {
+                                var mtrlPath = ((Func<string>) (() => {
+                                    var mtrlPathSpan =
+                                        model.File.Strings.AsSpan((int) model.File.MaterialNameOffsets[i]);
+                                    mtrlPathSpan = mtrlPathSpan[..mtrlPathSpan.IndexOf((byte) 0)];
+                                    return Encoding.UTF8.GetString(mtrlPathSpan);
+                                }))();
+
+                                if (mtrlPath.StartsWith('/'))
+                                    mtrlPath = Material.ResolveRelativeMaterialPath(mtrlPath, model.VariantId);
+
+                                if (mtrlPath is null)
+                                    continue;
+
+                                var mtrlvf = await Viewer.Vfs!.LocateFile(Viewer.VfsRoot!, mtrlPath);
+                                if (mtrlvf is null)
+                                    continue;
+
+                                using var lookup = Viewer.Vfs!.GetLookup(mtrlvf);
+                                model.Materials[i] = new(await lookup.AsFileResource<MtrlFile>());
+                            }
+
+                            foreach (var m in model.Materials) {
+                                await tuple.AttachMaterial(m, async texPath => {
+                                    var mtrlvf = await Viewer.Vfs!.LocateFile(Viewer.VfsRoot!, texPath);
+                                    if (mtrlvf is null)
+                                        return null;
+
+                                    using var lookup = Viewer.Vfs!.GetLookup(mtrlvf);
+                                    return await lookup.AsFileResource<TexFile>();
+                                });
+                            }
+
+                            tuple.AddToScene(tuple.AttachMesh(model, skinIndexNullable), skinIndexNullable);
+
+                            if (skinIndexNullable is { } skinIndex) {
+                                foreach (var anim in _source)
+                                    tuple.AttachAnimation(
+                                        $"{anim.FullPath}:{anim.AnimationName}",
+                                        await anim.AnimationTask,
+                                        skinIndex);
+                            }
+
+                            await using var f = File.Open(fileName, FileMode.Create, FileAccess.Write);
+                            tuple.Compile(f);
+                        } catch (Exception e) {
+                            MessageBox.Show(
+                                $"Failed to save.\n\n{e}",
+                                "Error",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Error);
+                        }
+                    });
+                }
+
+                return true;
+            }
+            default:
+                return base.ProcessCmdKey(ref msg, keyData);
+        }
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e) {

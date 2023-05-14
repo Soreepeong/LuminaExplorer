@@ -21,9 +21,6 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
     private Task<BaseMdlRenderer>? _activeRendererTask;
 
     private CameraManager _cameraManager;
-
-    internal IVirtualFileSystem? Vfs;
-    internal IVirtualFolder? VfsRoot;
     private CancellationTokenSource? _mdlCancel;
     private Task<MdlFile>? _mdlFileTask;
     private CancellationTokenSource? _animationCancel;
@@ -55,13 +52,21 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
 
     public event EventHandler? ViewportChanged;
 
-    public event EventHandler? AnimationPlayingChanged; 
+    public event EventHandler? AnimationPlayingChanged;
 
     public event EventHandler? AnimationSpeedChanged;
+
+    public IVirtualFileSystem? Vfs { get; private set; }
+
+    public IVirtualFolder? VfsRoot { get; private set; }
 
     public ICamera Camera => _cameraManager.Camera;
 
     public ObjectCentricCamera ObjectCentricCamera => _cameraManager.ObjectCentricCamera;
+
+    public Task<MdlFile>? ModelTask => TryGetRenderer(out var renderer) ? renderer.ModelTask : null;
+
+    public Task<SklbFile>? SkeletonTask => TryGetRenderer(out var renderer) ? renderer.SkeletonTask : null;
 
     public void SetModel(IVirtualFileSystem vfs, IVirtualFolder rootFolder, Task<MdlFile> mdlFileTask) {
         if (_mdlFileTask == mdlFileTask)
@@ -85,7 +90,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
 
         _activeRendererTask!.ContinueWith(r => {
             if (r.IsCompletedSuccessfully)
-                r.Result.SetModel(_mdlFileTask);
+                r.Result.ModelTask = _mdlFileTask;
             Invalidate();
         }, cts.Token, TaskContinuationOptions.None, TaskScheduler.FromCurrentSynchronizationContext());
     }
@@ -129,7 +134,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
                     if (!r.IsCompletedSuccessfully || _animationTasks != value)
                         return;
 
-                    r.Result.SetAnimations(value);
+                    r.Result.AnimationsTask = value;
                     Invalidate();
                 },
                 cts.Token,

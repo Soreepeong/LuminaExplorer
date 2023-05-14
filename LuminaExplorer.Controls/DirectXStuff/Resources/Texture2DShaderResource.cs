@@ -2,8 +2,8 @@
 using System.Runtime.InteropServices;
 using DirectN;
 using Lumina.Data.Files;
-using LuminaExplorer.Core.Util.DdsStructs;
-using LuminaExplorer.Core.Util.DdsStructs.PixelFormats;
+using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
+using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface.PixelFormats;
 using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;
 using WicNet;

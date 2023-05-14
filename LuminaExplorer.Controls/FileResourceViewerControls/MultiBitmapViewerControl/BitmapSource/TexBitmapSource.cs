@@ -13,8 +13,8 @@ using Lumina.Data.Files;
 using Lumina.Data.Structs;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 using LuminaExplorer.Controls.Util;
+using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
 using LuminaExplorer.Core.Util;
-using LuminaExplorer.Core.Util.DdsStructs;
 using WicNet;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;

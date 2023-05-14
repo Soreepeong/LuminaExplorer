@@ -123,6 +123,8 @@ public class SklbFile : FileResource {
         (bone = Bones.FirstOrDefault(x => x.Name == name)) != null;
 
     public class Bone {
+        private readonly List<Bone> _children = new();
+        
         public readonly int Index;
         public readonly Bone? Parent;
         public readonly string Name;
@@ -142,6 +144,8 @@ public class SklbFile : FileResource {
             Rotation = rotation;
             Scale = scale;
 
+            parent?._children.Add(this);
+
             BindPoseRelative =
                 Matrix4x4.CreateScale(Scale) *
                 Matrix4x4.CreateFromQuaternion(Rotation) *
@@ -154,6 +158,8 @@ public class SklbFile : FileResource {
                 ? inverted
                 : throw new InvalidDataException();
         }
+
+        public IReadOnlyList<Bone> Children => _children;
     }
 
     public enum SklbFormat : uint {

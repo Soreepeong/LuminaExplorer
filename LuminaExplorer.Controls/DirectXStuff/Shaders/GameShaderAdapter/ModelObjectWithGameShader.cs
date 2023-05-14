@@ -9,7 +9,7 @@ using Lumina.Data.Files;
 using Lumina.Data.Structs;
 using Lumina.Models.Materials;
 using LuminaExplorer.Controls.DirectXStuff.Resources;
-using LuminaExplorer.Core.Util.DdsStructs;
+using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;

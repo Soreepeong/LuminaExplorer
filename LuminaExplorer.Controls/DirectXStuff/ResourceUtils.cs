@@ -2,7 +2,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 using Lumina.Data.Files;
-using LuminaExplorer.Core.Util.DdsStructs;
+using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D.Compilers;
 using Silk.NET.Direct3D11;
@@ -72,7 +72,7 @@ public static unsafe class ResourceUtils {
             throw new NotSupportedException("Not a supported DXGI format");
 
         var subresources = new SubresourceData[numImages, numFaces, numMipmaps];
-        fixed (void* b = dds.Data)
+        fixed (void* b = dds.Body)
         fixed (SubresourceData* pSubresources = subresources) {
             for (var i = 0; i < numImages; i++) {
                 for (var j = 0; j < numFaces; j++) {
