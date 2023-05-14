@@ -181,6 +181,7 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
                                 .Where(x => x.IsCompletedSuccessfully)
                                 .Select(x => x.Result)
                                 .ToArray());
+                            UpdateAnimationSpeed();
                         }), _ => Control.Invalidate());
             } else {
                 Control.RunOnUiThreadAfter(animator.Task.ContinueWith(_ => {
@@ -189,6 +190,7 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
                         throw new OperationCanceledException();
 
                     animator.Result.ChangeAnimations(null);
+                    UpdateAnimationSpeed();
                 }), _ => Control.Invalidate());
             }
         }

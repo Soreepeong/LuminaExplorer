@@ -257,19 +257,46 @@ public class GltfTuple {
             Name = name,
             Extras = new() {
                 ShaderPack = xivMaterial.ShaderPack,
+                VariantId = xivMaterial.VariantId,
+                UvColorSets = xivMaterial.File!.UvColorSets.ToList(),
+                ColorSets = xivMaterial.File.ColorSets.ToList(),
+                ShaderKeys = xivMaterial.File.ShaderKeys.ToList(),
+                Constants = xivMaterial.File.Constants.ToList(),
+                ShaderValues = xivMaterial.File.ShaderValues.ToList(),
             },
         };
 
-        foreach (var t in xivMaterial.Textures) {
-            if (t.TexturePath == "dummy.tex")
+        unsafe {
+            if (xivMaterial.File.ColorSetInfo is var csi) {
+                var colorSetInfoBytes = new ushort[256];
+                for (var i = 0; i < 256; i++)
+                    colorSetInfoBytes[i] = csi.Data[i];
+                material.Extras.ColorSetInfo = colorSetInfoBytes;
+            }
+            
+            if (xivMaterial.File.ColorSetDyeInfo is var csdi) {
+                var colorSetDyeInfoBytes = new ushort[16];
+                for (var i = 0; i < 16; i++)
+                    colorSetDyeInfoBytes[i] = csdi.Data[i];
+                material.Extras.ColorSetInfo = colorSetDyeInfoBytes;
+            }
+        }
+
+        foreach (var (t, s) in xivMaterial.Textures.Zip(xivMaterial.File!.Samplers)) {
+            var texFile = t.TexturePath == "dummy.tex" ? null : await texFileGetter(t.TexturePath);
+            int? textureIndexNullable = texFile is null ? null : AttachTexture(t.TexturePath, texFile.ToDdsFile());
+            
+            material.Extras.Samplers ??= new();
+            material.Extras.Samplers.Add(new() {
+                Flags = s.Flags,
+                TextureUsage = t.TextureUsageRaw,
+                TexturePath = t.TexturePath,
+                TextureIndex = textureIndexNullable,
+            });
+
+            if (textureIndexNullable is not { } textureIndex)
                 continue;
 
-            var texFile = await texFileGetter(t.TexturePath);
-            if (texFile is null)
-                continue;
-
-            var textureIndex = AttachTexture(t.TexturePath, texFile.ToDdsFile());
-            material.Extras.AssociatedTextures[t.TextureUsageRaw.ToString()] = textureIndex;
             switch (t.TextureUsageSimple) {
                 case Texture.Usage.Diffuse:
                     (material.PbrMetallicRoughness ??= new()).BaseColorTexture ??= new() {
