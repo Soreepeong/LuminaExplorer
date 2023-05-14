@@ -81,7 +81,7 @@ public unsafe class GamePixelShaderMdlRenderer : BaseMdlRenderer {
         }
     }
 
-    public override Task<SklbFile>? SkeletonTask => null;
+    public override Task<SklbFile[]>? SkeletonTask => null;
     
     public override Task<IAnimation>[]? AnimationsTask { get; set; }
 

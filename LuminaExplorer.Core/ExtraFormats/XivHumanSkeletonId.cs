@@ -41,4 +41,6 @@ public enum XivHumanSkeletonId : ushort {
     VieraFemaleNpc = 1804,
     NpcMale = 9104,
     NpcFemale = 9204,
+    
+    DefaultHuman = HyurMidlanderMale,
 }

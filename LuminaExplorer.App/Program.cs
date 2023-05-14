@@ -5,10 +5,9 @@ using System.Reflection;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Lumina.Data.Files;
 using LuminaExplorer.App.Window;
 using LuminaExplorer.App.Window.FileViewers;
-using LuminaExplorer.Controls.FileResourceViewerControls.ModelViewerControl;
+using LuminaExplorer.Core.ExtraFormats.GltfInterop;
 using LuminaExplorer.Core.SqPackPath;
 using LuminaExplorer.Core.VirtualFileSystem.Sqpack;
 
@@ -53,9 +52,18 @@ public static class Program {
         // To customize application configuration such as set high DPI settings or default font,
         // see https://aka.ms/applicationconfiguration.
         ApplicationConfiguration.Initialize();
-        
-        // Main_Explorer();
-        Main_Show0361();
+
+        switch (0) {
+            case 0:
+                Main_Explorer();
+                return;
+            case 1:
+                Main_Show0361();
+                return;
+            case 2:
+                Main_Import0361();
+                return;
+        }
     }
 
     public static void Main_Explorer() {
@@ -88,4 +96,12 @@ public static class Program {
                 TaskScheduler.FromCurrentSynchronizationContext());
         Application.Run(viewer);
     }
+
+    public static void Main_Import0361() => Task.Factory.StartNew(async () => {
+        GetAppConfig(out _, out var fs);
+
+        var tuple = new GltfTuple(File.OpenRead("Z:/m0361b0001.glb"));
+
+        Debugger.Break();
+    });
 }

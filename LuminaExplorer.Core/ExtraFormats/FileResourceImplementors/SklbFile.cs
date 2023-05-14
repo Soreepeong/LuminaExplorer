@@ -21,7 +21,7 @@ public class SklbFile : FileResource {
     public SklbFormat Version;
     public ISklbVersionedHeader VersionedHeader = null!;
     public uint AlphMagic;
-    public ushort[][] AlphData = null!;
+    public ushort[] AlphData = null!;
     public byte[] HavokData = null!;
     public Bone[] Bones = null!;
 
@@ -38,22 +38,15 @@ public class SklbFile : FileResource {
             VersionedHeader = Version switch {
                 SklbFormat.K0021 => Reader.ReadStructure<Sklb0021>(),
                 SklbFormat.K0031 => Reader.ReadStructure<Sklb0031>(),
+                SklbFormat.K1031 => Reader.ReadStructure<Sklb0031>(),  // ?
                 _ => throw new NotSupportedException()
             };
 
             AlphMagic = Reader.WithSeek(VersionedHeader.AlphOffset).ReadUInt32();
             if (AlphMagic == AlphMagicValue) {
-                var bart = Reader.ReadStructuresAsArray<ushort>((VersionedHeader.HavokOffset -
+                AlphData = Reader.ReadStructuresAsArray<ushort>((VersionedHeader.HavokOffset -
                     VersionedHeader.AlphOffset -
                     4) / 2);
-                var tmp = new List<ushort[]>();
-                for (var i = 0; i < bart.Length;) {
-                    var count = bart[i++];
-                    tmp.Add(bart[i..(i + count)]);
-                    i += count;
-                }
-
-                AlphData = tmp.ToArray();
             }
 
             HavokData = Data[VersionedHeader.HavokOffset..];
@@ -70,7 +63,10 @@ public class SklbFile : FileResource {
             var resultBones = new List<Bone>();
             if (HavokRootNode.AsMap.GetValueOrDefault("namedVariants") is not ValueArray namedVariants)
                 throw new(); // care later about errmsg
-            if (namedVariants.Values.FirstOrDefault() is not ValueNode namedVariant0)
+            if (namedVariants.Values
+                    .FirstOrDefault(x => x is ValueNode y &&
+                        y.Node.AsMap.GetValueOrDefault("name") is ValueString {Value: "hkaAnimationContainer"})
+                is not ValueNode namedVariant0)
                 throw new();
             if (namedVariant0.Node.AsMap.GetValueOrDefault("variant") is not ValueNode variant)
                 throw new();
@@ -122,6 +118,35 @@ public class SklbFile : FileResource {
     public bool TryGetBoneByName(string name, [MaybeNullWhen(false)] out Bone bone) =>
         (bone = Bones.FirstOrDefault(x => x.Name == name)) != null;
 
+    public class BoneList {
+        private readonly List<Bone> _bones = new();
+        private readonly Dictionary<string, int> _boneNameToIndex = new();
+        private readonly Dictionary<Bone, int> _boneRemap = new();
+
+        public void AddBones(IEnumerable<Bone> bones) {
+            foreach (var b in bones) {
+                if (_boneNameToIndex.TryGetValue(b.Name, out var boneIndex)) {
+                    _boneRemap[b] = boneIndex;
+                    continue;
+                }
+
+                if (b.Parent is not null)
+                    _bones.Add(new(_bones.Count, _bones[_boneNameToIndex[b.Parent.Name]], b));
+                else
+                    _bones.Add(new(_bones.Count, _bones.FirstOrDefault(), b));
+
+                _boneNameToIndex[_bones.Last().Name] = _bones.Count - 1;
+                _boneRemap[b] = _bones.Count - 1;
+            }
+        }
+
+        public bool TryGetIndex(string name, out int i) => _boneNameToIndex.TryGetValue(name, out i);
+
+        public int GetRemappedBoneIndex(Bone bone) => _boneRemap[bone];
+
+        public IReadOnlyList<Bone> Bones => _bones;
+    }
+
     public class Bone {
         private readonly List<Bone> _children = new();
         
@@ -135,6 +160,12 @@ public class SklbFile : FileResource {
         public readonly Matrix4x4 BindPoseRelative;
         public readonly Matrix4x4 BindPoseAbsolute;
         public readonly Matrix4x4 BindPoseAbsoluteInverse;
+
+        public Bone(Bone bone) :
+            this(bone.Index, bone.Parent, bone.Name, bone.Translation, bone.Rotation, bone.Scale) { }
+
+        public Bone(int index, Bone? parent, Bone bone) :
+            this(index, parent, bone.Name, bone.Translation, bone.Rotation, bone.Scale) { }
 
         public Bone(int index, Bone? parent, string name, Vector3 translation, Quaternion rotation, Vector3 scale) {
             Index = index;
@@ -165,6 +196,7 @@ public class SklbFile : FileResource {
     public enum SklbFormat : uint {
         K0021 = 0x31323030u,
         K0031 = 0x31333030u,
+        K1031 = 0x31333031u,
     }
 
     public interface ISklbVersionedHeader {

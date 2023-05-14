@@ -16,7 +16,7 @@ public abstract unsafe class BaseMdlRenderer : DirectXRenderer<ModelViewerContro
 
     public abstract Task<MdlFile>? ModelTask { get; set; }
 
-    public abstract Task<SklbFile>? SkeletonTask { get; }
+    public abstract Task<SklbFile[]>? SkeletonTask { get; }
 
     public abstract Task<IAnimation>[]? AnimationsTask { get; set; }
 

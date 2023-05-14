@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
 using System.Numerics;
 using System.Text;
@@ -18,7 +17,7 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
     public static readonly TimeSpan AnimationFadeTime = TimeSpan.FromMilliseconds(500);
 
     private readonly MdlFile _mdl;
-    private readonly SklbFile _sklb;
+    private readonly SklbFile.BoneList _boneList;
 
     private ConstantBufferResource<JointMatrixArray>[] _boneTableBuffers;
     private readonly Matrix4x4[] _activeJointMatrices;
@@ -34,22 +33,22 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
         ID3D11Device* pDevice,
         ID3D11DeviceContext* pDeviceContext,
         MdlFile mdl,
-        SklbFile sklbFile) {
+        SklbFile[] sklbFiles) {
+
+        _boneList = new();
+        foreach (var sklb in sklbFiles)
+            _boneList.AddBones(sklb.Bones);
+
         _boneTableBuffers = Array.Empty<ConstantBufferResource<JointMatrixArray>>();
-        _activeJointMatrices = new Matrix4x4[sklbFile.Bones.Length];
-        _scratchTranslation = new Vector3[sklbFile.Bones.Length];
-        _scratchRotation = new Quaternion[sklbFile.Bones.Length];
-        _scratchScale = new Vector3[sklbFile.Bones.Length];
+        _activeJointMatrices = new Matrix4x4[_boneList.Bones.Count];
+        _scratchTranslation = new Vector3[_boneList.Bones.Count];
+        _scratchRotation = new Quaternion[_boneList.Bones.Count];
+        _scratchScale = new Vector3[_boneList.Bones.Count];
 
         try {
             _mdl = mdl;
-            _sklb = sklbFile;
 
-            var boneNameToIndex = sklbFile.Bones
-                .Select((x, i) => (x, i))
-                .ToImmutableDictionary(x => x.x.Name, x => x.i);
-
-            _modelBoneIndexToSkeletonBoneIndexMapping = _mdl.BoneNameOffsets.Select(x => boneNameToIndex.TryGetValue(
+            _modelBoneIndexToSkeletonBoneIndexMapping = _mdl.BoneNameOffsets.Select(x => _boneList.TryGetIndex(
                 Encoding.UTF8.GetStringNullTerminated(_mdl.Strings.AsSpan((int) x)),
                 out var boneIndex)
                 ? boneIndex
@@ -147,7 +146,7 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
                         Matrix4x4.CreateFromQuaternion(anim.Rotation(j).Interpolate(t)) *
                         Matrix4x4.CreateTranslation(anim.Translation(j).Interpolate(t));
                 } else
-                    _activeJointMatrices[j] = _sklb.Bones[j].BindPoseRelative;
+                    _activeJointMatrices[j] = _boneList.Bones[j].BindPoseRelative;
             }
         } else {
             var startIndex = _animationStates.Count - 1;
@@ -168,9 +167,9 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
                 startIndex = 0;
 
             for (var j = 0; j < _activeJointMatrices.Length; j++) {
-                _scratchScale[j] = _sklb.Bones[j].Scale;
-                _scratchRotation[j] = _sklb.Bones[j].Rotation;
-                _scratchTranslation[j] = _sklb.Bones[j].Translation;
+                _scratchScale[j] = _boneList.Bones[j].Scale;
+                _scratchRotation[j] = _boneList.Bones[j].Rotation;
+                _scratchTranslation[j] = _boneList.Bones[j].Translation;
             }
 
             foreach (var state in _animationStates.Skip(startIndex)) {
@@ -192,9 +191,9 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
                         rotation = anim.Rotation(j).Interpolate(t);
                         translation = anim.Translation(j).Interpolate(t);
                     } else {
-                        scale = _sklb.Bones[j].Scale;
-                        rotation = _sklb.Bones[j].Rotation;
-                        translation = _sklb.Bones[j].Translation;
+                        scale = _boneList.Bones[j].Scale;
+                        rotation = _boneList.Bones[j].Rotation;
+                        translation = _boneList.Bones[j].Translation;
                     }
 
                     _scratchScale[j] = Vector3.Lerp(_scratchScale[j], scale, weight);
@@ -215,13 +214,13 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
 
         // Pass 2. Resolve absolute poses.
         for (var i = 0; i < _activeJointMatrices.Length; i++) {
-            if (_sklb.Bones[i].Parent is { } parent)
+            if (_boneList.Bones[i].Parent is { } parent)
                 _activeJointMatrices[i] *= _activeJointMatrices[parent.Index];
         }
 
         // Pass 3. Make skinning matrices.
         for (var i = 0; i < _activeJointMatrices.Length; i++)
-            _activeJointMatrices[i] = _sklb.Bones[i].BindPoseAbsoluteInverse * _activeJointMatrices[i];
+            _activeJointMatrices[i] = _boneList.Bones[i].BindPoseAbsoluteInverse * _activeJointMatrices[i];
 
         return true;
     }

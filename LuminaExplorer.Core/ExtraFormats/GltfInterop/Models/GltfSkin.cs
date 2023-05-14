@@ -17,4 +17,12 @@ public class GltfSkin : BaseGltfObject {
     [JsonProperty("inverseBindMatrices")] public int? InverseBindMatrices;
 
     [JsonProperty("joints")] public List<int> Joints = new();
+    
+    [JsonProperty("extras", NullValueHandling = NullValueHandling.Ignore)]
+    public GltfSkinExtras? Extras;
+}
+
+public class GltfSkinExtras : BaseGltfObject {
+    public Dictionary<string, ushort[]>? Alph;
+    public Dictionary<string, List<int>>? Indices;
 }

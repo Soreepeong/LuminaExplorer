@@ -23,7 +23,7 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
     private ConstantBufferResource<CustomMdlRendererShader.WorldMisc> _paramWorldMisc;
     private ConstantBufferResource<CustomMdlRendererShader.LightParameters> _paramLight;
     private Task<MdlFile>? _mdlTask;
-    private Task<SklbFile>? _sklbTask;
+    private Task<SklbFile[]>? _sklbTask;
     private Task<IAnimation>[]? _animationTasks;
     private Task<CustomMdlRendererShader.ModelObject>? _modelObject;
 
@@ -106,28 +106,33 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
 
                     _sklbTask = Task
                         .WhenAll(_modelObject,
-                            Control.ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(Control.GetTypedFileAsync<EstFile>))
+                            Control.ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(
+                                Control.GetTypedFileAsync<EstFile>,
+                                Control.GetTypedFileAsync<PbdFile>))
                         .ContinueWith(_ => {
                             if (_mdlTask != value)
                                 throw new OperationCanceledException();
-                            if (!Control.ModelInfoResolverTask.Result.TryFindSklbPath(value.Result.FilePath.Path,
-                                    out var sklbPath))
-                                throw new OperationCanceledException();
-                            if (_sklbCache.TryGet(sklbPath, out var sklb))
-                                return Task.FromResult<SklbFile?>(sklb);
-                            return Control.GetTypedFileAsync<SklbFile>(sklbPath);
+                            return Task.WhenAll(Control.ModelInfoResolverTask.Result
+                                .FindSklbPath(value.Result.FilePath.Path)
+                                .Select(x => _sklbCache.TryGet(x, out var sklb)
+                                    ? Task.FromResult(Tuple.Create(x, (SklbFile?) sklb))
+                                    : Control.GetTypedFileAsync<SklbFile>(x)
+                                        .ContinueWith(r2 => Tuple.Create(x, r2.Result))));
                         }).Unwrap().ContinueWith(r2 => {
                             if (r2.IsFaulted)
                                 throw r2.Exception!;
                             if (!r2.IsCompletedSuccessfully || r2.Result is null)
                                 throw new("No associated skeleton file found");
-                            if (!Control.ModelInfoResolverTask.Result.TryFindSklbPath(value.Result.FilePath.Path,
-                                    out var sklbPath))
-                                throw new FailFastException("?");
-                            _sklbCache.Add(sklbPath, r2.Result);
+                            foreach (var (sklbPath, sklb) in r2.Result)
+                                if (sklb is not null)
+                                    _sklbCache.Add(sklbPath, sklb);
 
                             LoadAnimationIfPossible();
-                            return r2.Result;
+                            return r2.Result
+                                .Select(x => x.Item2)
+                                .Where(x => x is not null)
+                                .Select(x => x!)
+                                .ToArray();
                         });
 
                     Control.RunOnUiThreadAfter(_modelObject, r2 => {
@@ -141,7 +146,7 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
         }
     }
 
-    public override Task<SklbFile>? SkeletonTask => _sklbTask;
+    public override Task<SklbFile[]>? SkeletonTask => _sklbTask;
 
     public override Task<IAnimation>[]? AnimationsTask {
         get => _animationTasks;

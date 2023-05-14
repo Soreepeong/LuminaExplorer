@@ -66,7 +66,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
 
     public Task<MdlFile>? ModelTask => TryGetRenderer(out var renderer) ? renderer.ModelTask : null;
 
-    public Task<SklbFile>? SkeletonTask => TryGetRenderer(out var renderer) ? renderer.SkeletonTask : null;
+    public Task<SklbFile[]>? SkeletonTask => TryGetRenderer(out var renderer) ? renderer.SkeletonTask : null;
 
     public void SetModel(IVirtualFileSystem vfs, IVirtualFolder rootFolder, Task<MdlFile> mdlFileTask) {
         if (_mdlFileTask == mdlFileTask)
@@ -79,7 +79,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         VfsRoot = rootFolder;
         _mdlFileTask = mdlFileTask;
 
-        ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(GetTypedFileAsync<EstFile>);
+        ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(GetTypedFileAsync<EstFile>, GetTypedFileAsync<PbdFile>);
         //*
         _ = TryGetCustomRenderer(out _, true);
         _activeRendererTask = _customRendererTask?.Task.ContinueWith(r => (BaseMdlRenderer) r.Result, cts.Token);

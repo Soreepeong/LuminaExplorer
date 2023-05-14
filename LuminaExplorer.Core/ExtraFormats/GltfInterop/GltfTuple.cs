@@ -5,7 +5,9 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using Lumina.Data;
 using Lumina.Data.Files;
+using Lumina.Data.Structs;
 using Lumina.Models.Materials;
 using Lumina.Models.Models;
 using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
@@ -18,20 +20,51 @@ using Newtonsoft.Json;
 namespace LuminaExplorer.Core.ExtraFormats.GltfInterop;
 
 public class GltfTuple {
-    private readonly GltfRoot _root;
-    private readonly MemoryStream _data;
+    public const uint GlbMagic = 0x46546C67;
+    public const uint GlbJsonMagic = 0x4E4F534A;
+    public const uint GlbDataMagic = 0x004E4942;
+    
+    public readonly GltfRoot Root;
+    public readonly MemoryStream DataStream;
 
     public GltfTuple() {
-        _root = new();
-        _data = new();
-        _root.Buffers.Add(new());
-        _root.Scene = _root.Scenes.AddAndGetIndex(new());
+        Root = new();
+        DataStream = new();
+        Root.Buffers.Add(new());
+        Root.Scene = Root.Scenes.AddAndGetIndex(new());
     }
 
-    public void Compile(Stream target) {
-        _root.Buffers[0].ByteLength = _data.Length;
+    public GltfTuple(Stream glbStream, bool leaveOpen = false) {
+        using var lbr = new LuminaBinaryReader(glbStream, Encoding.UTF8, leaveOpen, PlatformId.Win32);
+        if (lbr.ReadUInt32() != GlbMagic)
+            throw new InvalidDataException("Not a glb file.");
+        if (lbr.ReadInt32() != 2)
+            throw new InvalidDataException("Currently a glb file may only have exactly 2 entries.");
+        if (glbStream.Length < lbr.ReadInt32())
+            throw new InvalidDataException("File is truncated.");
 
-        var json = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(_root));
+        var jsonLength = lbr.ReadInt32();
+        if (lbr.ReadUInt32() != GlbJsonMagic)
+            throw new InvalidDataException("First entry must be a JSON file.");
+        
+        Root = JsonConvert.DeserializeObject<GltfRoot>(lbr.ReadFString(jsonLength))
+            ?? throw new InvalidDataException("JSON was empty.");
+
+        var dataLength = lbr.ReadInt32();
+        if (lbr.ReadUInt32() != GlbDataMagic)
+            throw new InvalidDataException("Second entry must be a data file.");
+        
+        DataStream = new();
+        DataStream.SetLength(dataLength);
+        glbStream.ReadExactly(DataStream.GetBuffer().AsSpan(0, dataLength));
+    }
+
+    public ReadOnlySpan<byte> Data => DataStream.GetBuffer().AsSpan(0, (int) DataStream.Length);
+
+    public void Compile(Stream target) {
+        Root.Buffers[0].ByteLength = DataStream.Length;
+
+        var json = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(Root));
         if (json.Length % 4 != 0) {
             var rv = new byte[(json.Length + 3) / 4 * 4];
             Buffer.BlockCopy(json, 0, rv, 0, json.Length);
@@ -41,17 +74,17 @@ public class GltfTuple {
         }
 
         using var writer = new NativeWriter(target, Encoding.UTF8, true) {IsBigEndian = false};
-        writer.Write(0x46546C67);
+        writer.Write(GlbMagic);
         writer.Write(2);
-        writer.Write(checked(12 + 8 + json.Length + 8 + (int) _data.Length));
+        writer.Write(checked(12 + 8 + json.Length + 8 + (int) DataStream.Length));
         writer.Write(json.Length);
-        writer.Write(0x4E4F534A);
+        writer.Write(GlbJsonMagic);
         writer.Write(json);
 
-        writer.Write(checked((int) _data.Length));
-        writer.Write(0x004E4942);
-        _data.Position = 0;
-        _data.CopyTo(target);
+        writer.Write(checked((int) DataStream.Length));
+        writer.Write(GlbDataMagic);
+        DataStream.Position = 0;
+        DataStream.CopyTo(target);
     }
 
     public unsafe int AddBufferView<T>(
@@ -60,15 +93,15 @@ public class GltfTuple {
         ReadOnlySpan<T> data)
         where T : unmanaged {
         var byteLength = sizeof(T) * data.Length;
-        var index = _root.BufferViews.AddAndGetIndex(new() {
+        var index = Root.BufferViews.AddAndGetIndex(new() {
             Name = baseName is null ? null : $"{baseName}/bufferView",
-            ByteOffset = checked((int) (_data.Position = (_data.Length + 3) / 4 * 4)),
+            ByteOffset = checked((int) (DataStream.Position = (DataStream.Length + 3) / 4 * 4)),
             ByteLength = byteLength,
             Target = target,
         });
 
         fixed (void* src = data)
-            _data.Write(new((byte*) src, byteLength));
+            DataStream.Write(new((byte*) src, byteLength));
 
         return index;
     }
@@ -176,57 +209,66 @@ public class GltfTuple {
                 _ => throw new NotSupportedException(),
             };
 
-            return _root.Accessors.AddAndGetIndex(accessor);
+            return Root.Accessors.AddAndGetIndex(accessor);
         }
     }
 
     public void AddToScene(int meshIndex, int? skinIndex) =>
-        _root.Scenes[_root.Scene].Nodes.Add(_root.Nodes.AddAndGetIndex(new() {
+        Root.Scenes[Root.Scene].Nodes.Add(Root.Nodes.AddAndGetIndex(new() {
             Skin = skinIndex,
             Mesh = meshIndex,
-            Children = skinIndex is null ? new() : new() {_root.Skins[skinIndex.Value].Joints[0]},
+            Children = skinIndex is null ? new() : new() {Root.Skins[skinIndex.Value].Joints[0]},
         }));
 
     public int? FindMaterial(string mtrlFilePath) {
         var name = Path.GetFileNameWithoutExtension(mtrlFilePath);
-        for (var i = 0; i < _root.Materials.Count; i++)
-            if (_root.Materials[i].Name == name)
+        for (var i = 0; i < Root.Materials.Count; i++)
+            if (Root.Materials[i].Name == name)
                 return i;
         return null;
     }
 
-    public int AttachSkin(SklbFile sklbFile) {
-        var firstGltfNodeIndex = _root.Nodes.AddRangeAndGetIndex(sklbFile.Bones.Select(bone => new GltfNode {
+    public int AttachSkin(params SklbFile[] sklbFiles) {
+        var bones = new SklbFile.BoneList();
+        foreach (var sklb in sklbFiles)
+            bones.AddBones(sklb.Bones);
+        var firstGltfNodeIndex = Root.Nodes.AddRangeAndGetIndex(bones.Bones.Select(bone => new GltfNode {
             Name = bone.Name,
             Children = bone.Children.Select(x => x.Index).ToList(),
             Translation = bone.Translation.ToFloatList(Vector3.Zero, 1e-6f),
             Rotation = Quaternion.Normalize(bone.Rotation).ToFloatList(Quaternion.Identity, 1e-6f),
             Scale = bone.Scale.ToFloatList(Vector3.One, 1e-6f),
         }).ToArray());
-
-        return _root.Skins.AddAndGetIndex(new() {
+        
+        return Root.Skins.AddAndGetIndex(new() {
             InverseBindMatrices = AddAccessor(
                 null,
-                sklbFile.Bones.Select(x => x.BindPoseAbsoluteInverse.Normalize())
+                bones.Bones.Select(x => x.BindPoseAbsoluteInverse.Normalize())
                     .ToArray()
                     .AsSpan()),
-            Joints = _root.Nodes.Select((_, i) => firstGltfNodeIndex + i).ToList(),
+            Joints = Root.Nodes.Select((_, i) => firstGltfNodeIndex + i).ToList(),
+            Extras = new() {
+                Alph = sklbFiles.ToDictionary(x => x.FilePath.Path, x => x.AlphData),
+                Indices = sklbFiles.ToDictionary(
+                    x => x.FilePath.Path,
+                    x => x.Bones.Select(y => bones.GetRemappedBoneIndex(y)).ToList()),
+            },
         });
     }
 
     public int AttachTexture(string name, DdsFile ddsFile) {
-        for (var i = 0; i < _root.Textures.Count; i++)
-            if (_root.Textures[i].Name == name)
+        for (var i = 0; i < Root.Textures.Count; i++)
+            if (Root.Textures[i].Name == name)
                 return i;
 
         using var png = new MemoryStream();
         using (var wicBitmapSource = ddsFile.ToWicBitmapSource(0, 0, 0))
             wicBitmapSource.Save(png, WicNet.WicCodec.GUID_ContainerFormatPng);
 
-        _root.ExtensionsUsed.Add("MSFT_texture_dds");
-        return _root.Textures.AddAndGetIndex(new() {
+        Root.ExtensionsUsed.Add("MSFT_texture_dds");
+        return Root.Textures.AddAndGetIndex(new() {
             Name = name,
-            Source = _root.Images.AddAndGetIndex(new() {
+            Source = Root.Images.AddAndGetIndex(new() {
                 Name = Path.ChangeExtension(name, ".png"),
                 MimeType = "image/png",
                 BufferView = AddBufferView(
@@ -236,7 +278,7 @@ public class GltfTuple {
             }),
             Extensions = new() {
                 MsftTextureDds = new() {
-                    Source = _root.Images.AddAndGetIndex(new() {
+                    Source = Root.Images.AddAndGetIndex(new() {
                         Name = Path.ChangeExtension(name, ".dds"),
                         MimeType = "image/vnd-ms.dds",
                         BufferView = AddBufferView(name + ".dds", null, ddsFile.Data),
@@ -249,8 +291,8 @@ public class GltfTuple {
     public async Task<int> AttachMaterial(Material xivMaterial, Func<string, Task<TexFile?>> texFileGetter) {
         var name = Path.GetFileNameWithoutExtension(xivMaterial.MaterialPath);
 
-        for (var i = 0; i < _root.Materials.Count; i++)
-            if (_root.Materials[i].Name == name)
+        for (var i = 0; i < Root.Materials.Count; i++)
+            if (Root.Materials[i].Name == name)
                 return i;
 
         var material = new GltfMaterial {
@@ -309,7 +351,7 @@ public class GltfTuple {
                     };
                     break;
                 case Texture.Usage.Specular:
-                    _root.ExtensionsUsed.Add("KHR_materials_specular");
+                    Root.ExtensionsUsed.Add("KHR_materials_specular");
                     ((material.Extensions ??= new()).KhrMaterialsSpecular ??= new()).SpecularColorTexture ??= new() {
                         Index = textureIndex,
                     };
@@ -327,7 +369,7 @@ public class GltfTuple {
             }
         }
 
-        return _root.Materials.AddAndGetIndex(material);
+        return Root.Materials.AddAndGetIndex(material);
     }
 
     public unsafe int AttachMesh(Model xivModel, int? skinIndex = null) {
@@ -342,10 +384,10 @@ public class GltfTuple {
 
         var boneNameToIndex = skinIndex is null
             ? null
-            : _root
+            : Root
                 .Skins[skinIndex.Value]
                 .Joints
-                .Select((x, i) => Tuple.Create(i, _root.Nodes[x].Name))
+                .Select((x, i) => Tuple.Create(i, Root.Nodes[x].Name))
                 .Where(x => x.Item2 is not null)
                 .ToDictionary(x => x.Item2!, x => x.Item1);
 
@@ -444,7 +486,7 @@ public class GltfTuple {
             }
         }
 
-        return _root.Meshes.AddAndGetIndex(mesh);
+        return Root.Meshes.AddAndGetIndex(mesh);
     }
 
     public int AttachAnimation(string name, IAnimation animation, int skinIndex) {
@@ -476,7 +518,7 @@ public class GltfTuple {
         }
 
         foreach (var bone in animation.AffectedBoneIndices) {
-            var node = _root.Skins[skinIndex].Joints[bone];
+            var node = Root.Skins[skinIndex].Joints[bone];
 
             var translation = animation.Translation(bone);
             if (!translation.IsEmpty) {
@@ -506,6 +548,6 @@ public class GltfTuple {
         if (!target.Channels.Any() || !target.Samplers.Any())
             return -1;
 
-        return _root.Animations.AddAndGetIndex(target);
+        return Root.Animations.AddAndGetIndex(target);
     }
 }

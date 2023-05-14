@@ -209,7 +209,7 @@ public partial class ModelViewer : Form {
 
             mdlFile = task.Result;
 
-            if (!Viewer.ModelInfoResolverTask!.Result.TryFindSklbPath(mdlFile!.FilePath.Path, out var sklbPath))
+            if (Viewer.ModelInfoResolverTask!.Result.FindSklbPath(mdlFile!.FilePath.Path).FirstOrDefault() is not {} sklbPath)
                 return;
 
             var sklbFile = await vfs.LocateFile(root, sklbPath);
@@ -340,6 +340,16 @@ public partial class ModelViewer : Form {
 
                                 using var lookup = Viewer.Vfs!.GetLookup(mtrlvf);
                                 model.Materials[i] = new(await lookup.AsFileResource<MtrlFile>());
+                                
+                                typeof(Material).GetProperty(nameof(Material.MaterialPath))!.SetValue(
+                                    model.Materials[i],
+                                    mtrlPath.Trim('/'));
+                                typeof(Material).GetProperty(nameof(Material.ResolvedPath))!.SetValue(
+                                    model.Materials[i],
+                                    mtrlPath.Trim('/'));
+                                typeof(Material).GetProperty(nameof(Material.Parent))!.SetValue(
+                                    model.Materials[i],
+                                    model);
                             }
 
                             foreach (var m in model.Materials) {
