@@ -19,8 +19,8 @@ public sealed unsafe class DirectXTexRendererShader : DirectXObject {
     };
 
     private static readonly ushort[,] Indices = {
-        {2, 1, 0},
-        {1, 2, 3},
+        {0, 1, 2},
+        {3, 2, 1},
     };
 
     private static readonly uint[] InputStrides = {
