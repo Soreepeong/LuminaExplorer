@@ -5,7 +5,6 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -222,22 +221,43 @@ public partial class ModelViewer : Form {
 
             if (file.Parent.Parent?.Parent?.Parent?.Parent is { } modelBaseFolder &&
                 await vfs.LocateFolder(modelBaseFolder, "animation/") is { } animationFolder) {
-                void AddEntry(PapFile papFile) {
-                    if (papFile.Header.ModelId != sklb.VersionedHeader.ModelId)
-                        return;
-                    if (papFile.Header.ModelClassification != sklb.VersionedHeader.ModelClassification)
-                        return;
-                    for (var i = 0; i < papFile.Animations.Count; i++) {
-                        AnimationListView.AddObject(new AnimationListEntry(papFile, i));
-                        if (AnimationListView.SelectedIndices.Count == 0)
-                            AnimationListView.SelectedIndices.Add(0);
+
+                var listLock = new object();
+                var paps = new List<PapFile>();
+
+                var sw = new Stopwatch();
+                sw.Start();
+                void Flush(bool force) {
+                    var entries = new List<AnimationListEntry>();
+                    lock (listLock) {
+                        if (sw.ElapsedMilliseconds < 500 && !force)
+                            return;
+
+                        entries.AddRange(paps.Where(p => 
+                            p.Header.ModelClassification == sklb.VersionedHeader.ModelClassification &&
+                            p.Header.ModelId == sklb.VersionedHeader.ModelId)
+                            .SelectMany(x => x.Animations.Select((_, i) => new AnimationListEntry(x, i))));
+                        paps.Clear();
                     }
+                    
+                    sw.Reset();
+
+                    Viewer.RunOnUiThread(() => {
+                        AnimationListView.AddObjects(entries);
+                        
+                        sw.Start();
+                    });
                 }
 
                 void OnFileFound(IVirtualFile papFile) {
                     using var lookup = vfs.GetLookup(papFile);
-                    var papTask = lookup.AsFileResource<PapFile>(cts.Token);
-                    Viewer.RunOnUiThreadAfter(papTask, r2 => AddEntry(r2.Result));
+                    lookup
+                        .AsFileResource<PapFile>(cts.Token)
+                        .ContinueWith(r2 => {
+                            lock (listLock)
+                                paps.Add(r2.Result);
+                            Flush(false);
+                        }, cts.Token);
                 }
 
                 await Task.WhenAll(
@@ -261,7 +281,11 @@ public partial class ModelViewer : Form {
                                     try {
                                         using var lookup = vfs.GetLookup(f3);
                                         var papTask = lookup.AsFileResource<PapFile>(cts.Token);
-                                        await Viewer.RunOnUiThreadAfter(papTask, r2 => AddEntry(r2.Result));
+                                        await Viewer.RunOnUiThreadAfter(papTask, r2 => {
+                                            lock (listLock)
+                                                paps.Add(r2.Result);
+                                            Flush(false);
+                                        });
                                     } catch (Exception e) when (e is not OperationCanceledException) {
                                         // pass
                                     }
@@ -269,6 +293,8 @@ public partial class ModelViewer : Form {
                             }
                         }
                     }, cts.Token));
+
+                Flush(true);
             }
         }, cts.Token);
     }
@@ -321,12 +347,9 @@ public partial class ModelViewer : Form {
                                 : null;
 
                             for (var i = 0; i < model.Materials.Length; i++) {
-                                var mtrlPath = ((Func<string>) (() => {
-                                    var mtrlPathSpan =
-                                        model.File.Strings.AsSpan((int) model.File.MaterialNameOffsets[i]);
-                                    mtrlPathSpan = mtrlPathSpan[..mtrlPathSpan.IndexOf((byte) 0)];
-                                    return Encoding.UTF8.GetString(mtrlPathSpan);
-                                }))();
+                                var mtrlPath = model.File.Strings
+                                    .AsSpan((int) model.File.MaterialNameOffsets[i])
+                                    .ExtractCString();
 
                                 if (mtrlPath.StartsWith('/'))
                                     mtrlPath = Material.ResolveRelativeMaterialPath(mtrlPath, model.VariantId);

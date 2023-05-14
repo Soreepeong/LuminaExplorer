@@ -1,11 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Text;
 
 namespace LuminaExplorer.Core.Util; 
 
 public static class PrimitiveExtensions {
     public static bool IsWhiteSpace(this uint n) => n < 0x10000 && char.IsWhiteSpace((char) n);
+    
+    public static string ExtractCString(this Span<byte> s, Encoding? encoding = null) {
+        encoding ??= Encoding.UTF8;
+        var i = s.IndexOf((byte)0);
+        return encoding.GetString(i == -1 ? s : s[..i]);
+    }
 
     public static Matrix4x4 Normalize(this Matrix4x4 val) => Matrix4x4.Multiply(val, 1f / val.M44);
     

@@ -12,10 +12,10 @@ public class GltfMaterialExtras : BaseGltfObject {
     public int VariantId;
 
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-    public List<UvColorSet>? UvColorSets;
+    public List<ColorSetWithString>? UvColorSets;
 
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-    public List<ColorSet>? ColorSets;
+    public List<ColorSetWithString>? ColorSets;
 
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
     public ushort[]? ColorSetInfo;
@@ -34,6 +34,12 @@ public class GltfMaterialExtras : BaseGltfObject {
 
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
     public List<float>? ShaderValues;
+
+    public struct ColorSetWithString {
+        public string Name;
+        public byte Index;
+        public byte Unknown1;
+    }
 
     public struct SafeSampler {
         public TextureUsage TextureUsage;

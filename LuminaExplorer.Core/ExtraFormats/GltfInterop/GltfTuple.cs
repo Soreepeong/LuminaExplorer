@@ -5,8 +5,10 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using DirectN;
 using Lumina.Data;
 using Lumina.Data.Files;
+using Lumina.Data.Parsing;
 using Lumina.Data.Structs;
 using Lumina.Models.Materials;
 using Lumina.Models.Models;
@@ -16,6 +18,7 @@ using LuminaExplorer.Core.ExtraFormats.GenericAnimation;
 using LuminaExplorer.Core.ExtraFormats.GltfInterop.Models;
 using LuminaExplorer.Core.Util;
 using Newtonsoft.Json;
+using WicNet;
 
 namespace LuminaExplorer.Core.ExtraFormats.GltfInterop;
 
@@ -23,7 +26,7 @@ public class GltfTuple {
     public const uint GlbMagic = 0x46546C67;
     public const uint GlbJsonMagic = 0x4E4F534A;
     public const uint GlbDataMagic = 0x004E4942;
-    
+
     public readonly GltfRoot Root;
     public readonly MemoryStream DataStream;
 
@@ -46,14 +49,14 @@ public class GltfTuple {
         var jsonLength = lbr.ReadInt32();
         if (lbr.ReadUInt32() != GlbJsonMagic)
             throw new InvalidDataException("First entry must be a JSON file.");
-        
+
         Root = JsonConvert.DeserializeObject<GltfRoot>(lbr.ReadFString(jsonLength))
             ?? throw new InvalidDataException("JSON was empty.");
 
         var dataLength = lbr.ReadInt32();
         if (lbr.ReadUInt32() != GlbDataMagic)
             throw new InvalidDataException("Second entry must be a data file.");
-        
+
         DataStream = new();
         DataStream.SetLength(dataLength);
         glbStream.ReadExactly(DataStream.GetBuffer().AsSpan(0, dataLength));
@@ -239,7 +242,7 @@ public class GltfTuple {
             Rotation = Quaternion.Normalize(bone.Rotation).ToFloatList(Quaternion.Identity, 1e-6f),
             Scale = bone.Scale.ToFloatList(Vector3.One, 1e-6f),
         }).ToArray());
-        
+
         return Root.Skins.AddAndGetIndex(new() {
             InverseBindMatrices = AddAccessor(
                 null,
@@ -256,6 +259,27 @@ public class GltfTuple {
         });
     }
 
+    public int AttachTexture(string name, WicBitmapSource wicBitmapSource) {
+        for (var i = 0; i < Root.Textures.Count; i++)
+            if (Root.Textures[i].Name == name)
+                return i;
+
+        using var png = new MemoryStream();
+        wicBitmapSource.Save(png, WicCodec.GUID_ContainerFormatPng);
+
+        return Root.Textures.AddAndGetIndex(new() {
+            Name = name,
+            Source = Root.Images.AddAndGetIndex(new() {
+                Name = Path.ChangeExtension(name, ".png"),
+                MimeType = "image/png",
+                BufferView = AddBufferView(
+                    name + ".png",
+                    null,
+                    new ReadOnlySpan<byte>(png.GetBuffer(), 0, (int) png.Length)),
+            }),
+        });
+    }
+
     public int AttachTexture(string name, DdsFile ddsFile) {
         for (var i = 0; i < Root.Textures.Count; i++)
             if (Root.Textures[i].Name == name)
@@ -263,7 +287,7 @@ public class GltfTuple {
 
         using var png = new MemoryStream();
         using (var wicBitmapSource = ddsFile.ToWicBitmapSource(0, 0, 0))
-            wicBitmapSource.Save(png, WicNet.WicCodec.GUID_ContainerFormatPng);
+            wicBitmapSource.Save(png, WicCodec.GUID_ContainerFormatPng);
 
         Root.ExtensionsUsed.Add("MSFT_texture_dds");
         return Root.Textures.AddAndGetIndex(new() {
@@ -300,8 +324,16 @@ public class GltfTuple {
             Extras = new() {
                 ShaderPack = xivMaterial.ShaderPack,
                 VariantId = xivMaterial.VariantId,
-                UvColorSets = xivMaterial.File!.UvColorSets.ToList(),
-                ColorSets = xivMaterial.File.ColorSets.ToList(),
+                UvColorSets = xivMaterial.File!.UvColorSets.Select(x => new GltfMaterialExtras.ColorSetWithString {
+                    Index = x.Index,
+                    Unknown1 = x.Unknown1,
+                    Name = xivMaterial.File.Strings.AsSpan(x.NameOffset).ExtractCString(),
+                }).ToList(),
+                ColorSets = xivMaterial.File.ColorSets.Select(x => new GltfMaterialExtras.ColorSetWithString {
+                    Index = x.Index,
+                    Unknown1 = x.Unknown1,
+                    Name = xivMaterial.File.Strings.AsSpan(x.NameOffset).ExtractCString(),
+                }).ToList(),
                 ShaderKeys = xivMaterial.File.ShaderKeys.ToList(),
                 Constants = xivMaterial.File.Constants.ToList(),
                 ShaderValues = xivMaterial.File.ShaderValues.ToList(),
@@ -315,7 +347,7 @@ public class GltfTuple {
                     colorSetInfoBytes[i] = csi.Data[i];
                 material.Extras.ColorSetInfo = colorSetInfoBytes;
             }
-            
+
             if (xivMaterial.File.ColorSetDyeInfo is var csdi) {
                 var colorSetDyeInfoBytes = new ushort[16];
                 for (var i = 0; i < 16; i++)
@@ -324,49 +356,216 @@ public class GltfTuple {
             }
         }
 
-        foreach (var (t, s) in xivMaterial.Textures.Zip(xivMaterial.File!.Samplers)) {
-            var texFile = t.TexturePath == "dummy.tex" ? null : await texFileGetter(t.TexturePath);
-            int? textureIndexNullable = texFile is null ? null : AttachTexture(t.TexturePath, texFile.ToDdsFile());
-            
-            material.Extras.Samplers ??= new();
-            material.Extras.Samplers.Add(new() {
-                Flags = s.Flags,
-                TextureUsage = t.TextureUsageRaw,
-                TexturePath = t.TexturePath,
-                TextureIndex = textureIndexNullable,
-            });
+        var texDict = new Dictionary<TextureUsage, Tuple<WicBitmapSource, int?>>();
+        try {
+            foreach (var (t, s) in xivMaterial.Textures.Zip(xivMaterial.File!.Samplers)) {
+                var texFile = t.TexturePath == "dummy.tex" ? null : await texFileGetter(t.TexturePath);
+                var ddsFile = texFile?.ToDdsFile();
+                int? textureIndexNullable = ddsFile is null ? null : AttachTexture(t.TexturePath, ddsFile);
 
-            if (textureIndexNullable is not { } textureIndex)
-                continue;
+                if (ddsFile is not null)
+                    texDict[t.TextureUsageRaw] = Tuple.Create(ddsFile.ToWicBitmapSource(0, 0, 0), textureIndexNullable);
 
-            switch (t.TextureUsageSimple) {
-                case Texture.Usage.Diffuse:
-                    (material.PbrMetallicRoughness ??= new()).BaseColorTexture ??= new() {
-                        Index = textureIndex,
-                    };
-                    break;
-                case Texture.Usage.Normal:
-                    material.NormalTexture ??= new() {
-                        Index = textureIndex,
-                    };
-                    break;
-                case Texture.Usage.Specular:
-                    Root.ExtensionsUsed.Add("KHR_materials_specular");
-                    ((material.Extensions ??= new()).KhrMaterialsSpecular ??= new()).SpecularColorTexture ??= new() {
-                        Index = textureIndex,
-                    };
-                    break;
-                case Texture.Usage.Wave:
-                    material.OcclusionTexture ??= new() {
-                        Index = textureIndex,
-                    };
-                    break;
-                case Texture.Usage.Reflection:
-                    material.EmissiveTexture ??= new() {
-                        Index = textureIndex,
-                    };
-                    break;
+                material.Extras.Samplers ??= new();
+                material.Extras.Samplers.Add(new() {
+                    Flags = s.Flags,
+                    TextureUsage = t.TextureUsageRaw,
+                    TexturePath = t.TexturePath,
+                    TextureIndex = textureIndexNullable,
+                });
             }
+
+            // Build textures for display purposes.
+            if (xivMaterial.ShaderPack == "character.shpk") {
+                if (texDict.TryGetValue(TextureUsage.SamplerNormal, out var normalBitmapSourceAndIndex)) {
+                    var normalBitmapSource = normalBitmapSourceAndIndex.Item1;
+                    normalBitmapSource.ConvertTo(WicPixelFormat.GUID_WICPixelFormat32bppBGRA);
+
+                    WicBitmapSource? diffuseBitmapSource = null;
+                    WicBitmapSource? specularBitmapSource = null;
+                    WicBitmapSource? emissionBitmapSource = null;
+                    try {
+                        diffuseBitmapSource = new(
+                            normalBitmapSource.Width,
+                            normalBitmapSource.Height,
+                            normalBitmapSource.PixelFormat);
+                        specularBitmapSource = new(
+                            normalBitmapSource.Width,
+                            normalBitmapSource.Height,
+                            normalBitmapSource.PixelFormat);
+                        emissionBitmapSource = new(
+                            normalBitmapSource.Width,
+                            normalBitmapSource.Height,
+                            normalBitmapSource.PixelFormat);
+
+                        using (var normalBitmap = normalBitmapSource.AsBitmap())
+                        using (var diffuseBitmap = diffuseBitmapSource.AsBitmap())
+                        using (var specularBitmap = specularBitmapSource.AsBitmap())
+                        using (var emissionBitmap = emissionBitmapSource.AsBitmap())
+                        using (var normalLock = normalBitmap.Lock(
+                                   WICBitmapLockFlags.WICBitmapLockRead | WICBitmapLockFlags.WICBitmapLockWrite))
+                        using (var diffuseLock = diffuseBitmap.Lock(WICBitmapLockFlags.WICBitmapLockWrite))
+                        using (var specularLock = specularBitmap.Lock(WICBitmapLockFlags.WICBitmapLockWrite))
+                        using (var emissionLock = emissionBitmap.Lock(WICBitmapLockFlags.WICBitmapLockWrite)) {
+                            var setInfo = xivMaterial.File!.ColorSetInfo;
+
+                            unsafe void Blend() {
+                                normalLock.Object.GetDataPointer(out var bufferSize, out var pbData).ThrowOnError();
+                                var normal = new Span<ColorSetBlender.Bgra8888>(
+                                    (ColorSetBlender.Bgra8888*) pbData,
+                                    (int) bufferSize / 4);
+
+                                diffuseLock.Object.GetDataPointer(out bufferSize, out pbData).ThrowOnError();
+                                var diffuse = new Span<ColorSetBlender.Bgra8888>(
+                                    (ColorSetBlender.Bgra8888*) pbData,
+                                    (int) bufferSize / 4);
+
+                                specularLock.Object.GetDataPointer(out bufferSize, out pbData).ThrowOnError();
+                                var specular = new Span<ColorSetBlender.Bgra8888>(
+                                    (ColorSetBlender.Bgra8888*) pbData,
+                                    (int) bufferSize / 4);
+
+                                emissionLock.Object.GetDataPointer(out bufferSize, out pbData).ThrowOnError();
+                                var emission = new Span<ColorSetBlender.Bgra8888>(
+                                    (ColorSetBlender.Bgra8888*) pbData,
+                                    (int) bufferSize / 4);
+
+                                for (var i = 0; i < normal.Length; i++) {
+                                    var setIndex1 = (normal[i].a / 17) * 16;
+                                    var blendRatio = (normal[i].a % 17) / 17f;
+                                    var colorSetIndexT2 = (normal[i].a / 17);
+                                    var setIndex2 = (colorSetIndexT2 >= 15 ? 15 : colorSetIndexT2 + 1) * 16;
+
+                                    diffuse[i] = ColorSetBlender.Blend(setInfo, setIndex1, setIndex2, normal[i].b,
+                                        blendRatio);
+                                    specular[i] = ColorSetBlender.Blend(setInfo, setIndex1, setIndex2, 255, blendRatio);
+                                    emission[i] = ColorSetBlender.Blend(setInfo, setIndex1, setIndex2, 255, blendRatio);
+                                    normal[i].b = normal[i].a = 255;
+                                }
+                            }
+
+                            Blend();
+                        }
+
+                        if (texDict.TryAdd(
+                                TextureUsage.SamplerDiffuse,
+                                Tuple.Create(diffuseBitmapSource, (int?) null)))
+                            diffuseBitmapSource = null;
+                        if (texDict.TryAdd(
+                                TextureUsage.SamplerSpecular,
+                                Tuple.Create(specularBitmapSource, (int?) null)))
+                            specularBitmapSource = null;
+                        if (texDict.TryAdd(
+                                TextureUsage.SamplerReflection,
+                                Tuple.Create(emissionBitmapSource, (int?) null)))
+                            emissionBitmapSource = null;
+                    } finally {
+                        _ = SafeDispose.OneAsync(ref diffuseBitmapSource);
+                        _ = SafeDispose.OneAsync(ref specularBitmapSource);
+                        _ = SafeDispose.OneAsync(ref emissionBitmapSource);
+                    }
+                }
+
+                if (texDict.TryGetValue(TextureUsage.SamplerMask, out var maskBitmapSourceAndIndex) &&
+                    texDict.TryGetValue(TextureUsage.SamplerSpecular, out var specularBitmapSourceAndIndex)) {
+                    var maskBitmapSource = maskBitmapSourceAndIndex.Item1;
+                    var specularBitmapSource = specularBitmapSourceAndIndex.Item1;
+
+                    WicBitmapSource? occlusionBitmapSource = null;
+                    try {
+                        occlusionBitmapSource = new(
+                            maskBitmapSource.Width,
+                            maskBitmapSource.Height,
+                            maskBitmapSource.PixelFormat);
+                        using (var maskBitmap = maskBitmapSource.AsBitmap())
+                        using (var specularBitmap = specularBitmapSource.AsBitmap())
+                        using (var occlusionBitmap = occlusionBitmapSource.AsBitmap())
+                        using (var maskLock = maskBitmap.Lock(WICBitmapLockFlags.WICBitmapLockRead))
+                        using (var specularLock = specularBitmap.Lock(
+                                   WICBitmapLockFlags.WICBitmapLockRead | WICBitmapLockFlags.WICBitmapLockWrite))
+                        using (var occlusionLock = occlusionBitmap.Lock(WICBitmapLockFlags.WICBitmapLockWrite)) {
+                            unsafe void Blend() {
+                                maskLock.Object.GetDataPointer(out var bufferSize, out var pbData).ThrowOnError();
+                                var mask = new Span<ColorSetBlender.Bgra8888>(
+                                    (ColorSetBlender.Bgra8888*) pbData,
+                                    (int) bufferSize / 4);
+
+                                specularLock.Object.GetDataPointer(out bufferSize, out pbData).ThrowOnError();
+                                var specular = new Span<ColorSetBlender.Bgra8888>(
+                                    (ColorSetBlender.Bgra8888*) pbData,
+                                    (int) bufferSize / 4);
+
+                                occlusionLock.Object.GetDataPointer(out bufferSize, out pbData).ThrowOnError();
+                                var occlusion = new Span<ColorSetBlender.Bgra8888>(
+                                    (ColorSetBlender.Bgra8888*) pbData,
+                                    (int) bufferSize / 4);
+
+                                for (var i = 0; i < mask.Length; i++) {
+                                    var maskPixel = mask[i];
+                                    var specularPixel = specular[i];
+
+                                    specular[i].r = (byte) (specularPixel.r * Math.Pow(maskPixel.g / 255f, 2));
+                                    specular[i].g = (byte) (specularPixel.g * Math.Pow(maskPixel.g / 255f, 2));
+                                    specular[i].b = (byte) (specularPixel.b * Math.Pow(maskPixel.g / 255f, 2));
+                                    occlusion[i] = new(maskPixel.r, maskPixel.r, maskPixel.r, 255);
+                                }
+                            }
+
+                            Blend();
+                        }
+
+                        if (texDict.TryAdd(
+                                TextureUsage.SamplerWaveMap,
+                                Tuple.Create(occlusionBitmapSource, (int?) null)))
+                            occlusionBitmapSource = null;
+                    } finally {
+                        _ = SafeDispose.OneAsync(ref occlusionBitmapSource);
+                    }
+                }
+            }
+
+            foreach (var (usage, (wic, textureIndexNullable)) in texDict) {
+                var textureIndex = textureIndexNullable ?? AttachTexture(
+                    $"{Path.GetFileNameWithoutExtension(material.Name)}_{usage}.png",
+                    wic);
+                switch (usage) {
+                    case TextureUsage.SamplerDiffuse:
+                    case TextureUsage.SamplerColorMap0:
+                    case TextureUsage.SamplerColorMap1:
+                        (material.PbrMetallicRoughness ??= new()).BaseColorTexture ??= new() {
+                            Index = textureIndex,
+                        };
+                        break;
+                    case TextureUsage.SamplerNormal:
+                    case TextureUsage.SamplerNormalMap0:
+                    case TextureUsage.SamplerNormalMap1:
+                        material.NormalTexture ??= new() {
+                            Index = textureIndex,
+                        };
+                        break;
+                    case TextureUsage.SamplerSpecular:
+                    case TextureUsage.SamplerSpecularMap0:
+                    case TextureUsage.SamplerSpecularMap1:
+                        Root.ExtensionsUsed.Add("KHR_materials_specular");
+                        ((material.Extensions ??= new()).KhrMaterialsSpecular ??= new()).SpecularColorTexture ??= new() {
+                            Index = textureIndex,
+                        };
+                        break;
+                    case TextureUsage.SamplerWaveMap:
+                        material.OcclusionTexture ??= new() {
+                            Index = textureIndex,
+                        };
+                        break;
+                    case TextureUsage.SamplerReflection:
+                        material.EmissiveTexture ??= new() {
+                            Index = textureIndex,
+                        };
+                        break;
+                }
+            }
+        } finally {
+            foreach (var (wbs, _) in texDict.Values)
+                wbs.Dispose();
         }
 
         return Root.Materials.AddAndGetIndex(material);
