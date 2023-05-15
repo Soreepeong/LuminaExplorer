@@ -251,7 +251,9 @@ public class GltfTuple {
                     .AsSpan()),
             Joints = Root.Nodes.Select((_, i) => firstGltfNodeIndex + i).ToList(),
             Extras = new() {
-                Alph = sklbFiles.ToDictionary(x => x.FilePath.Path, x => x.AlphData),
+                Alph = sklbFiles.ToDictionary(
+                    x => x.FilePath.Path,
+                    x => x.AlphData.ToDictionary(y => y.Unk, y => y.Bones.Select(z => z.Name).ToList())),
                 Indices = sklbFiles.ToDictionary(
                     x => x.FilePath.Path,
                     x => x.Bones.Select(y => bones.GetRemappedBoneIndex(y)).ToList()),

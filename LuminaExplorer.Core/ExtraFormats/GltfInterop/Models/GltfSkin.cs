@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
 using Newtonsoft.Json;
 
 namespace LuminaExplorer.Core.ExtraFormats.GltfInterop.Models;
@@ -23,6 +24,6 @@ public class GltfSkin : BaseGltfObject {
 }
 
 public class GltfSkinExtras : BaseGltfObject {
-    public Dictionary<string, ushort[]>? Alph;
+    public Dictionary<string, Dictionary<int, List<string>>>? Alph;
     public Dictionary<string, List<int>>? Indices;
 }

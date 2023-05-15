@@ -1,11 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Numerics;
 using Lumina.Data;
 using Lumina.Data.Attributes;
+using Lumina.Extensions;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile.Value;
 using LuminaExplorer.Core.Util;
@@ -21,7 +23,7 @@ public class SklbFile : FileResource {
     public SklbFormat Version;
     public ISklbVersionedHeader VersionedHeader = null!;
     public uint AlphMagic;
-    public ushort[] AlphData = null!;
+    public AlphEntry[] AlphData = null!;
     public byte[] HavokData = null!;
     public Bone[] Bones = null!;
 
@@ -44,14 +46,16 @@ public class SklbFile : FileResource {
 
             AlphMagic = Reader.WithSeek(VersionedHeader.AlphOffset).ReadUInt32();
             if (AlphMagic == AlphMagicValue) {
-                AlphData = Reader.ReadStructuresAsArray<ushort>((VersionedHeader.HavokOffset -
-                    VersionedHeader.AlphOffset -
-                    4) / 2);
+                var numOffsets = Reader.ReadUInt16();
+                var offsets = Reader.ReadUInt16Array(numOffsets);
+                AlphData = offsets
+                    .Select(x => new AlphEntry(Reader.WithSeek(VersionedHeader.AlphOffset + x)))
+                    .ToArray();
             }
 
             HavokData = Data[VersionedHeader.HavokOffset..];
 
-            HavokRootNode = Parser.Parse(HavokData, HavokDefinitions);
+            HavokRootNode = Parser.Parse(Reader.WithSeek(VersionedHeader.HavokOffset), HavokDefinitions);
 
             /*
              * root.namedVariants[0].variant.skeletons[0]
@@ -110,6 +114,11 @@ public class SklbFile : FileResource {
             }
 
             Bones = resultBones.ToArray();
+            foreach (var ae in AlphData) {
+                ae.Bones = new Bone[ae.BoneIndices.Length];
+                for (var i = 0; i < ae.BoneIndices.Length; i++)
+                    ae.Bones[i] = Bones[ae.BoneIndices[i]];
+            }
         } catch (Exception e) {
             LoadException = e;
         }
@@ -117,6 +126,25 @@ public class SklbFile : FileResource {
 
     public bool TryGetBoneByName(string name, [MaybeNullWhen(false)] out Bone bone) =>
         (bone = Bones.FirstOrDefault(x => x.Name == name)) != null;
+
+    public class AlphEntry {
+        public ushort[] BoneIndices;
+        public Bone[]? Bones;
+        public int Unk;
+
+        public AlphEntry() {
+            BoneIndices = Array.Empty<ushort>();
+        }
+
+        public AlphEntry(BinaryReader br) {
+            Unk = br.ReadInt32();
+            var dataCount = br.ReadUInt16();
+            BoneIndices = br.ReadStructuresAsArray<ushort>(dataCount);
+        }
+
+        public override string ToString() => $"{Unk}; count={BoneIndices.Length}" +
+            (Bones is null ? "" : string.Join("", Bones.Select(x => $"; {x.Name}")));
+    }
 
     public class BoneList {
         private readonly List<Bone> _bones = new();
@@ -191,6 +219,12 @@ public class SklbFile : FileResource {
         }
 
         public IReadOnlyList<Bone> Children => _children;
+
+        public override string ToString() => _children.Count switch {
+            0 => $"{Name}#{Index} (leaf)",
+            1 => $"{Name}#{Index} (1 child)",
+            var r => $"{Name}#{Index} ({r} children)",
+        };
     }
 
     public enum SklbFormat : uint {

@@ -8,11 +8,23 @@ namespace LuminaExplorer.Core.Util;
 public static class PrimitiveExtensions {
     public static bool IsWhiteSpace(this uint n) => n < 0x10000 && char.IsWhiteSpace((char) n);
     
-    public static string ExtractCString(this Span<byte> s, Encoding? encoding = null) {
-        encoding ??= Encoding.UTF8;
-        var i = s.IndexOf((byte)0);
-        return encoding.GetString(i == -1 ? s : s[..i]);
+    public static Span<T> ExtractTerminatedSpan<T>(this Span<T> s, T terminator = default)
+        where T : unmanaged, IEquatable<T> {
+        var i = s.IndexOf(terminator);
+        return i == -1 ? s : s[..i];
     }
+
+    public static ReadOnlySpan<T> ExtractTerminatedSpan<T>(this ReadOnlySpan<T> s, T terminator = default)
+        where T : unmanaged, IEquatable<T> {
+        var i = s.IndexOf(terminator);
+        return i == -1 ? s : s[..i];
+    }
+
+    public static string ExtractCString(this Span<byte> s, Encoding? encoding = null) => 
+        (encoding ?? Encoding.UTF8).GetString(ExtractTerminatedSpan(s));
+
+    public static string ExtractCString(this ReadOnlySpan<byte> s, Encoding? encoding = null) => 
+        (encoding ?? Encoding.UTF8).GetString(ExtractTerminatedSpan(s));
 
     public static Matrix4x4 Normalize(this Matrix4x4 val) => Matrix4x4.Multiply(val, 1f / val.M44);
     
