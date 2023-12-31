@@ -11,7 +11,6 @@ using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerContro
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.ObjectRepresentationWrapper;
 using LuminaExplorer.Core.VirtualFileSystem;
-using WicNet;
 using DialogResult = System.Windows.Forms.DialogResult;
 using MessageBox = System.Windows.Forms.MessageBox;
 using MessageBoxButtons = System.Windows.Forms.MessageBoxButtons;
@@ -142,9 +141,10 @@ public partial class TextureViewer : Form {
                                                     FileMode.Create,
                                                     FileAccess.Write);
                                                 var t = source.GetWicBitmapSourceAsync(i, j, k);
+                                                Silk.NET.Core.
                                                 t.Wait();
                                                 t.Result.Save(d, sfd.FilterIndex switch {
-                                                    3 => WicCodec.GUID_ContainerFormatPng,
+                                                    3 => Silk.NET.WindowsCodecs.GUID_ContainerFormatPng,
                                                     4 => WicCodec.GUID_ContainerFormatJpeg,
                                                     5 => WicCodec.GUID_ContainerFormatBmp,
                                                     _ => throw new InvalidOperationException(),

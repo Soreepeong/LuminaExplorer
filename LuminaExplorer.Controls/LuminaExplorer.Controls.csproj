@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net7.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -29,14 +29,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Lumina" Version="3.10.2" />
+    <PackageReference Include="Lumina" Version="3.15.2" />
     <PackageReference Include="ObjectListView.Official" Version="2.9.2-alpha2" />
-    <PackageReference Include="Scintilla.NET" Version="5.3.2.7" />
-    <PackageReference Include="Silk.NET.Core" Version="2.17.1" />
-    <PackageReference Include="Silk.NET.Direct2D" Version="2.17.1" />
-    <PackageReference Include="Silk.NET.Direct3D.Compilers" Version="2.17.1" />
-    <PackageReference Include="Silk.NET.Direct3D11" Version="2.17.1" />
-    <PackageReference Include="WicNet" Version="1.6.4.1" />
+    <PackageReference Include="Scintilla.NET" Version="5.3.2.9" />
+    <PackageReference Include="Silk.NET.Direct3D.Compilers" Version="2.19.0" />
   </ItemGroup>
 
   <ItemGroup>

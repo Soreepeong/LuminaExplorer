@@ -1,6 +1,7 @@
 ﻿using System;
+using System.Buffers;
+using System.Collections.Frozen;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -10,37 +11,99 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using DirectN;
 using Lumina.Data;
 using Lumina.Data.Files;
 using Lumina.Data.Parsing.Tex.Buffers;
-using Lumina.Data.Structs;
 using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
 using LuminaExplorer.Core.VirtualFileSystem.Sqpack.SqpackFileStream;
-using WicNet;
+using TerraFX.Interop.Windows;
+using PlatformId = Lumina.Data.Structs.PlatformId;
+using Win32 = TerraFX.Interop.Windows.Windows;
 
 namespace LuminaExplorer.Core.Util;
 
 public static class ImagingExtensions {
-    public static readonly IReadOnlySet<string> ThumbnailSupportedExtensions = WicImagingComponent
-        .DecoderFileExtensions
-        .Append(".tex")
-        .Append(".atex")
-        .Append(".dds")
-        .ToImmutableHashSet();
+    private static readonly Lazy<IReadOnlySet<string>> ThumbnailSupportedExtensionsLazy = new(
+        () => DecoderExtensions.Append(".tex").Append(".atex").Append(".dds").ToFrozenSet());
 
-    public static WicBitmapSource ToWicBitmapSource(this TexFile texFile, int mipIndex, int slice) {
+    private static readonly Lazy<IReadOnlySet<string>> DecoderExtensionsLazy =
+        new(() => EnumerateFileExtensions(WICComponentType.WICDecoder).ToFrozenSet());
+
+    public static IReadOnlySet<string> ThumbnailSupportedExtensions => ThumbnailSupportedExtensionsLazy.Value;
+
+    public static IReadOnlySet<string> DecoderExtensions => DecoderExtensionsLazy.Value;
+
+    public static void Throw(this HRESULT hresult) {
+        if (hresult.FAILED)
+            throw Marshal.GetExceptionForHR(hresult) ?? new();
+    }
+
+    public static void Throw(this HRESULT hresult, params HRESULT[] acceptable) {
+        if (hresult.FAILED && !acceptable.Contains(hresult))
+            throw Marshal.GetExceptionForHR(hresult) ?? new();
+    }
+
+    public static unsafe ComPtr<IWICImagingFactory> NewWicFactory() {
+        var res = default(ComPtr<IWICImagingFactory>);
+        fixed (Guid* clsid = &CLSID.CLSID_WICImagingFactory)
+        fixed (Guid* iid = &IID.IID_IWICImagingFactory)
+        {
+            TerraFX.Interop.Windows.Windows.CoCreateInstance(
+                clsid,
+                null,
+                (uint)CLSCTX.CLSCTX_INPROC_SERVER,
+                iid,
+                (void**)res.GetAddressOf()).Throw();
+        }
+
+        return res;
+    }
+
+    public static unsafe void WriteFrom(this Stream stream, IWICBitmapSource* source, in Guid guid) {
+        using var sis = stream.WrapToIStream(true);
+        using var sisi = sis.CreateNativeRef();
+
+        using var factory = NewWicFactory();
+        using var encoder = default(ComPtr<IWICBitmapEncoder>);
+        fixed (Guid* pGuid = &guid)
+            factory.Get()->CreateEncoder(pGuid, null, encoder.GetAddressOf()).Throw();
+        encoder.Get()->Initialize(sisi, WICBitmapEncoderCacheOption.WICBitmapEncoderNoCache).Throw();
+
+        using var frameEncode = default(ComPtr<IWICBitmapFrameEncode>);
+        encoder.Get()->CreateNewFrame(frameEncode.GetAddressOf(), null).Throw();
+        frameEncode.Get()->Initialize(null).Throw();
+        frameEncode.Get()->WriteSource(source, null).Throw();
+        frameEncode.Get()->Commit().Throw();
+
+        encoder.Get()->Commit();
+    }
+
+    public static unsafe ComPtr<IWICBitmapSource> ToWicBitmapSource(this TexFile texFile, int mipIndex, int slice) {
+        using var factory = NewWicFactory();
+        var res = default(ComPtr<IWICBitmapSource>);
+
         if (texFile.Header.Format is
             TexFile.TextureFormat.BC1 or
             TexFile.TextureFormat.BC2 or
             TexFile.TextureFormat.BC3) {
-            using var decoder = WICImagingFactory.CreateDecoderFromStream(
-                texFile.ToDdsFileFollowGameDx11Conversion().CreateStream(),
-                WicImagingComponent.CLSID_WICDdsDecoder);
-            using var ddsDecoder = decoder.AsComObject<IWICDdsDecoder>();
+            fixed (Guid* pClsid = &CLSID.CLSID_WICDdsDecoder) {
+                using var sis = texFile.ToDdsFileFollowGameDx11Conversion().CreateStream().WrapToIStream();
+                using var sisi = sis.CreateNativeRef();
+                using var decoder = default(ComPtr<IWICBitmapDecoder>);
+                factory.Get()->CreateDecoderFromStream(
+                    sisi,
+                    pClsid,
+                    WICDecodeOptions.WICDecodeMetadataCacheOnDemand,
+                    decoder.GetAddressOf()).Throw();
 
-            ddsDecoder.Object.GetFrame(0, (uint) mipIndex, (uint) slice, out var pFrame).ThrowOnError();
-            return new(pFrame);
+                using var ddsDecoder = default(ComPtr<IWICDdsDecoder>);
+                decoder.CopyTo(&ddsDecoder).Throw();
+
+                using var frameDecode = default(ComPtr<IWICBitmapFrameDecode>);
+                ddsDecoder.Get()->GetFrame(0, (uint)mipIndex, (uint)slice, frameDecode.GetAddressOf()).Throw();
+                frameDecode.CopyTo(&res).Throw();
+                return res;
+            }
         }
 
         var texBuf = texFile.TextureBuffer.Filter(mip: mipIndex, z: slice);
@@ -54,28 +117,37 @@ public static class ImagingExtensions {
             (int) (format & TexFile.TextureFormat.BppMask) >>
             (int) TexFile.TextureFormat.BppShift);
 
-        return new(WICImagingFactory.CreateBitmapFromMemory(
-            texBuf.Width,
-            texBuf.Height,
-            format switch {
-                TexFile.TextureFormat.L8 => WicPixelFormat.GUID_WICPixelFormat8bppGray,
-                TexFile.TextureFormat.A8 => WicPixelFormat.GUID_WICPixelFormat8bppAlpha,
-                TexFile.TextureFormat.B5G5R5A1 => WicPixelFormat.GUID_WICPixelFormat16bppBGRA5551,
-                TexFile.TextureFormat.B8G8R8A8 => WicPixelFormat.GUID_WICPixelFormat32bppBGRA,
-                TexFile.TextureFormat.B8G8R8X8 => WicPixelFormat.GUID_WICPixelFormat32bppBGR,
-                TexFile.TextureFormat.R16G16B16A16F => WicPixelFormat.GUID_WICPixelFormat64bppRGBAHalf,
-                TexFile.TextureFormat.R32G32B32A32F => WicPixelFormat.GUID_WICPixelFormat128bppRGBAFloat,
-                TexFile.TextureFormat.D16 => WicPixelFormat.GUID_WICPixelFormat16bppGray,
-                TexFile.TextureFormat.Shadow16 => WicPixelFormat.GUID_WICPixelFormat16bppGray,
-                _ => throw new NotSupportedException(),
-            },
-            texBuf.Width * bpp / 8,
-            texBuf.RawData).Object);
+        var formatGuid = format switch {
+            TexFile.TextureFormat.L8 => GUID.GUID_WICPixelFormat8bppGray,
+            TexFile.TextureFormat.A8 => GUID.GUID_WICPixelFormat8bppAlpha,
+            TexFile.TextureFormat.B5G5R5A1 => GUID.GUID_WICPixelFormat16bppBGRA5551,
+            TexFile.TextureFormat.B8G8R8A8 => GUID.GUID_WICPixelFormat32bppBGRA,
+            TexFile.TextureFormat.B8G8R8X8 => GUID.GUID_WICPixelFormat32bppBGR,
+            TexFile.TextureFormat.R16G16B16A16F => GUID.GUID_WICPixelFormat64bppRGBAHalf,
+            TexFile.TextureFormat.R32G32B32A32F => GUID.GUID_WICPixelFormat128bppRGBAFloat,
+            TexFile.TextureFormat.D16 => GUID.GUID_WICPixelFormat16bppGray,
+            TexFile.TextureFormat.Shadow16 => GUID.GUID_WICPixelFormat16bppGray,
+            _ => throw new NotSupportedException(),
+        };
+
+        using var bitmap = default(ComPtr<IWICBitmap>);
+        fixed (byte* buf = texBuf.RawData)
+            factory.Get()->CreateBitmapFromMemory(
+                (uint) texBuf.Width,
+                (uint) texBuf.Height,
+                &formatGuid,
+                (uint) (texBuf.Width * bpp / 8),
+                (uint) texBuf.RawData.Length,
+                buf,
+                bitmap.GetAddressOf()).Throw();
+
+        bitmap.CopyTo(&res).Throw();
+        return res;
     }
 
     public static bool ConvertPixelFormatIfDifferent(
-        this WicBitmapSource before,
-        out WicBitmapSource after,
+        this IWICBitmapSource before,
+        out IWICBitmapSource after,
         Guid targetPixelFormat,
         bool disposeBeforeIfConverted = true) {
         if (before.PixelFormat == targetPixelFormat) {
@@ -345,5 +417,46 @@ public static class ImagingExtensions {
             bmp.Dispose();
             throw;
         }
+    }
+
+    private static IEnumerable<string> EnumerateFileExtensions(WICComponentType componentType) {
+        var buffer = Array.Empty<char>();
+        foreach (var k in EnumerateComponents<IWICBitmapCodecInfo>(componentType)) {
+            var len = Iterate(k);
+            for (var i = 0; i < len;) {
+                var next = buffer.AsSpan(0, len).IndexOf(',');
+                if (next == -1) {
+                    yield return new(buffer, i, len - i);
+                }
+
+                yield return new(buffer, i, next);
+                i = next + 1;
+            }
+        }
+
+        yield break;
+
+        unsafe int Iterate(ComPtr<IWICBitmapCodecInfo> k) {
+            var count = 0u;
+            k.Get()->GetFileExtensions(0, null, &count)
+                .Throw(Win32.HRESULT_FROM_WIN32(ERROR.ERROR_INSUFFICIENT_BUFFER));
+
+            buffer = ArrayPool<char>.Shared.RentAsNecessary(buffer, (int)count);
+            fixed (char* p = buffer)
+                k.Get()->GetFileExtensions((uint) buffer.Length, (ushort*) p, &count);
+            return (int)count;
+        }
+    }
+
+    private static unsafe WrappingIEnumUnknown<T> EnumerateComponents<T>(
+        WICComponentType componentType,
+        WICComponentEnumerateOptions options = WICComponentEnumerateOptions.WICComponentEnumerateDefault)
+        where T : unmanaged, IUnknown.Interface {
+        using var factory = NewWicFactory();
+        using var enumerator = default(ComPtr<IEnumUnknown>);
+        factory.Get()->CreateComponentEnumerator((uint) componentType, (uint) options, enumerator.GetAddressOf())
+            .Throw();
+
+        return new(enumerator);
     }
 }

@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface.PixelFormats.Channels;
-using WicNet;
 using ValueType = LuminaExplorer.Core.ExtraFormats.DirectDrawSurface.PixelFormats.Channels.ValueType;
 
 namespace LuminaExplorer.Core.ExtraFormats.DirectDrawSurface.PixelFormats;
@@ -279,6 +278,7 @@ public static class PixFmtResolver {
 
         // https://learn.microsoft.com/en-us/windows/win32/wic/-wic-codec-native-pixel-formats#packed-bit-pixel-formats
         // Note: below list might got byte orders wrong (Bgr/Rgb)
+        // Silk.NET.WindowsCodecs.WindowsCodecs.GetApi()
         WicToPixelFormat = new Dictionary<Guid, IPixFmt> {
             // Packed Bit Pixel Formats
             {

@@ -5,11 +5,15 @@ using System.Text;
 using System.Threading.Tasks;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
-using WicNet;
+using Silk.NET.WindowsCodecs;
+using Silk.NET.DirectWrite;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 
 public interface IBitmapSource : IDisposable, IAsyncDisposable {
+    static IBitmapSource() {
+    }
+    
     public event Action? LayoutChanged;
 
     public string FileName { get; }
@@ -35,7 +39,7 @@ public interface IBitmapSource : IDisposable, IAsyncDisposable {
 
     public void UpdateSelection(int imageIndex, int mipmap);
 
-    public Task<WicBitmapSource> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice);
+    public Task<IWICBitmapSource> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice);
 
     public bool HasWicBitmapSource(int imageIndex, int mipmap, int slice);
 
