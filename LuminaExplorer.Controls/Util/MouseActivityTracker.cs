@@ -24,26 +24,28 @@ public sealed class MouseActivityTracker : IDisposable {
     private long _clickTimerFireRightClickAfter = long.MaxValue;
     private long _clickTimerFireMiddleClickAfter = long.MaxValue;
 
-    public MouseActivityTracker(Control control) {
-        _control = control;
-        _control.MouseDown += OnMouseDown;
-        _control.MouseMove += OnMouseMove;
-        _control.MouseUp += OnMouseUp;
-        _control.MouseLeave += OnMouseLeave;
-        _control.MouseWheel += OnMouseWheel;
+    public MouseActivityTracker(Control control)
+    {
+        this._control = control;
+        this._control.MouseDown += this.OnMouseDown;
+        this._control.MouseMove += this.OnMouseMove;
+        this._control.MouseUp += this.OnMouseUp;
+        this._control.MouseLeave += this.OnMouseLeave;
+        this._control.MouseWheel += this.OnMouseWheel;
 
-        _clickTimer.Elapsed += (_, _) => _control.BeginInvoke(ProcessClickTimers);
+        this._clickTimer.Elapsed += (_, _) => this._control.BeginInvoke(this.ProcessClickTimers);
     }
 
-    public void Dispose() {
-        _control.MouseDown -= OnMouseDown;
-        _control.MouseMove -= OnMouseMove;
-        _control.MouseUp -= OnMouseUp;
-        _control.MouseLeave -= OnMouseLeave;
-        _control.MouseWheel -= OnMouseWheel;
+    public void Dispose()
+    {
+        this._control.MouseDown -= this.OnMouseDown;
+        this._control.MouseMove -= this.OnMouseMove;
+        this._control.MouseUp -= this.OnMouseUp;
+        this._control.MouseLeave -= this.OnMouseLeave;
+        this._control.MouseWheel -= this.OnMouseWheel;
     }
 
-    public Control Control => _control;
+    public Control Control => this._control;
 
     public event Action? DragStart;
     public event Action? DragEnd;
@@ -67,16 +69,16 @@ public sealed class MouseActivityTracker : IDisposable {
     public Point? DragOrigin { get; private set; }
     public Point? DragBase { get; private set; }
 
-    public bool IsDragging => DragBase is not null;
+    public bool IsDragging => this.DragBase is not null;
     public bool IsInfiniteDragging { get; private set; }
     public bool IsDraggingZoom { get; private set; }
-    public bool IsDraggingPan => IsDragging && !IsDraggingZoom;
+    public bool IsDraggingPan => this.IsDragging && !this.IsDraggingZoom;
 
     public MouseButtons FirstHeldButton { get; private set; }
     public bool IsLeftHeld { get; private set; }
     public bool IsRightHeld { get; private set; }
     public bool IsMiddleHeld { get; private set; }
-    public bool IsAnyHeld => IsLeftHeld || IsRightHeld || IsMiddleHeld;
+    public bool IsAnyHeld => this.IsLeftHeld || this.IsRightHeld || this.IsMiddleHeld;
 
     public bool IsLeftDoubleDown { get; private set; }
     public bool IsRightDoubleDown { get; private set; }
@@ -95,29 +97,26 @@ public sealed class MouseActivityTracker : IDisposable {
     public bool UseInfiniteMiddleDrag { get; set; }
 
     public bool UseLeftDrag {
-        get => _useLeftDrag;
+        get => this._useLeftDrag;
         set {
-            _useLeftDrag = value;
-            if (!value && FirstHeldButton == MouseButtons.Left)
-                ExitDragState();
+            this._useLeftDrag = value;
+            if (!value && this.FirstHeldButton == MouseButtons.Left) this.ExitDragState();
         }
     }
 
     public bool UseRightDrag {
-        get => _useRightDrag;
+        get => this._useRightDrag;
         set {
-            _useRightDrag = value;
-            if (!value && FirstHeldButton == MouseButtons.Right)
-                ExitDragState();
+            this._useRightDrag = value;
+            if (!value && this.FirstHeldButton == MouseButtons.Right) this.ExitDragState();
         }
     }
 
     public bool UseMiddleDrag {
-        get => _useMiddleDrag;
+        get => this._useMiddleDrag;
         set {
-            _useMiddleDrag = value;
-            if (!value && FirstHeldButton == MouseButtons.Middle)
-                ExitDragState();
+            this._useMiddleDrag = value;
+            if (!value && this.FirstHeldButton == MouseButtons.Middle) this.ExitDragState();
         }
     }
 
@@ -126,355 +125,355 @@ public sealed class MouseActivityTracker : IDisposable {
     public bool UseDoubleClickDragZoom { get; set; }
 
     public bool Enabled {
-        get => _enabled;
+        get => this._enabled;
         set {
-            _enabled = value;
-            if (!value)
-                CancelAllOperations();
+            this._enabled = value;
+            if (!value) this.CancelAllOperations();
         }
     }
 
-    public void CancelAllOperations() {
-        ExitDragState();
-        _activities.Clear();
-        FirstHeldButton = MouseButtons.None;
-        IsLeftHeld = IsRightHeld = IsMiddleHeld = false;
-        IsLeftDoubleDown = IsRightDoubleDown = IsMiddleDoubleDown = false;
-        IsLeftDoubleUp = IsRightDoubleUp = IsMiddleDoubleUp = false;
-        FirstHeldButton = MouseButtons.None;
-        _clickTimer.Enabled = false;
-        _clickTimerFireLeftClickAfter = long.MaxValue;
-        _clickTimerFireRightClickAfter = long.MaxValue;
-        _clickTimerFireMiddleClickAfter = long.MaxValue;
+    public void CancelAllOperations()
+    {
+        this.ExitDragState();
+        this._activities.Clear();
+        this.FirstHeldButton = MouseButtons.None;
+        this.IsLeftHeld = this.IsRightHeld = this.IsMiddleHeld = false;
+        this.IsLeftDoubleDown = this.IsRightDoubleDown = this.IsMiddleDoubleDown = false;
+        this.IsLeftDoubleUp = this.IsRightDoubleUp = this.IsMiddleDoubleUp = false;
+        this.FirstHeldButton = MouseButtons.None;
+        this._clickTimer.Enabled = false;
+        this._clickTimerFireLeftClickAfter = long.MaxValue;
+        this._clickTimerFireRightClickAfter = long.MaxValue;
+        this._clickTimerFireMiddleClickAfter = long.MaxValue;
     }
 
-    private void OnMouseDown(object? sender, MouseEventArgs e) {
-        if (!_enabled)
+    private void OnMouseDown(object? sender, MouseEventArgs e)
+    {
+        if (!this._enabled)
             return;
 
-        RecordActivity(new(ActivityType.Down, e.Button, e.Location));
+        this.RecordActivity(new(ActivityType.Down, e.Button, e.Location));
 
-        if (FirstHeldButton == MouseButtons.None)
-            FirstHeldButton = e.Button;
+        if (this.FirstHeldButton == MouseButtons.None) this.FirstHeldButton = e.Button;
 
         var startDrag = false;
         switch (e.Button) {
             case MouseButtons.Left: {
-                IsLeftHeld = true;
-                IsLeftDoubleDown = IsDoubleDownOrUp();
-                IsDraggingZoom = UseDoubleClickDragZoom && IsLeftDoubleDown;
-                startDrag = _useLeftDrag;
-                _clickTimerFireLeftClickAfter = long.MaxValue;
+                this.IsLeftHeld = true;
+                this.IsLeftDoubleDown = this.IsDoubleDownOrUp();
+                this.IsDraggingZoom = this.UseDoubleClickDragZoom && this.IsLeftDoubleDown;
+                startDrag = this._useLeftDrag;
+                this._clickTimerFireLeftClickAfter = long.MaxValue;
                 break;
             }
             case MouseButtons.Right: {
-                IsRightHeld = true;
-                IsRightDoubleDown = IsDoubleDownOrUp();
-                IsDraggingZoom = UseDoubleClickDragZoom && IsRightDoubleDown;
-                startDrag = _useRightDrag;
-                _clickTimerFireRightClickAfter = long.MaxValue;
+                this.IsRightHeld = true;
+                this.IsRightDoubleDown = this.IsDoubleDownOrUp();
+                this.IsDraggingZoom = this.UseDoubleClickDragZoom && this.IsRightDoubleDown;
+                startDrag = this._useRightDrag;
+                this._clickTimerFireRightClickAfter = long.MaxValue;
                 break;
             }
             case MouseButtons.Middle: {
-                IsMiddleHeld = true;
-                IsMiddleDoubleDown = IsDoubleDownOrUp();
-                IsDraggingZoom = UseDoubleClickDragZoom && IsMiddleDoubleDown;
-                startDrag = _useMiddleDrag;
-                _clickTimerFireMiddleClickAfter = long.MaxValue;
+                this.IsMiddleHeld = true;
+                this.IsMiddleDoubleDown = this.IsDoubleDownOrUp();
+                this.IsDraggingZoom = this.UseDoubleClickDragZoom && this.IsMiddleDoubleDown;
+                startDrag = this._useMiddleDrag;
+                this._clickTimerFireMiddleClickAfter = long.MaxValue;
                 break;
             }
         }
 
-        ProcessClickTimers();
+        this.ProcessClickTimers();
 
-        if (startDrag && DragOrigin is null) {
-            DragOrigin = e.Location;
-            _control.Capture = true;
+        if (startDrag && this.DragOrigin is null) {
+            this.DragOrigin = e.Location;
+            this._control.Capture = true;
         }
     }
 
-    private void OnMouseMove(object? sender, MouseEventArgs e) {
-        if (!_enabled)
+    private void OnMouseMove(object? sender, MouseEventArgs e)
+    {
+        if (!this._enabled)
             return;
 
-        if (DragOrigin is not { } dragOrigin)
+        if (this.DragOrigin is not { } dragOrigin)
             return;
 
         Point delta;
-        _control.Capture = true;
-        if (DragBase is { } dragBase) {
+        this._control.Capture = true;
+        if (this.DragBase is { } dragBase) {
             var pos = e.Location;
             delta = new(pos.X - dragBase.X, pos.Y - dragBase.Y);
-            if (IsInfiniteDragging)
-                Cursor.Position = _control.PointToScreen(dragBase);
+            if (this.IsInfiniteDragging)
+                Cursor.Position = this._control.PointToScreen(dragBase);
             else
-                DragBase = pos;
-        } else if ((_useLeftDrag && IsLeftHeld) ||
-                   (_useRightDrag && IsRightHeld) ||
-                   (_useMiddleDrag && IsMiddleHeld)) {
+                this.DragBase = pos;
+        } else if ((this._useLeftDrag && this.IsLeftHeld) ||
+                   (this._useRightDrag && this.IsRightHeld) ||
+                   (this._useMiddleDrag && this.IsMiddleHeld)) {
             var doubleClickRect = new Rectangle(dragOrigin, SystemInformation.DoubleClickSize);
             doubleClickRect.X -= doubleClickRect.Width / 2;
             doubleClickRect.Y -= doubleClickRect.Height / 2;
             delta = new(e.Location.X - dragOrigin.X, e.Location.Y - dragOrigin.Y);
-            if ((FirstHeldButton == MouseButtons.Left && !UseLeftDouble) ||
-                (FirstHeldButton == MouseButtons.Right && !UseRightDouble) ||
-                (FirstHeldButton == MouseButtons.Middle && !UseMiddleDouble) ||
+            if ((this.FirstHeldButton == MouseButtons.Left && !this.UseLeftDouble) ||
+                (this.FirstHeldButton == MouseButtons.Right && !this.UseRightDouble) ||
+                (this.FirstHeldButton == MouseButtons.Middle && !this.UseMiddleDouble) ||
                 !doubleClickRect.Contains(e.Location))
-                EnterDragState(e.Location);
+                this.EnterDragState(e.Location);
         } else
             return;
 
-        if (IsDragging && !delta.IsEmpty) {
-            var controlAbs = _control.PointToScreen(new());
+        if (this.IsDragging && !delta.IsEmpty) {
+            var controlAbs = this._control.PointToScreen(new());
 
-            if (UseDoubleClickDragZoom && (
-                    FirstHeldButton switch {
-                        MouseButtons.Left => IsLeftDoubleDown,
-                        MouseButtons.Middle => IsMiddleDoubleDown,
-                        MouseButtons.Right => IsRightDoubleDown,
-                        _ => false,
-                    })) {
+            if (this.UseDoubleClickDragZoom && (this.FirstHeldButton switch {
+                    MouseButtons.Left => this.IsLeftDoubleDown,
+                    MouseButtons.Middle => this.IsMiddleDoubleDown,
+                    MouseButtons.Right => this.IsRightDoubleDown,
+                    _ => false,
+                })) {
                 var dn = delta.X + delta.Y;
-                if (dn != 0)
-                    DoubleClickDragZoom?.Invoke(dragOrigin, dn);
+                if (dn != 0) this.DoubleClickDragZoom?.Invoke(dragOrigin, dn);
             } else {
-                Pan?.Invoke(delta);
+                this.Pan?.Invoke(delta);
             }
 
-            if (!IsInfiniteDragging) {
-                var controlAbsNew = _control.PointToScreen(new());
+            if (!this.IsInfiniteDragging) {
+                var controlAbsNew = this._control.PointToScreen(new());
 
-                DragBase = new(
-                    DragBase!.Value.X + controlAbs.X - controlAbsNew.X,
-                    DragBase!.Value.Y + controlAbs.Y - controlAbsNew.Y);
+                this.DragBase = new(
+                    this.DragBase!.Value.X + controlAbs.X - controlAbsNew.X,
+                    this.DragBase!.Value.Y + controlAbs.Y - controlAbsNew.Y);
             }
         }
     }
 
-    private void OnMouseUp(object? sender, MouseEventArgs e) {
-        if (!_enabled)
+    private void OnMouseUp(object? sender, MouseEventArgs e)
+    {
+        if (!this._enabled)
             return;
 
-        RecordActivity(new(ActivityType.Up, e.Button, e.Location));
+        this.RecordActivity(new(ActivityType.Up, e.Button, e.Location));
 
-        IsLeftDoubleUp = IsRightDoubleUp = IsMiddleDoubleUp = false;
+        this.IsLeftDoubleUp = this.IsRightDoubleUp = this.IsMiddleDoubleUp = false;
         switch (e.Button) {
             case MouseButtons.Left: {
-                IsLeftHeld = false;
-                if (!_activities[^1].IsInDoubleClickRange(e.Location))
+                this.IsLeftHeld = false;
+                if (!this._activities[^1].IsInDoubleClickRange(e.Location))
                     break;
 
-                var eligibleForClick = FirstHeldButton == MouseButtons.Left && !IsDragging;
+                var eligibleForClick = this.FirstHeldButton == MouseButtons.Left && !this.IsDragging;
                 if (!eligibleForClick) {
-                    _activities.Clear();
-                    IsLeftDoubleUp = false;
+                    this._activities.Clear();
+                    this.IsLeftDoubleUp = false;
                 } else {
-                    IsLeftDoubleUp = IsDoubleDownOrUp();
+                    this.IsLeftDoubleUp = this.IsDoubleDownOrUp();
 
                     var blockDouble = false;
-                    LeftImmediateClick?.Invoke(e.Location, ref blockDouble);
-                    if (!UseLeftDouble)
-                        LeftClick?.Invoke(e.Location);
-                    if (blockDouble)
-                        IsLeftDoubleUp = false;
+                    this.LeftImmediateClick?.Invoke(e.Location, ref blockDouble);
+                    if (!this.UseLeftDouble) this.LeftClick?.Invoke(e.Location);
+                    if (blockDouble) this.IsLeftDoubleUp = false;
 
-                    if (IsLeftDoubleUp) {
-                        _activities.Clear();
-                        LeftDoubleClick?.Invoke(e.Location);
-                    } else if (!blockDouble && UseLeftDouble && !IsDragging)
-                        _clickTimerFireLeftClickAfter = Environment.TickCount64 + SystemInformation.DoubleClickTime;
+                    if (this.IsLeftDoubleUp) {
+                        this._activities.Clear();
+                        this.LeftDoubleClick?.Invoke(e.Location);
+                    } else if (!blockDouble && this.UseLeftDouble && !this.IsDragging)
+                        this._clickTimerFireLeftClickAfter =
+                            Environment.TickCount64 + SystemInformation.DoubleClickTime;
                 }
 
                 break;
             }
             case MouseButtons.Right: {
-                IsRightHeld = false;
-                if (!_activities[^1].IsInDoubleClickRange(e.Location))
+                this.IsRightHeld = false;
+                if (!this._activities[^1].IsInDoubleClickRange(e.Location))
                     break;
 
-                var eligibleForClick = FirstHeldButton == MouseButtons.Right && !IsDragging;
+                var eligibleForClick = this.FirstHeldButton == MouseButtons.Right && !this.IsDragging;
                 if (!eligibleForClick) {
-                    _activities.Clear();
-                    IsRightDoubleUp = false;
+                    this._activities.Clear();
+                    this.IsRightDoubleUp = false;
                 } else {
-                    IsRightDoubleUp = IsDoubleDownOrUp();
+                    this.IsRightDoubleUp = this.IsDoubleDownOrUp();
 
                     var blockDouble = false;
-                    RightImmediateClick?.Invoke(e.Location, ref blockDouble);
-                    if (!UseRightDouble)
-                        RightClick?.Invoke(e.Location);
-                    if (blockDouble)
-                        IsRightDoubleUp = false;
+                    this.RightImmediateClick?.Invoke(e.Location, ref blockDouble);
+                    if (!this.UseRightDouble) this.RightClick?.Invoke(e.Location);
+                    if (blockDouble) this.IsRightDoubleUp = false;
 
-                    if (IsRightDoubleUp) {
-                        _activities.Clear();
-                        RightDoubleClick?.Invoke(e.Location);
-                    } else if (!blockDouble && UseRightDouble && !IsDragging)
-                        _clickTimerFireRightClickAfter = Environment.TickCount64 + SystemInformation.DoubleClickTime;
+                    if (this.IsRightDoubleUp) {
+                        this._activities.Clear();
+                        this.RightDoubleClick?.Invoke(e.Location);
+                    } else if (!blockDouble && this.UseRightDouble && !this.IsDragging)
+                        this._clickTimerFireRightClickAfter =
+                            Environment.TickCount64 + SystemInformation.DoubleClickTime;
                 }
 
                 break;
             }
             case MouseButtons.Middle: {
-                IsMiddleHeld = false;
-                if (!_activities[^1].IsInDoubleClickRange(e.Location))
+                this.IsMiddleHeld = false;
+                if (!this._activities[^1].IsInDoubleClickRange(e.Location))
                     break;
 
-                var eligibleForClick = FirstHeldButton == MouseButtons.Middle && !IsDragging;
+                var eligibleForClick = this.FirstHeldButton == MouseButtons.Middle && !this.IsDragging;
                 if (!eligibleForClick) {
-                    _activities.Clear();
-                    IsMiddleDoubleUp = false;
+                    this._activities.Clear();
+                    this.IsMiddleDoubleUp = false;
                 } else {
-                    IsMiddleDoubleUp = IsDoubleDownOrUp();
+                    this.IsMiddleDoubleUp = this.IsDoubleDownOrUp();
 
                     var blockDouble = false;
-                    MiddleImmediateClick?.Invoke(e.Location, ref blockDouble);
-                    if (!UseMiddleDouble)
-                        MiddleClick?.Invoke(e.Location);
-                    if (blockDouble)
-                        IsMiddleDoubleUp = false;
+                    this.MiddleImmediateClick?.Invoke(e.Location, ref blockDouble);
+                    if (!this.UseMiddleDouble) this.MiddleClick?.Invoke(e.Location);
+                    if (blockDouble) this.IsMiddleDoubleUp = false;
 
-                    if (IsMiddleDoubleUp) {
-                        _activities.Clear();
-                        MiddleDoubleClick?.Invoke(e.Location);
-                    } else if (!blockDouble && UseMiddleDouble && !IsDragging)
-                        _clickTimerFireMiddleClickAfter = Environment.TickCount64 + SystemInformation.DoubleClickTime;
+                    if (this.IsMiddleDoubleUp) {
+                        this._activities.Clear();
+                        this.MiddleDoubleClick?.Invoke(e.Location);
+                    } else if (!blockDouble && this.UseMiddleDouble && !this.IsDragging)
+                        this._clickTimerFireMiddleClickAfter =
+                            Environment.TickCount64 + SystemInformation.DoubleClickTime;
                 }
 
                 break;
             }
         }
 
-        ProcessClickTimers();
+        this.ProcessClickTimers();
 
-        if (FirstHeldButton switch {
-                MouseButtons.Left => !IsLeftHeld,
-                MouseButtons.Right => !IsRightHeld,
-                MouseButtons.Middle => !IsMiddleHeld,
+        if (this.FirstHeldButton switch {
+                MouseButtons.Left => !this.IsLeftHeld,
+                MouseButtons.Right => !this.IsRightHeld,
+                MouseButtons.Middle => !this.IsMiddleHeld,
                 _ => false,
             }) {
-            ExitDragState();
+            this.ExitDragState();
         }
 
-        if (!IsAnyHeld)
-            FirstHeldButton = MouseButtons.None;
+        if (!this.IsAnyHeld) this.FirstHeldButton = MouseButtons.None;
     }
 
-    private void OnMouseWheel(object? sender, MouseEventArgs e) {
-        if (!_enabled)
+    private void OnMouseWheel(object? sender, MouseEventArgs e)
+    {
+        if (!this._enabled)
             return;
 
-        if (e.Delta != 0 && (
-                UseWheelZoom is WheelZoomMode.Always ||
-                (UseWheelZoom is WheelZoomMode.RequireControlKey && Control.ModifierKeys.HasFlag(Keys.Control))))
-            WheelZoom?.Invoke(e.Location, e.Delta);
+        if (e.Delta != 0 && (this.UseWheelZoom is WheelZoomMode.Always ||
+                (this.UseWheelZoom is WheelZoomMode.RequireControlKey && Control.ModifierKeys.HasFlag(Keys.Control))))
+            this.WheelZoom?.Invoke(e.Location, e.Delta);
     }
 
-    private void OnMouseLeave(object? sender, EventArgs e) {
-        if (!_enabled)
+    private void OnMouseLeave(object? sender, EventArgs e)
+    {
+        if (!this._enabled)
             return;
 
-        ExitDragState();
+        this.ExitDragState();
     }
 
-    private void EnterDragState(Point dragBase) {
-        if (DragBase is not null)
+    private void EnterDragState(Point dragBase)
+    {
+        if (this.DragBase is not null)
             return;
 
-        DragBase = dragBase;
-        RecordActivity(new(ActivityType.DragStart, MouseButtons.None, DragBase.Value));
+        this.DragBase = dragBase;
+        this.RecordActivity(new(ActivityType.DragStart, MouseButtons.None, this.DragBase.Value));
 
-        if ((UseInfiniteLeftDrag && FirstHeldButton == MouseButtons.Left) ||
-            (UseInfiniteRightDrag && FirstHeldButton == MouseButtons.Right) ||
-            (UseInfiniteMiddleDrag && FirstHeldButton == MouseButtons.Middle)) {
-            IsInfiniteDragging = true;
-            Cursor.Position = _control.PointToScreen(dragBase);
+        if ((this.UseInfiniteLeftDrag && this.FirstHeldButton == MouseButtons.Left) ||
+            (this.UseInfiniteRightDrag && this.FirstHeldButton == MouseButtons.Right) ||
+            (this.UseInfiniteMiddleDrag && this.FirstHeldButton == MouseButtons.Middle)) {
+            this.IsInfiniteDragging = true;
+            Cursor.Position = this._control.PointToScreen(dragBase);
             Cursor.Hide();
         }
 
-        DragStart?.Invoke();
+        this.DragStart?.Invoke();
     }
 
-    private void ExitDragState() {
-        if (DragOrigin is null)
+    private void ExitDragState()
+    {
+        if (this.DragOrigin is null)
             return;
 
-        if (DragBase is { } dragBase) {
-            RecordActivity(new(ActivityType.DragEnd, MouseButtons.None, dragBase));
-            if (IsInfiniteDragging) {
-                Cursor.Position = _control.PointToScreen(dragBase);
+        if (this.DragBase is { } dragBase) {
+            this.RecordActivity(new(ActivityType.DragEnd, MouseButtons.None, dragBase));
+            if (this.IsInfiniteDragging) {
+                Cursor.Position = this._control.PointToScreen(dragBase);
                 Cursor.Show();
-                IsInfiniteDragging = false;
+                this.IsInfiniteDragging = false;
             }
         }
 
-        IsDraggingZoom = false;
+        this.IsDraggingZoom = false;
 
-        _control.Capture = false;
+        this._control.Capture = false;
 
-        DragOrigin = DragBase = null;
+        this.DragOrigin = this.DragBase = null;
 
-        DragEnd?.Invoke();
+        this.DragEnd?.Invoke();
     }
 
-    private void RecordActivity(Activity activity) {
-        if (_activities.Count >= 8)
-            _activities.RemoveRange(0, _activities.Count - 8 + 1);
-        _activities.Add(activity);
+    private void RecordActivity(Activity activity)
+    {
+        if (this._activities.Count >= 8) this._activities.RemoveRange(0, this._activities.Count - 8 + 1);
+        this._activities.Add(activity);
     }
 
     private bool IsDoubleDownOrUp() =>
-        _activities.Count >= 3 &&
-        ((_activities[^1].Button == MouseButtons.Left && UseLeftDouble) ||
-         (_activities[^1].Button == MouseButtons.Right && UseRightDouble) ||
-         (_activities[^1].Button == MouseButtons.Middle && UseMiddleDouble)) &&
-        _activities[^1].Button == _activities[^3].Button &&
-        _activities[^1].Button == _activities[^2].Button &&
-        _activities[^1].Type == _activities[^3].Type &&
-        _activities[^2].Type is not ActivityType.DragEnd and not ActivityType.DragStart &&
-        _activities[^1].Tick - _activities[^3].Tick <= SystemInformation.DoubleClickTime &&
-        _activities[^1].IsInDoubleClickRange(_activities[^3].Point);
+        this._activities.Count >= 3 &&
+        ((this._activities[^1].Button == MouseButtons.Left && this.UseLeftDouble) ||
+            (this._activities[^1].Button == MouseButtons.Right && this.UseRightDouble) ||
+            (this._activities[^1].Button == MouseButtons.Middle && this.UseMiddleDouble)) &&
+        this._activities[^1].Button == this._activities[^3].Button &&
+        this._activities[^1].Button == this._activities[^2].Button &&
+        this._activities[^1].Type == this._activities[^3].Type &&
+        this._activities[^2].Type is not ActivityType.DragEnd and not ActivityType.DragStart &&
+        this._activities[^1].Tick - this._activities[^3].Tick <= SystemInformation.DoubleClickTime &&
+        this._activities[^1].IsInDoubleClickRange(this._activities[^3].Point);
 
-    private void ProcessClickTimers() {
+    private void ProcessClickTimers()
+    {
         var now = Environment.TickCount64;
-        if (_clickTimerFireLeftClickAfter <= now) {
-            LeftClick?.Invoke(
-                _activities
+        if (this._clickTimerFireLeftClickAfter <= now) {
+            this.LeftClick?.Invoke(
+                this._activities
                     .Select(x => (Activity?) x)
                     .LastOrDefault(x => x!.Value.Button == MouseButtons.Left && x.Value.Type == ActivityType.Up)
                     ?.Point
-                ?? _control.PointToClient(Cursor.Position));
-            _clickTimerFireLeftClickAfter = long.MaxValue;
+                ?? this._control.PointToClient(Cursor.Position));
+            this._clickTimerFireLeftClickAfter = long.MaxValue;
         }
 
-        if (_clickTimerFireRightClickAfter <= now) {
-            RightClick?.Invoke(
-                _activities
+        if (this._clickTimerFireRightClickAfter <= now) {
+            this.RightClick?.Invoke(
+                this._activities
                     .Select(x => (Activity?) x)
                     .LastOrDefault(x => x!.Value.Button == MouseButtons.Right && x.Value.Type == ActivityType.Up)
                     ?.Point
-                ?? _control.PointToClient(Cursor.Position));
-            _clickTimerFireRightClickAfter = long.MaxValue;
+                ?? this._control.PointToClient(Cursor.Position));
+            this._clickTimerFireRightClickAfter = long.MaxValue;
         }
 
-        if (_clickTimerFireMiddleClickAfter <= now) {
-            MiddleClick?.Invoke(
-                _activities
+        if (this._clickTimerFireMiddleClickAfter <= now) {
+            this.MiddleClick?.Invoke(
+                this._activities
                     .Select(x => (Activity?) x)
                     .LastOrDefault(x => x!.Value.Button == MouseButtons.Middle && x.Value.Type == ActivityType.Up)
                     ?.Point
-                ?? _control.PointToClient(Cursor.Position));
-            _clickTimerFireMiddleClickAfter = long.MaxValue;
+                ?? this._control.PointToClient(Cursor.Position));
+            this._clickTimerFireMiddleClickAfter = long.MaxValue;
         }
 
-        var next = _clickTimerFireLeftClickAfter;
-        next = Math.Min(next, _clickTimerFireRightClickAfter);
-        next = Math.Min(next, _clickTimerFireMiddleClickAfter);
+        var next = this._clickTimerFireLeftClickAfter;
+        next = Math.Min(next, this._clickTimerFireRightClickAfter);
+        next = Math.Min(next, this._clickTimerFireMiddleClickAfter);
         if (next == long.MaxValue) {
-            _clickTimer.Enabled = false;
+            this._clickTimer.Enabled = false;
         } else {
-            _clickTimer.Enabled = true;
-            _clickTimer.Interval = (int) (next - now);
+            this._clickTimer.Enabled = true;
+            this._clickTimer.Interval = (int) (next - now);
         }
     }
 
@@ -484,17 +483,19 @@ public sealed class MouseActivityTracker : IDisposable {
         public readonly MouseButtons Button;
         public readonly Point Point;
 
-        public Activity(ActivityType type, MouseButtons button, Point point) {
-            Type = type;
-            Button = button;
-            Point = point;
+        public Activity(ActivityType type, MouseButtons button, Point point)
+        {
+            this.Type = type;
+            this.Button = button;
+            this.Point = point;
         }
 
-        public bool IsInDoubleClickRange(Point point) {
+        public bool IsInDoubleClickRange(Point point)
+        {
             var doubleClickRect = new Rectangle(point, SystemInformation.DoubleClickSize);
             doubleClickRect.X -= doubleClickRect.Width / 2;
             doubleClickRect.Y -= doubleClickRect.Height / 2;
-            return doubleClickRect.Contains(Point);
+            return doubleClickRect.Contains(this.Point);
         }
     }
 

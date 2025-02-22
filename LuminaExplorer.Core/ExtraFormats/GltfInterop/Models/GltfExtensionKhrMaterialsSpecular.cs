@@ -9,9 +9,11 @@ public class GltfExtensionKhrMaterialsSpecular : BaseGltfObject {
     [JsonProperty("specularTexture", NullValueHandling = NullValueHandling.Ignore)]
     public GltfTextureInfo? SpecularTexture;
 
-    [JsonProperty("specularColorFactor", DefaultValueHandling = DefaultValueHandling.Ignore,
+    [JsonProperty(
+        "specularColorFactor",
+        DefaultValueHandling = DefaultValueHandling.Ignore,
         NullValueHandling = NullValueHandling.Ignore)]
-    public float[]? SpecularColorFactor = {1f, 1f, 1f};
+    public float[]? SpecularColorFactor = [1f, 1f, 1f];
 
     [JsonProperty("specularColorTexture", NullValueHandling = NullValueHandling.Ignore)]
     public GltfTextureInfo? SpecularColorTexture;

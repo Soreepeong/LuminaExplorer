@@ -14,7 +14,8 @@ using LuminaExplorer.Core.VirtualFileSystem.Sqpack;
 namespace LuminaExplorer.App;
 
 public static class Program {
-    private static void GetAppConfig(out AppConfig appConfig, out SqpackFileSystem fs) {
+    private static void GetAppConfig(out AppConfig appConfig, out SqpackFileSystem fs)
+    {
         var baseDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
 
         AppConfig? appConfigTmp;
@@ -41,14 +42,15 @@ public static class Program {
         var hashdb = new HashDatabase(hashCacheFile);
         fs = new(hashdb, gameData);
 
-        appConfig = appConfigTmp with {BaseDirectory = baseDir};
+        appConfig = appConfigTmp with { BaseDirectory = baseDir };
     }
 
     /// <summary>
     ///  The main entry point for the application.
     /// </summary>
     [STAThread]
-    public static void Main() {
+    public static void Main()
+    {
         // To customize application configuration such as set high DPI settings or default font,
         // see https://aka.ms/applicationconfiguration.
         ApplicationConfiguration.Initialize();
@@ -66,7 +68,8 @@ public static class Program {
         }
     }
 
-    public static void Main_Explorer() {
+    public static void Main_Explorer()
+    {
         GetAppConfig(out var appConfig, out var fs);
 
         using var mainExplorer = new Explorer(appConfig, fs);
@@ -84,7 +87,8 @@ public static class Program {
     }
 
     [STAThread]
-    public static void Main_Show0361() {
+    public static void Main_Show0361()
+    {
         GetAppConfig(out _, out var fs);
         var viewer = new ModelViewer {
             Size = new(1024, 768),
@@ -97,11 +101,12 @@ public static class Program {
         Application.Run(viewer);
     }
 
-    public static void Main_Import0361() => Task.Factory.StartNew(async () => {
-        GetAppConfig(out _, out var fs);
+    public static void Main_Import0361() => Task.Factory.StartNew(
+        async () => {
+            GetAppConfig(out _, out var fs);
 
-        var tuple = new GltfTuple(File.OpenRead("Z:/m0361b0001.glb"));
+            var tuple = new GltfTuple(File.OpenRead("Z:/m0361b0001.glb"));
 
-        Debugger.Break();
-    });
+            Debugger.Break();
+        });
 }

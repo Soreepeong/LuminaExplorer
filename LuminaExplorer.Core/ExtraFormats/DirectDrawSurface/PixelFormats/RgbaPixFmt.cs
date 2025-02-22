@@ -13,21 +13,18 @@ public class RgbaPixFmt : IPixFmt, IEquatable<RgbaPixFmt> {
         ChannelDefinition? b = null,
         ChannelDefinition? a = null,
         ChannelDefinition? x1 = null,
-        ChannelDefinition? x2 = null) {
-        Alpha = alphaType;
-        R = r ?? new();
-        G = g ?? new();
-        B = b ?? new();
-        A = a ?? new();
-        X1 = x1 ?? new();
-        X2 = x2 ?? new();
-        Bpp = new[] {
-            R.Bits + R.Shift,
-            G.Bits + G.Shift,
-            B.Bits + B.Shift,
-            A.Bits + A.Shift,
-            X1.Bits + X1.Shift,
-            X2.Bits + X2.Shift,
+        ChannelDefinition? x2 = null)
+    {
+        this.Alpha = alphaType;
+        this.R = r ?? new();
+        this.G = g ?? new();
+        this.B = b ?? new();
+        this.A = a ?? new();
+        this.X1 = x1 ?? new();
+        this.X2 = x2 ?? new();
+        this.Bpp = new[] {
+            this.R.Bits + this.R.Shift, this.G.Bits + this.G.Shift, this.B.Bits + this.B.Shift,
+            this.A.Bits + this.A.Shift, this.X1.Bits + this.X1.Shift, this.X2.Bits + this.X2.Shift,
         }.Max();
     }
 
@@ -41,24 +38,30 @@ public class RgbaPixFmt : IPixFmt, IEquatable<RgbaPixFmt> {
     public AlphaType Alpha { get; }
     public int Bpp { get; }
 
-    public void ToB8G8R8A8(Span<byte> target, int targetStride, ReadOnlySpan<byte> source, int sourceStride, int width,
-        int height) {
+    public void ToB8G8R8A8(
+        Span<byte> target,
+        int targetStride,
+        ReadOnlySpan<byte> source,
+        int sourceStride,
+        int width,
+        int height)
+    {
         var bits = 0ul;
         var availBits = 0;
 
         for (var y = 0; y < height; y++) {
             var inOffset = y * sourceStride;
-            var inOffsetTo = inOffset + (width * Bpp + 7) / 8;
+            var inOffsetTo = inOffset + (width * this.Bpp + 7) / 8;
             var outOffset = y * targetStride;
 
             for (var x = 0; x < width && inOffset < inOffsetTo; inOffset++) {
                 bits = (bits << 8) | source[inOffset];
                 availBits += 8;
-                for (; availBits >= Bpp && x < width; x++, availBits -= Bpp) {
-                    target[outOffset++] = (byte) (A.Bits == 0 ? 255 : A.DecodeValueAsUnorm(bits, 8));
-                    target[outOffset++] = (byte) R.DecodeValueAsUnorm(bits, 8);
-                    target[outOffset++] = (byte) G.DecodeValueAsUnorm(bits, 8);
-                    target[outOffset++] = (byte) B.DecodeValueAsUnorm(bits, 8);
+                for (; availBits >= this.Bpp && x < width; x++, availBits -= this.Bpp) {
+                    target[outOffset++] = (byte) (this.A.Bits == 0 ? 255 : this.A.DecodeValueAsUnorm(bits, 8));
+                    target[outOffset++] = (byte) this.R.DecodeValueAsUnorm(bits, 8);
+                    target[outOffset++] = (byte) this.G.DecodeValueAsUnorm(bits, 8);
+                    target[outOffset++] = (byte) this.B.DecodeValueAsUnorm(bits, 8);
                 }
             }
         }
@@ -167,14 +170,22 @@ public class RgbaPixFmt : IPixFmt, IEquatable<RgbaPixFmt> {
             x1: new(ValueType.Typeless, bbits + gbits + rbits + abits, xbits1),
             x2: new(ValueType.Typeless, bbits + gbits + rbits + abits + xbits1, xbits2));
 
-    public bool Equals(RgbaPixFmt? other) {
+    public bool Equals(RgbaPixFmt? other)
+    {
         if (ReferenceEquals(null, other)) return false;
         if (ReferenceEquals(this, other)) return true;
-        return R.Equals(other.R) && G.Equals(other.G) && B.Equals(other.B) && A.Equals(other.A) &&
-            X1.Equals(other.X1) && X2.Equals(other.X2) && Alpha == other.Alpha;
+        return this.R.Equals(other.R) && this.G.Equals(other.G) && this.B.Equals(other.B) && this.A.Equals(other.A) &&
+            this.X1.Equals(other.X1) && this.X2.Equals(other.X2) && this.Alpha == other.Alpha;
     }
 
-    public override bool Equals(object? obj) => Equals(obj as RgbaPixFmt);
+    public override bool Equals(object? obj) => this.Equals(obj as RgbaPixFmt);
 
-    public override int GetHashCode() => HashCode.Combine(R, G, B, A, X1, X2, (int) Alpha);
+    public override int GetHashCode() => HashCode.Combine(
+        this.R,
+        this.G,
+        this.B,
+        this.A,
+        this.X1,
+        this.X2,
+        (int) this.Alpha);
 }

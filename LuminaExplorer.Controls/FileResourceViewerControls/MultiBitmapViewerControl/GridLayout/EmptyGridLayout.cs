@@ -9,7 +9,8 @@ namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerCo
 public sealed class EmptyGridLayout : IGridLayout {
     public static readonly EmptyGridLayout Instance = new();
 
-    private EmptyGridLayout() { }
+    private EmptyGridLayout()
+    { }
 
     public int Count => 0;
 
@@ -22,5 +23,5 @@ public sealed class EmptyGridLayout : IGridLayout {
 
     public IEnumerator<GridLayoutCell> GetEnumerator() => Enumerable.Empty<GridLayoutCell>().GetEnumerator();
 
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator() => this.GetEnumerator();
 }

@@ -6,7 +6,6 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Lumina.Data;
 using Lumina.Data.Attributes;
-using LuminaExplorer.Core.ExtraFormats.GenericAnimation;
 using LuminaExplorer.Core.ExtraFormats.HavokAnimation;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile;
 using LuminaExplorer.Core.ExtraFormats.HavokTagfile.Value;
@@ -27,30 +26,34 @@ public class PapFile : FileResource {
 
     public Exception? LoadException { get; private set; }
 
-    public override void LoadFile() {
+    public override void LoadFile()
+    {
         try {
-            Header = new(Reader);
-            if (Header.Magic != PapHeader.MagicValue)
+            this.Header = new(this.Reader);
+            if (this.Header.Magic != PapHeader.MagicValue)
                 throw new InvalidDataException();
 
-            Reader.BaseStream.Position = Header.InfoOffset;
-            Animations = Enumerable.Range(0, Header.AnimationCount).Select(_ => new PapAnimation(Reader)).ToList();
+            this.Reader.BaseStream.Position = this.Header.InfoOffset;
+            this.Animations = Enumerable.Range(0, this.Header.AnimationCount).Select(_ => new PapAnimation(this.Reader))
+                .ToList();
 
-            HavokData = Data[Header.HavokDataOffset..Header.TimelineOffset];
-            Timeline = Data[Header.TimelineOffset..];
+            this.HavokData = this.Data[this.Header.HavokDataOffset..this.Header.TimelineOffset];
+            this.Timeline = this.Data[this.Header.TimelineOffset..];
 
-            HavokRootNode = Parser.Parse(HavokData, HavokDefinitions);
+            this.HavokRootNode = Parser.Parse(this.HavokData, this.HavokDefinitions);
 
-            AnimationBindings = Animations.Select((_, i) => AnimationSet.Decode(GetAnimationBindingNode(i))).ToArray();
+            this.AnimationBindings = this.Animations
+                .Select((_, i) => AnimationSet.Decode(this.GetAnimationBindingNode(i))).ToArray();
         } catch (Exception e) {
-            LoadException = e;
+            this.LoadException = e;
         }
     }
 
-    public Node GetAnimationBindingNode(int bindingIndex) {
+    public Node GetAnimationBindingNode(int bindingIndex)
+    {
         if (bindingIndex < 0)
             throw new ArgumentOutOfRangeException(nameof(bindingIndex), bindingIndex, null);
-        if (HavokRootNode.AsMap.GetValueOrDefault("namedVariants") is not ValueArray namedVariants)
+        if (this.HavokRootNode.AsMap.GetValueOrDefault("namedVariants") is not ValueArray namedVariants)
             throw new(); // care later about errmsg
         if (namedVariants.Values.FirstOrDefault() is not ValueNode namedVariant0)
             throw new();
@@ -78,15 +81,16 @@ public class PapFile : FileResource {
         public int HavokDataOffset;
         public int TimelineOffset;
 
-        public PapHeader(BinaryReader r) {
-            r.ReadInto(out Magic);
-            r.ReadInto(out Version);
-            r.ReadInto(out AnimationCount);
-            r.ReadInto(out ModelId);
-            r.ReadInto(out ModelClassification);
-            r.ReadInto(out InfoOffset);
-            r.ReadInto(out HavokDataOffset);
-            r.ReadInto(out TimelineOffset);
+        public PapHeader(BinaryReader r)
+        {
+            r.ReadInto(out this.Magic);
+            r.ReadInto(out this.Version);
+            r.ReadInto(out this.AnimationCount);
+            r.ReadInto(out this.ModelId);
+            r.ReadInto(out this.ModelClassification);
+            r.ReadInto(out this.InfoOffset);
+            r.ReadInto(out this.HavokDataOffset);
+            r.ReadInto(out this.TimelineOffset);
         }
     }
 
@@ -97,13 +101,14 @@ public class PapFile : FileResource {
         public short Unknown24;
         public short Unknown26;
 
-        public PapAnimation(BinaryReader r) {
+        public PapAnimation(BinaryReader r)
+        {
             var nameBytes = r.ReadBytes(0x20);
-            Name = Encoding.UTF8.GetString(nameBytes, 0, nameBytes.TakeWhile(x => x != 0).Count());
-            r.ReadInto(out Unknown20);
-            r.ReadInto(out Index);
-            r.ReadInto(out Unknown24);
-            r.ReadInto(out Unknown26);
+            this.Name = Encoding.UTF8.GetString(nameBytes, 0, nameBytes.TakeWhile(x => x != 0).Count());
+            r.ReadInto(out this.Unknown20);
+            r.ReadInto(out this.Index);
+            r.ReadInto(out this.Unknown24);
+            r.ReadInto(out this.Unknown26);
         }
     }
 }

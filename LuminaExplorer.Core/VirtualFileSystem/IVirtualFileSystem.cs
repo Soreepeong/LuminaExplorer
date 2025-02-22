@@ -7,10 +7,10 @@ namespace LuminaExplorer.Core.VirtualFileSystem;
 
 public interface IVirtualFileSystem : IDisposable {
     public event FolderChangedDelegate? FolderChanged;
-    
+
     public event FileChangedDelegate? FileChanged;
 
-    public IVirtualFolder RootFolder{ get; }
+    public IVirtualFolder RootFolder { get; }
 
     public IVirtualFileLookup GetLookup(IVirtualFile file);
 
@@ -19,7 +19,7 @@ public interface IVirtualFileSystem : IDisposable {
     public Task<IVirtualFolder> AsFileNamesResolved(IVirtualFolder folder);
     public bool AreFileNamesResolved(IVirtualFolder folder);
     public void SuggestFullPath(string name);
-    
+
     public string NormalizePath(params string[] pathComponents);
 
     public string GetFullPath(IVirtualFolder folder);
@@ -36,9 +36,10 @@ public interface IVirtualFileSystem : IDisposable {
     public class SearchProgress {
         public readonly Stopwatch Stopwatch = new();
 
-        public SearchProgress(object lastObject) {
-            Total = 1;
-            LastObject = lastObject;
+        public SearchProgress(object lastObject)
+        {
+            this.Total = 1;
+            this.LastObject = lastObject;
         }
 
         public long Total { get; internal set; }

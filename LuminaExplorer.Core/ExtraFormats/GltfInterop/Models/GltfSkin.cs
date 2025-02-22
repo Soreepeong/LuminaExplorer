@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
 using Newtonsoft.Json;
 
 namespace LuminaExplorer.Core.ExtraFormats.GltfInterop.Models;
@@ -18,7 +17,7 @@ public class GltfSkin : BaseGltfObject {
     [JsonProperty("inverseBindMatrices")] public int? InverseBindMatrices;
 
     [JsonProperty("joints")] public List<int> Joints = new();
-    
+
     [JsonProperty("extras", NullValueHandling = NullValueHandling.Ignore)]
     public GltfSkinExtras? Extras;
 }

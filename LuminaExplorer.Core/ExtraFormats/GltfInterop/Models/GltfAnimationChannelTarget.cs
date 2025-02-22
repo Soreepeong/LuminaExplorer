@@ -23,19 +23,21 @@ public class GltfAnimationChannelTarget : BaseGltfObject {
 
     [JsonProperty("path")]
     public string PathString {
-        get => Path switch {
-            GltfAnimationChannelTargetPath.Translation => "translation",
-            GltfAnimationChannelTargetPath.Rotation => "rotation",
-            GltfAnimationChannelTargetPath.Scale => "scale",
-            GltfAnimationChannelTargetPath.Weights => "weights",
-            _ => throw new ArgumentOutOfRangeException(),
-        };
-        set => Path = value switch {
-            "translation" => GltfAnimationChannelTargetPath.Translation,
-            "rotation" => GltfAnimationChannelTargetPath.Rotation,
-            "scale" => GltfAnimationChannelTargetPath.Scale,
-            "weights" => GltfAnimationChannelTargetPath.Weights,
-            _ => throw new ArgumentOutOfRangeException(),
-        };
+        get =>
+            this.Path switch {
+                GltfAnimationChannelTargetPath.Translation => "translation",
+                GltfAnimationChannelTargetPath.Rotation => "rotation",
+                GltfAnimationChannelTargetPath.Scale => "scale",
+                GltfAnimationChannelTargetPath.Weights => "weights",
+                _ => throw new ArgumentOutOfRangeException(),
+            };
+        set =>
+            this.Path = value switch {
+                "translation" => GltfAnimationChannelTargetPath.Translation,
+                "rotation" => GltfAnimationChannelTargetPath.Rotation,
+                "scale" => GltfAnimationChannelTargetPath.Scale,
+                "weights" => GltfAnimationChannelTargetPath.Weights,
+                _ => throw new ArgumentOutOfRangeException(),
+            };
     }
 }

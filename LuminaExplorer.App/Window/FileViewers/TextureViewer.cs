@@ -10,8 +10,9 @@ using Lumina.Data;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.ObjectRepresentationWrapper;
+using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.VirtualFileSystem;
-using WicNet;
+using TerraFX.Interop.Windows;
 using DialogResult = System.Windows.Forms.DialogResult;
 using MessageBox = System.Windows.Forms.MessageBox;
 using MessageBoxButtons = System.Windows.Forms.MessageBoxButtons;
@@ -44,63 +45,66 @@ public partial class TextureViewer : Form {
     private CancellationTokenSource? _texFileLoadCancelTokenSource;
     private Task _navigationTask = Task.CompletedTask;
 
-    public TextureViewer() {
-        InitializeComponent();
+    public TextureViewer()
+    {
+        this.InitializeComponent();
 
-        _panelMouseTracker = new(PropertyPanel);
-        _panelMouseTracker.UseLeftDrag = true;
-        _panelMouseTracker.Pan += PanelMouseTrackerOnPan;
+        this._panelMouseTracker = new(this.PropertyPanel);
+        this._panelMouseTracker.UseLeftDrag = true;
+        this._panelMouseTracker.Pan += this.PanelMouseTrackerOnPan;
 
-        PropertyPanel.Visible = false;
-        PropertyPanel.VisibleChanged += PropertyPanelOnVisibleChanged;
-        PropertyPanelGrid.PreviewKeyDown += PropertyPanelGridOnPreviewKeyDown;
+        this.PropertyPanel.Visible = false;
+        this.PropertyPanel.VisibleChanged += this.PropertyPanelOnVisibleChanged;
+        this.PropertyPanelGrid.PreviewKeyDown += this.PropertyPanelGridOnPreviewKeyDown;
 
-        TexViewer.Margin = new(); // required line
-        TexViewer.MouseActivity.MiddleClick += MouseActivityOnMiddleClick;
-        TexViewer.PreviewKeyDown += TexViewerOnPreviewKeyDown;
-        TexViewer.MouseDown += TexViewerOnMouseDown;
-        TexViewer.NavigateToNextFile += TexViewerOnNavigateToNextFile;
-        TexViewer.NavigateToPrevFile += TexViewerOnNavigateToPrevFile;
+        this.TexViewer.Margin = new(); // required line
+        this.TexViewer.MouseActivity.MiddleClick += this.MouseActivityOnMiddleClick;
+        this.TexViewer.PreviewKeyDown += this.TexViewerOnPreviewKeyDown;
+        this.TexViewer.MouseDown += this.TexViewerOnMouseDown;
+        this.TexViewer.NavigateToNextFile += this.TexViewerOnNavigateToNextFile;
+        this.TexViewer.NavigateToPrevFile += this.TexViewerOnNavigateToPrevFile;
     }
 
-    private void MouseActivityOnMiddleClick(Point cursor) => IsFullScreen = !IsFullScreen;
+    private void MouseActivityOnMiddleClick(Point cursor) => this.IsFullScreen = !this.IsFullScreen;
 
     public bool IsFullScreen {
-        get => _isFullScreen;
+        get => this._isFullScreen;
         set {
-            if (value == _isFullScreen)
+            if (value == this._isFullScreen)
                 return;
 
             using var redrawLock = new ControlExtensions.ScopedDisableRedraw(this);
 
             if (!value) {
-                ControlBox = _nonFullScreenControlBox;
-                FormBorderStyle = _nonFullScreenBorderStyle;
-                WindowState = _nonFullScreenWindowState;
-                Size = _nonFullScreenSize;
+                this.ControlBox = this._nonFullScreenControlBox;
+                this.FormBorderStyle = this._nonFullScreenBorderStyle;
+                this.WindowState = this._nonFullScreenWindowState;
+                this.Size = this._nonFullScreenSize;
             } else {
-                _nonFullScreenSize = Size;
+                this._nonFullScreenSize = this.Size;
 
-                _nonFullScreenControlBox = ControlBox;
-                ControlBox = false;
+                this._nonFullScreenControlBox = this.ControlBox;
+                this.ControlBox = false;
 
-                _nonFullScreenBorderStyle = FormBorderStyle;
-                FormBorderStyle = FormBorderStyle.None;
+                this._nonFullScreenBorderStyle = this.FormBorderStyle;
+                this.FormBorderStyle = FormBorderStyle.None;
 
-                _nonFullScreenWindowState = WindowState;
+                this._nonFullScreenWindowState = this.WindowState;
                 // Setting to normal then maximized is required to enter fullscreen, covering Windows task bar.
-                WindowState = FormWindowState.Normal;
-                WindowState = FormWindowState.Maximized;
+                this.WindowState = FormWindowState.Normal;
+                this.WindowState = FormWindowState.Maximized;
             }
 
-            _isFullScreen = value;
+            this._isFullScreen = value;
         }
     }
 
-    protected override bool ProcessCmdKey(ref Message msg, Keys keyData) {
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
         switch (keyData) {
             case Keys.S | Keys.Control: {
-                if (TexViewer.CurrentBitmapSource is { } source && TexViewer.BitmapSource?.FileName is { } fileName) {
+                if (this.TexViewer.CurrentBitmapSource is { } source &&
+                    this.TexViewer.BitmapSource?.FileName is { } fileName) {
                     using var sfd = new SaveFileDialog();
                     sfd.OverwritePrompt = true;
                     sfd.ClientGuid = TextureViewerSaveToGuid;
@@ -134,7 +138,8 @@ public partial class TextureViewer : Form {
                                     for (var i = 0; i < source.ImageCount; i++) {
                                         for (var j = 0; j < source.NumberOfMipmaps(i); j++) {
                                             for (var k = 0; k < source.NumSlicesOfMipmap(i, j); k++) {
-                                                using var d = File.Open(Path.Join(
+                                                using var d = File.Open(
+                                                    Path.Join(
                                                         Path.GetDirectoryName(sfd.FileName),
                                                         Path.ChangeExtension(
                                                             $"{Path.GetFileNameWithoutExtension(sfd.FileName)}.{i}.{j}.{k}._",
@@ -143,12 +148,15 @@ public partial class TextureViewer : Form {
                                                     FileAccess.Write);
                                                 var t = source.GetWicBitmapSourceAsync(i, j, k);
                                                 t.Wait();
-                                                t.Result.Save(d, sfd.FilterIndex switch {
-                                                    3 => WicCodec.GUID_ContainerFormatPng,
-                                                    4 => WicCodec.GUID_ContainerFormatJpeg,
-                                                    5 => WicCodec.GUID_ContainerFormatBmp,
-                                                    _ => throw new InvalidOperationException(),
-                                                });
+
+                                                t.Result.Save(
+                                                    d,
+                                                    sfd.FilterIndex switch {
+                                                        3 => GUID.GUID_ContainerFormatPng,
+                                                        4 => GUID.GUID_ContainerFormatJpeg,
+                                                        5 => GUID.GUID_ContainerFormatBmp,
+                                                        _ => throw new InvalidOperationException(),
+                                                    });
                                             }
                                         }
                                     }
@@ -173,149 +181,167 @@ public partial class TextureViewer : Form {
         }
     }
 
-    private void TexViewerOnMouseDown(object? sender, MouseEventArgs e) {
-        TexViewer.Focus();
+    private void TexViewerOnMouseDown(object? sender, MouseEventArgs e)
+    {
+        this.TexViewer.Focus();
     }
 
-    private void PropertyPanelGridOnPreviewKeyDown(object? sender, PreviewKeyDownEventArgs e) {
+    private void PropertyPanelGridOnPreviewKeyDown(object? sender, PreviewKeyDownEventArgs e)
+    {
         switch (e.KeyCode) {
             case Keys.Tab:
-                TogglePropertyGrid();
+                this.TogglePropertyGrid();
                 break;
         }
     }
 
-    private void TexViewerOnNavigateToPrevFile(object? sender, EventArgs eventArgs) {
-        if (_navigationTask.IsCompleted)
-            _navigationTask = Task.Run(
-                () => FindAndSelectFirstTexFile(_indexInPlaylist - 1, -1, _closeToken.Token),
-                _closeToken.Token);
+    private void TexViewerOnNavigateToPrevFile(object? sender, EventArgs eventArgs)
+    {
+        if (this._navigationTask.IsCompleted)
+            this._navigationTask = Task.Run(
+                () => this.FindAndSelectFirstTexFile(this._indexInPlaylist - 1, -1, this._closeToken.Token),
+                this._closeToken.Token);
     }
 
-    private void TexViewerOnNavigateToNextFile(object? sender, EventArgs eventArgs) {
-        if (_navigationTask.IsCompleted)
-            _navigationTask = Task.Run(
-                () => FindAndSelectFirstTexFile(_indexInPlaylist + 1, 1, _closeToken.Token),
-                _closeToken.Token);
+    private void TexViewerOnNavigateToNextFile(object? sender, EventArgs eventArgs)
+    {
+        if (this._navigationTask.IsCompleted)
+            this._navigationTask = Task.Run(
+                () => this.FindAndSelectFirstTexFile(this._indexInPlaylist + 1, 1, this._closeToken.Token),
+                this._closeToken.Token);
     }
 
-    private void TexViewerOnPreviewKeyDown(object? sender, PreviewKeyDownEventArgs e) {
+    private void TexViewerOnPreviewKeyDown(object? sender, PreviewKeyDownEventArgs e)
+    {
         switch (e.KeyCode) {
             case Keys.Tab:
-                TogglePropertyGrid();
+                this.TogglePropertyGrid();
                 e.IsInputKey = true;
                 break;
             case Keys.Enter:
-                IsFullScreen = !IsFullScreen;
-                if (IsFullScreen)
-                    TexViewer.ShowOverlayStringShort("Press Enter key again to exit full screen mode.");
+                this.IsFullScreen = !this.IsFullScreen;
+                if (this.IsFullScreen)
+                    this.TexViewer.ShowOverlayStringShort("Press Enter key again to exit full screen mode.");
                 break;
             case Keys.Escape:
-                if (IsFullScreen) {
-                    IsFullScreen = false;
-                    TexViewer.ShowOverlayStringShort("Press Esc key again to close.");
-                } else if (PropertyPanel.Visible)
-                    TogglePropertyGrid();
+                if (this.IsFullScreen) {
+                    this.IsFullScreen = false;
+                    this.TexViewer.ShowOverlayStringShort("Press Esc key again to close.");
+                } else if (this.PropertyPanel.Visible)
+                    this.TogglePropertyGrid();
                 else
-                    Close();
+                    this.Close();
 
                 break;
             case Keys.PageUp:
-                if (_navigationTask.IsCompleted)
-                    _navigationTask = Task.Run(
-                        () => FindAndSelectFirstTexFile(_indexInPlaylist - 1, -1, _closeToken.Token),
-                        _closeToken.Token);
+                if (this._navigationTask.IsCompleted)
+                    this._navigationTask = Task.Run(
+                        () => this.FindAndSelectFirstTexFile(this._indexInPlaylist - 1, -1, this._closeToken.Token),
+                        this._closeToken.Token);
                 break;
             case Keys.PageDown:
-                if (_navigationTask.IsCompleted)
-                    _navigationTask = Task.Run(
-                        () => FindAndSelectFirstTexFile(_indexInPlaylist + 1, 1, _closeToken.Token),
-                        _closeToken.Token);
+                if (this._navigationTask.IsCompleted)
+                    this._navigationTask = Task.Run(
+                        () => this.FindAndSelectFirstTexFile(this._indexInPlaylist + 1, 1, this._closeToken.Token),
+                        this._closeToken.Token);
                 break;
             case Keys.Home:
-                if (_navigationTask.IsCompleted)
-                    _navigationTask = Task.Run(
-                        () => FindAndSelectFirstTexFile(0, 1, _closeToken.Token),
-                        _closeToken.Token);
+                if (this._navigationTask.IsCompleted)
+                    this._navigationTask = Task.Run(
+                        () => this.FindAndSelectFirstTexFile(0, 1, this._closeToken.Token),
+                        this._closeToken.Token);
                 break;
             case Keys.End:
-                if (_navigationTask.IsCompleted)
-                    _navigationTask = Task.Run(
-                        () => FindAndSelectFirstTexFile(_playlist.Count - 1, -1, _closeToken.Token),
-                        _closeToken.Token);
+                if (this._navigationTask.IsCompleted)
+                    this._navigationTask = Task.Run(
+                        () => this.FindAndSelectFirstTexFile(this._playlist.Count - 1, -1, this._closeToken.Token),
+                        this._closeToken.Token);
                 break;
         }
     }
 
-    private void TogglePropertyGrid() {
+    private void TogglePropertyGrid()
+    {
         using var redrawLock = new ControlExtensions.ScopedDisableRedraw(this);
 
         using (this.DisableRedrawScoped()) {
-            var prev = RectangleToScreen(new(
-                TexViewer.Left + TexViewer.Margin.Left,
-                TexViewer.Top + TexViewer.Margin.Top,
-                TexViewer.Width - TexViewer.Margin.Horizontal,
-                TexViewer.Height - TexViewer.Margin.Vertical));
+            var prev = this.RectangleToScreen(
+                new(
+                    this.TexViewer.Left + this.TexViewer.Margin.Left,
+                    this.TexViewer.Top + this.TexViewer.Margin.Top,
+                    this.TexViewer.Width - this.TexViewer.Margin.Horizontal,
+                    this.TexViewer.Height - this.TexViewer.Margin.Vertical));
 
-            PropertyPanel.Visible = !PropertyPanel.Visible;
-            if (WindowState == FormWindowState.Normal) {
-                if (PropertyPanel.Visible) {
+            this.PropertyPanel.Visible = !this.PropertyPanel.Visible;
+            if (this.WindowState == FormWindowState.Normal) {
+                if (this.PropertyPanel.Visible) {
                     var screen = Screen.FromControl(this);
-                    var newWidth = Math.Min(Width + PropertyPanel.Width, screen.WorkingArea.Width);
-                    var newLeft = Left + newWidth > screen.WorkingArea.Right
+                    var newWidth = Math.Min(this.Width + this.PropertyPanel.Width, screen.WorkingArea.Width);
+                    var newLeft = this.Left + newWidth > screen.WorkingArea.Right
                         ? screen.WorkingArea.Right - newWidth
-                        : Left;
-                    SetBounds(newLeft, Top, newWidth, Height);
-                    PropertyPanel.Focus();
+                        : this.Left;
+                    this.SetBounds(newLeft, this.Top, newWidth, this.Height);
+                    this.PropertyPanel.Focus();
                 } else {
-                    Width -= PropertyPanel.Width;
-                    TexViewer.Focus();
+                    this.Width -= this.PropertyPanel.Width;
+                    this.TexViewer.Focus();
                 }
             }
 
-            var curr = RectangleToScreen(new(
-                TexViewer.Left + TexViewer.Margin.Left,
-                TexViewer.Top + TexViewer.Margin.Top,
-                TexViewer.Width - TexViewer.Margin.Horizontal,
-                TexViewer.Height - TexViewer.Margin.Vertical));
-            TexViewer.Pan = new(
-                TexViewer.Pan.X + prev.X + prev.Width / 2f - curr.X - curr.Width / 2f,
-                TexViewer.Pan.Y + prev.Y + prev.Height / 2f - curr.Y - curr.Height / 2f);
+            var curr = this.RectangleToScreen(
+                new(
+                    this.TexViewer.Left + this.TexViewer.Margin.Left,
+                    this.TexViewer.Top + this.TexViewer.Margin.Top,
+                    this.TexViewer.Width - this.TexViewer.Margin.Horizontal,
+                    this.TexViewer.Height - this.TexViewer.Margin.Vertical));
+            this.TexViewer.Pan = new(
+                this.TexViewer.Pan.X + prev.X + prev.Width / 2f - curr.X - curr.Width / 2f,
+                this.TexViewer.Pan.Y + prev.Y + prev.Height / 2f - curr.Y - curr.Height / 2f);
         }
     }
 
-    public void SetFile(IVirtualFileSystem tree, IVirtualFile file, FileResource fileResource, IVirtualFolder? folder,
-        IEnumerable<IVirtualFile> playlist) {
-        _vfs = tree;
-        _folder = folder;
-        _playlist.Clear();
-        _playlist.AddRange(playlist.Select(item => Tuple.Create(
-            item,
-            item.NameResolved && MultiBitmapViewerControl.MaySupportFileName(item.Name))));
+    public void SetFile(
+        IVirtualFileSystem tree,
+        IVirtualFile file,
+        FileResource fileResource,
+        IVirtualFolder? folder,
+        IEnumerable<IVirtualFile> playlist)
+    {
+        this._vfs = tree;
+        this._folder = folder;
+        this._playlist.Clear();
+        this._playlist.AddRange(
+            playlist.Select(
+                item => Tuple.Create(
+                    item,
+                    item.NameResolved && MultiBitmapViewerControl.MaySupportFileName(item.Name))));
 
         var fileTuple = Tuple.Create(file, true);
-        _indexInPlaylist = _playlist.IndexOf(fileTuple);
-        if (_indexInPlaylist < 0)
-            _playlist.Insert(_indexInPlaylist = 0, fileTuple);
-        SelectFile(_indexInPlaylist, fileResource);
+        this._indexInPlaylist = this._playlist.IndexOf(fileTuple);
+        if (this._indexInPlaylist < 0) this._playlist.Insert(this._indexInPlaylist = 0, fileTuple);
+        this.SelectFile(this._indexInPlaylist, fileResource);
     }
 
-    private async Task<bool> FindAndSelectFirstTexFile(int index, int step, CancellationToken cancellationToken,
-        bool cycle = true) {
-        if (_vfs is not { } tree || !_playlist.Any())
+    private async Task<bool> FindAndSelectFirstTexFile(
+        int index,
+        int step,
+        CancellationToken cancellationToken,
+        bool cycle = true)
+    {
+        if (this._vfs is not { } tree || !this._playlist.Any())
             return false;
 
         var invalidIndices = new List<int>();
         FileResource? fileResource = null;
-        for (; index >= 0 && index < _playlist.Count; index += step) {
-            var (item, confirmed) = _playlist[index];
+        for (; index >= 0 && index < this._playlist.Count; index += step) {
+            var (item, confirmed) = this._playlist[index];
 
             if (confirmed) {
-                await TexViewer.RunOnUiThread(() => {
-                    SelectFile(index, null);
-                    if (cycle)
-                        TexViewer.ClearOverlayString();
-                });
+                await this.TexViewer.RunOnUiThread(
+                    () => {
+                        this.SelectFile(index, null);
+                        if (cycle) this.TexViewer.ClearOverlayString();
+                    });
                 return true;
             }
 
@@ -331,7 +357,7 @@ public partial class TextureViewer : Form {
                 try {
                     fileResource = await lookup.AsFileResource(cancellationToken);
                     if (MultiBitmapViewerControl.MaySupportFileResource(fileResource)) {
-                        _playlist[index] = Tuple.Create(item, true);
+                        this._playlist[index] = Tuple.Create(item, true);
                         break;
                     }
                 } catch (Exception) {
@@ -345,26 +371,24 @@ public partial class TextureViewer : Form {
 
         if (invalidIndices.Any()) {
             if (step > 0) {
-                foreach (var i in Enumerable.Reverse(invalidIndices))
-                    _playlist.RemoveAt(i);
+                foreach (var i in Enumerable.Reverse(invalidIndices)) this._playlist.RemoveAt(i);
             } else {
-                foreach (var i in invalidIndices)
-                    _playlist.RemoveAt(i);
+                foreach (var i in invalidIndices) this._playlist.RemoveAt(i);
             }
         }
 
         if (fileResource is not null) {
-            await TexViewer.RunOnUiThread(() => {
-                SelectFile(index, fileResource);
-                if (cycle)
-                    TexViewer.ClearOverlayString();
-            });
+            await this.TexViewer.RunOnUiThread(
+                () => {
+                    this.SelectFile(index, fileResource);
+                    if (cycle) this.TexViewer.ClearOverlayString();
+                });
             return true;
         }
 
-        if (_playlist.Count == 0) {
-            await TexViewer.RunOnUiThread(() =>
-                TexViewer.ShowOverlayStringLong("No vaild texture file could be found."));
+        if (this._playlist.Count == 0) {
+            await this.TexViewer.RunOnUiThread(
+                () => this.TexViewer.ShowOverlayStringLong("No vaild texture file could be found."));
             return false;
         }
 
@@ -372,21 +396,23 @@ public partial class TextureViewer : Form {
             return false;
 
         if (index < 0) {
-            if (await FindAndSelectFirstTexFile(_playlist.Count - 1, -1, cancellationToken, false)) {
-                await TexViewer.RunOnUiThread(() =>
-                    TexViewer.ShowOverlayStringLong(_folder is null
-                        ? "This is the last file in this search."
-                        : "This is the last file in this folder."));
+            if (await this.FindAndSelectFirstTexFile(this._playlist.Count - 1, -1, cancellationToken, false)) {
+                await this.TexViewer.RunOnUiThread(
+                    () => this.TexViewer.ShowOverlayStringLong(
+                        this._folder is null
+                            ? "This is the last file in this search."
+                            : "This is the last file in this folder."));
                 return true;
             }
 
             return false;
         } else {
-            if (await FindAndSelectFirstTexFile(0, 1, cancellationToken, false)) {
-                await TexViewer.RunOnUiThread(() =>
-                    TexViewer.ShowOverlayStringLong(_folder is null
-                        ? "This is the first file in this search."
-                        : "This is the first file in this folder."));
+            if (await this.FindAndSelectFirstTexFile(0, 1, cancellationToken, false)) {
+                await this.TexViewer.RunOnUiThread(
+                    () => this.TexViewer.ShowOverlayStringLong(
+                        this._folder is null
+                            ? "This is the first file in this search."
+                            : "This is the first file in this folder."));
                 return true;
             }
 
@@ -394,40 +420,42 @@ public partial class TextureViewer : Form {
         }
     }
 
-    private void SelectFile(int index, FileResource? fileResource) {
-        if (_vfs is not { } tree)
+    private void SelectFile(int index, FileResource? fileResource)
+    {
+        if (this._vfs is not { } tree)
             return;
-        _indexInPlaylist = index;
-        var (file, _) = _playlist[index];
-        Text = tree.GetFullPath(file);
+        this._indexInPlaylist = index;
+        var (file, _) = this._playlist[index];
+        this.Text = tree.GetFullPath(file);
 
-        _texFileLoadCancelTokenSource?.Cancel();
-        _texFileLoadCancelTokenSource = null;
+        this._texFileLoadCancelTokenSource?.Cancel();
+        this._texFileLoadCancelTokenSource = null;
 
         if (fileResource is not null) {
-            TexViewer.SetFile(fileResource);
-            PropertyPanelGrid.SelectedObject = new WrapperTypeConverter().ConvertFrom(fileResource);
+            this.TexViewer.SetFile(fileResource);
+            this.PropertyPanelGrid.SelectedObject = new WrapperTypeConverter().ConvertFrom(fileResource);
             return;
         }
 
-        _texFileLoadCancelTokenSource = new();
+        this._texFileLoadCancelTokenSource = new();
 
         using var lookup = tree.GetLookup(file);
-        lookup.AsFileResource(_texFileLoadCancelTokenSource.Token)
+        lookup.AsFileResource(this._texFileLoadCancelTokenSource.Token)
             .ContinueWith(
                 r => {
-                    if (!r.IsCompletedSuccessfully || index != _indexInPlaylist)
+                    if (!r.IsCompletedSuccessfully || index != this._indexInPlaylist)
                         return;
-                    TexViewer.SetFile(r.Result);
-                    PropertyPanelGrid.SelectedObject = new WrapperTypeConverter().ConvertFrom(r.Result);
+                    this.TexViewer.SetFile(r.Result);
+                    this.PropertyPanelGrid.SelectedObject = new WrapperTypeConverter().ConvertFrom(r.Result);
                 },
-                _texFileLoadCancelTokenSource.Token,
+                this._texFileLoadCancelTokenSource.Token,
                 TaskContinuationOptions.None,
                 TaskScheduler.FromCurrentSynchronizationContext());
     }
 
-    public void ShowRelativeTo(Control opener) {
-        var rc = TexViewer.GetViewportRectangleSuggestion(opener);
+    public void ShowRelativeTo(Control opener)
+    {
+        var rc = this.TexViewer.GetViewportRectangleSuggestion(opener);
         if (rc.Width < MinimumDefaultWidth) {
             rc.X -= (MinimumDefaultWidth - rc.Width) / 2;
             rc.Width = MinimumDefaultWidth;
@@ -438,43 +466,46 @@ public partial class TextureViewer : Form {
             rc.Height = MinimumDefaultHeight;
         }
 
-        SetBounds(rc.X, rc.Y, rc.Width, rc.Height);
-        Show();
+        this.SetBounds(rc.X, rc.Y, rc.Width, rc.Height);
+        this.Show();
     }
 
-    protected override void OnFormClosed(FormClosedEventArgs e) {
-        _closeToken.Cancel();
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        this._closeToken.Cancel();
         base.OnFormClosed(e);
     }
 
-    protected override void OnResize(EventArgs e) {
+    protected override void OnResize(EventArgs e)
+    {
         base.OnResize(e);
-        if (WindowState == FormWindowState.Normal && IsFullScreen)
-            IsFullScreen = false;
-        ResizePanel(_unconstrainedPanelWidth);
+        if (this.WindowState == FormWindowState.Normal && this.IsFullScreen) this.IsFullScreen = false;
+        this.ResizePanel(this._unconstrainedPanelWidth);
     }
 
-    private void PropertyPanelOnVisibleChanged(object? sender, EventArgs e) {
-        if (PropertyPanel.Visible)
-            TexViewer.Margin = TexViewer.Margin with {Right = PropertyPanel.Width};
+    private void PropertyPanelOnVisibleChanged(object? sender, EventArgs e)
+    {
+        if (this.PropertyPanel.Visible)
+            this.TexViewer.Margin = this.TexViewer.Margin with { Right = this.PropertyPanel.Width };
         else
-            TexViewer.Margin = new();
+            this.TexViewer.Margin = new();
     }
 
-    private void PanelMouseTrackerOnPan(Point delta) {
-        ResizePanel(PropertyPanel.Width - delta.X);
-        _unconstrainedPanelWidth = PropertyPanel.Width;
+    private void PanelMouseTrackerOnPan(Point delta)
+    {
+        this.ResizePanel(this.PropertyPanel.Width - delta.X);
+        this._unconstrainedPanelWidth = this.PropertyPanel.Width;
     }
 
-    private void ResizePanel(int newSuggestedWidth) {
-        var clientSize = ClientSize;
+    private void ResizePanel(int newSuggestedWidth)
+    {
+        var clientSize = this.ClientSize;
         var newPanelWidth = newSuggestedWidth;
         if (newPanelWidth > clientSize.Width)
             newPanelWidth = clientSize.Width;
-        if (newPanelWidth < PropertyPanel.Padding.Horizontal)
-            newPanelWidth = PropertyPanel.Padding.Horizontal;
-        PropertyPanel.SetBounds(clientSize.Width - newPanelWidth, 0, newPanelWidth, clientSize.Height);
-        if (PropertyPanel.Visible)
-            TexViewer.Margin = TexViewer.Margin with {Right = newPanelWidth};
+        if (newPanelWidth < this.PropertyPanel.Padding.Horizontal)
+            newPanelWidth = this.PropertyPanel.Padding.Horizontal;
+        this.PropertyPanel.SetBounds(clientSize.Width - newPanelWidth, 0, newPanelWidth, clientSize.Height);
+        if (this.PropertyPanel.Visible) this.TexViewer.Margin = this.TexViewer.Margin with { Right = newPanelWidth };
     }
 }

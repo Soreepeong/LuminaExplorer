@@ -26,17 +26,19 @@ public class GltfAnimationSampler : BaseGltfObject {
 
     [JsonProperty("interpolation")]
     public string InterpolationString {
-        get => Interpolation switch {
-            GltfAnimationSamplerInterpolation.Linear => "LINEAR",
-            GltfAnimationSamplerInterpolation.Step => "STEP",
-            GltfAnimationSamplerInterpolation.CubicSpline => "CUBICSPLINE",
-            _ => throw new ArgumentOutOfRangeException(),
-        };
-        set => Interpolation = value switch {
-            "LINEAR" => GltfAnimationSamplerInterpolation.Linear,
-            "STEP" => GltfAnimationSamplerInterpolation.Step,
-            "CUBICSPLINE" => GltfAnimationSamplerInterpolation.CubicSpline,
-            _ => throw new ArgumentOutOfRangeException(),
-        };
+        get =>
+            this.Interpolation switch {
+                GltfAnimationSamplerInterpolation.Linear => "LINEAR",
+                GltfAnimationSamplerInterpolation.Step => "STEP",
+                GltfAnimationSamplerInterpolation.CubicSpline => "CUBICSPLINE",
+                _ => throw new ArgumentOutOfRangeException(),
+            };
+        set =>
+            this.Interpolation = value switch {
+                "LINEAR" => GltfAnimationSamplerInterpolation.Linear,
+                "STEP" => GltfAnimationSamplerInterpolation.Step,
+                "CUBICSPLINE" => GltfAnimationSamplerInterpolation.CubicSpline,
+                _ => throw new ArgumentOutOfRangeException(),
+            };
     }
 }

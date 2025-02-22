@@ -11,13 +11,14 @@ public abstract class AbstractFileResourceViewerControl : Control {
 
     public readonly MouseActivityTracker MouseActivity;
 
-    protected AbstractFileResourceViewerControl() {
-        MouseActivity = new(this);
+    protected AbstractFileResourceViewerControl()
+    {
+        this.MouseActivity = new(this);
     }
 
-    protected override void Dispose(bool disposing) {
-        if (disposing)
-            MouseActivity.Dispose();
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) this.MouseActivity.Dispose();
 
         base.Dispose(disposing);
     }
@@ -25,14 +26,15 @@ public abstract class AbstractFileResourceViewerControl : Control {
     public override Size GetPreferredSize(Size proposedSize) => new(720, 480);
 
     public virtual Task<Size> GetPreferredSizeAsync(Size proposedSize) =>
-        Task.FromResult(GetPreferredSize(proposedSize));
+        Task.FromResult(this.GetPreferredSize(proposedSize));
 
-    private Rectangle GetViewportRectangleSuggestionImpl(Screen screen, Control? opener, Size preferredSize) {
+    private Rectangle GetViewportRectangleSuggestionImpl(Screen screen, Control? opener, Size preferredSize)
+    {
         var pos = opener?.PointToScreen(new(opener.Width / 2, opener.Height / 2)) ?? new(
             screen.WorkingArea.Left + screen.WorkingArea.Width / 2,
             screen.WorkingArea.Top + screen.WorkingArea.Height / 2);
 
-        if (Parent is { } parent) {
+        if (this.Parent is { } parent) {
             var rcParentClient = parent.RectangleToScreen(parent.ClientRectangle);
 
             preferredSize = new(
@@ -55,14 +57,19 @@ public abstract class AbstractFileResourceViewerControl : Control {
         return new(pos, preferredSize);
     }
 
-    public Rectangle GetViewportRectangleSuggestion(Control? opener) {
+    public Rectangle GetViewportRectangleSuggestion(Control? opener)
+    {
         var screen = opener is null ? Screen.FromPoint(Cursor.Position) : Screen.FromControl(opener);
-        return GetViewportRectangleSuggestionImpl(screen, opener, GetPreferredSize(screen.WorkingArea.Size));
+        return this.GetViewportRectangleSuggestionImpl(screen, opener, this.GetPreferredSize(screen.WorkingArea.Size));
     }
 
-    public async Task<Rectangle> GetViewportRectangleSuggestionAsync(Control? opener) {
+    public async Task<Rectangle> GetViewportRectangleSuggestionAsync(Control? opener)
+    {
         var screen = opener is null ? Screen.FromPoint(Cursor.Position) : Screen.FromControl(opener);
-        return GetViewportRectangleSuggestionImpl(screen, opener, await GetPreferredSizeAsync(screen.WorkingArea.Size));
+        return this.GetViewportRectangleSuggestionImpl(
+            screen,
+            opener,
+            await this.GetPreferredSizeAsync(screen.WorkingArea.Size));
     }
 
     public Task RunOnUiThread(Action action, bool allowChildAttach = false) => Task.Factory.StartNew(
@@ -71,13 +78,13 @@ public abstract class AbstractFileResourceViewerControl : Control {
         allowChildAttach
             ? TaskCreationOptions.None
             : TaskCreationOptions.DenyChildAttach | TaskCreationOptions.RunContinuationsAsynchronously,
-        UiTaskScheduler);
+        this.UiTaskScheduler);
 
     public Task<T> RunOnUiThread<T>(Func<T> action, bool allowChildAttach = false) => Task.Factory.StartNew(
         action,
         default,
         allowChildAttach ? TaskCreationOptions.None : TaskCreationOptions.DenyChildAttach,
-        UiTaskScheduler);
+        this.UiTaskScheduler);
 
     public Task RunOnUiThreadAfter(Task taskBefore, Action<Task> action, bool allowChildAttach = false) =>
         taskBefore.ContinueWith(
@@ -86,7 +93,7 @@ public abstract class AbstractFileResourceViewerControl : Control {
             allowChildAttach
                 ? TaskContinuationOptions.None
                 : TaskContinuationOptions.DenyChildAttach | TaskContinuationOptions.RunContinuationsAsynchronously,
-            UiTaskScheduler);
+            this.UiTaskScheduler);
 
     public Task RunOnUiThreadAfter<T>(Task<T> taskBefore, Action<Task<T>> action, bool allowChildAttach = false) =>
         taskBefore.ContinueWith(
@@ -95,7 +102,7 @@ public abstract class AbstractFileResourceViewerControl : Control {
             allowChildAttach
                 ? TaskContinuationOptions.None
                 : TaskContinuationOptions.DenyChildAttach | TaskContinuationOptions.RunContinuationsAsynchronously,
-            UiTaskScheduler);
+            this.UiTaskScheduler);
 
     public Task RunOnUiThreadAfter<TReturn>(
         Task taskBefore,
@@ -107,7 +114,7 @@ public abstract class AbstractFileResourceViewerControl : Control {
             allowChildAttach
                 ? TaskContinuationOptions.None
                 : TaskContinuationOptions.DenyChildAttach | TaskContinuationOptions.RunContinuationsAsynchronously,
-            UiTaskScheduler);
+            this.UiTaskScheduler);
 
     public Task<TReturn> RunOnUiThreadAfter<T, TReturn>(
         Task<T> taskBefore,
@@ -119,5 +126,5 @@ public abstract class AbstractFileResourceViewerControl : Control {
             allowChildAttach
                 ? TaskContinuationOptions.None
                 : TaskContinuationOptions.DenyChildAttach | TaskContinuationOptions.RunContinuationsAsynchronously,
-            UiTaskScheduler);
+            this.UiTaskScheduler);
 }

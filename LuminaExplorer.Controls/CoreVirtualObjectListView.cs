@@ -12,16 +12,16 @@ public class CoreVirtualObjectListView : VirtualObjectListView {
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    protected override int VirtualListSize
-    {
+    protected override int VirtualListSize {
         get => base.VirtualListSize;
-        set
-        {
-            if (value == VirtualListSize || value < 0)
+        set {
+            if (value == this.VirtualListSize || value < 0)
                 return;
-            _virtualListSizeFieldInfo ??= typeof (ListView).GetField("_virtualListSize", BindingFlags.Instance | BindingFlags.NonPublic);
+            _virtualListSizeFieldInfo ??= typeof(ListView).GetField(
+                "_virtualListSize",
+                BindingFlags.Instance | BindingFlags.NonPublic);
             _virtualListSizeFieldInfo!.SetValue(this, value);
-            if (!IsHandleCreated || DesignMode)
+            if (!this.IsHandleCreated || this.DesignMode)
                 return;
             NativeMethods.SetItemCount(this, value);
         }

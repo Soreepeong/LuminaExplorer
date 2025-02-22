@@ -73,8 +73,9 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// <summary>
     /// Initializes a new instance of the VirtualFileDataObject class.
     /// </summary>
-    public VirtualFileDataObject() {
-        IsAsynchronous = true;
+    public VirtualFileDataObject()
+    {
+        this.IsAsynchronous = true;
     }
 
     /// <summary>
@@ -83,9 +84,10 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// <param name="startAction">Optional action to run at the start of the data transfer.</param>
     /// <param name="endAction">Optional action to run at the end of the data transfer.</param>
     public VirtualFileDataObject(Action<VirtualFileDataObject>? startAction, Action<VirtualFileDataObject>? endAction)
-        : this() {
-        _startAction = startAction;
-        _endAction = endAction;
+        : this()
+    {
+        this._startAction = startAction;
+        this._endAction = endAction;
     }
 
     #region IDataObject Members
@@ -100,10 +102,16 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// <param name="adviseSink">A pointer to the IAdviseSink interface on the advisory sink that will receive the change notification.</param>
     /// <param name="connection">When this method returns, contains a pointer to a DWORD token that identifies this connection.</param>
     /// <returns>HRESULT success code.</returns>
-    [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
+    [SuppressMessage(
+        "Microsoft.Security",
+        "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
         Justification = "Method doesn't decrease security.")]
-    int System.Runtime.InteropServices.ComTypes.IDataObject.DAdvise(ref FORMATETC pFormatetc, ADVF advf,
-        IAdviseSink adviseSink, out int connection) {
+    int System.Runtime.InteropServices.ComTypes.IDataObject.DAdvise(
+        ref FORMATETC pFormatetc,
+        ADVF advf,
+        IAdviseSink adviseSink,
+        out int connection)
+    {
         Marshal.ThrowExceptionForHR(NativeMethods.OLE_E_ADVISENOTSUPPORTED);
         throw new NotImplementedException();
     }
@@ -112,9 +120,12 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// Destroys a notification connection that had been previously established.
     /// </summary>
     /// <param name="connection">A DWORD token that specifies the connection to remove.</param>
-    [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
+    [SuppressMessage(
+        "Microsoft.Security",
+        "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
         Justification = "Method doesn't decrease security.")]
-    void System.Runtime.InteropServices.ComTypes.IDataObject.DUnadvise(int connection) {
+    void System.Runtime.InteropServices.ComTypes.IDataObject.DUnadvise(int connection)
+    {
         Marshal.ThrowExceptionForHR(NativeMethods.OLE_E_ADVISENOTSUPPORTED);
         throw new NotImplementedException();
     }
@@ -124,9 +135,12 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// </summary>
     /// <param name="enumAdvise">When this method returns, contains an IEnumSTATDATA that receives the interface pointer to the new enumerator object.</param>
     /// <returns>HRESULT success code.</returns>
-    [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
+    [SuppressMessage(
+        "Microsoft.Security",
+        "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
         Justification = "Method doesn't decrease security.")]
-    int System.Runtime.InteropServices.ComTypes.IDataObject.EnumDAdvise(out IEnumSTATDATA enumAdvise) {
+    int System.Runtime.InteropServices.ComTypes.IDataObject.EnumDAdvise(out IEnumSTATDATA enumAdvise)
+    {
         Marshal.ThrowExceptionForHR(NativeMethods.OLE_E_ADVISENOTSUPPORTED);
         throw new NotImplementedException();
     }
@@ -136,11 +150,14 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// </summary>
     /// <param name="direction">One of the DATADIR values that specifies the direction of the data.</param>
     /// <returns>IEnumFORMATETC interface.</returns>
-    [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
+    [SuppressMessage(
+        "Microsoft.Security",
+        "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
         Justification = "Method doesn't decrease security.")]
-    IEnumFORMATETC System.Runtime.InteropServices.ComTypes.IDataObject.EnumFormatEtc(DATADIR direction) {
+    IEnumFORMATETC System.Runtime.InteropServices.ComTypes.IDataObject.EnumFormatEtc(DATADIR direction)
+    {
         if (direction == DATADIR.DATADIR_GET) {
-            if (0 == _dataObjects.Count) {
+            if (0 == this._dataObjects.Count) {
                 // Note: SHCreateStdEnumFmtEtc fails for a count of 0; throw helpful exception
                 throw new InvalidOperationException(
                     "VirtualFileDataObject requires at least one data object to enumerate.");
@@ -148,8 +165,11 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
 
             // Create enumerator and return it
             IEnumFORMATETC enumerator;
-            if (NativeMethods.Succeeded(NativeMethods.SHCreateStdEnumFmtEtc((uint) (_dataObjects.Count),
-                    _dataObjects.Select(d => d.FORMATETC).ToArray(), out enumerator))) {
+            if (NativeMethods.Succeeded(
+                    NativeMethods.SHCreateStdEnumFmtEtc(
+                        (uint) (this._dataObjects.Count),
+                        this._dataObjects.Select(d => d.FORMATETC).ToArray(),
+                        out enumerator))) {
                 return enumerator;
             }
 
@@ -166,8 +186,10 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// <param name="formatIn">A pointer to a FORMATETC structure that defines the format, medium, and target device that the caller would like to use to retrieve data in a subsequent call such as GetData.</param>
     /// <param name="formatOut">When this method returns, contains a pointer to a FORMATETC structure that contains the most general information possible for a specific rendering, making it canonically equivalent to formatetIn.</param>
     /// <returns>HRESULT success code.</returns>
-    int System.Runtime.InteropServices.ComTypes.IDataObject.GetCanonicalFormatEtc(ref FORMATETC formatIn,
-        out FORMATETC formatOut) {
+    int System.Runtime.InteropServices.ComTypes.IDataObject.GetCanonicalFormatEtc(
+        ref FORMATETC formatIn,
+        out FORMATETC formatOut)
+    {
         throw new NotImplementedException();
     }
 
@@ -176,28 +198,32 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// </summary>
     /// <param name="format">A pointer to a FORMATETC structure that defines the format, medium, and target device to use when passing the data.</param>
     /// <param name="medium">When this method returns, contains a pointer to the STGMEDIUM structure that indicates the storage medium containing the returned data through its tymed member, and the responsibility for releasing the medium through the value of its pUnkForRelease member.</param>
-    [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
+    [SuppressMessage(
+        "Microsoft.Security",
+        "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
         Justification = "Method doesn't decrease security.")]
-    void System.Runtime.InteropServices.ComTypes.IDataObject.GetData(ref FORMATETC format, out STGMEDIUM medium) {
-        medium = new STGMEDIUM();
+    void System.Runtime.InteropServices.ComTypes.IDataObject.GetData(ref FORMATETC format, out STGMEDIUM medium)
+    {
+        medium = new();
         var hr = ((System.Runtime.InteropServices.ComTypes.IDataObject) this).QueryGetData(ref format);
         if (NativeMethods.Succeeded(hr)) {
             // Find the best match
             var formatCopy =
                 format; // Cannot use ref or out parameter inside an anonymous method, lambda expression, or query expression
-            var dataObject = _dataObjects
-                .Where(d =>
-                    (d.FORMATETC.cfFormat == formatCopy.cfFormat) &&
-                    (d.FORMATETC.dwAspect == formatCopy.dwAspect) &&
-                    (0 != (d.FORMATETC.tymed & formatCopy.tymed) &&
-                     (d.FORMATETC.lindex == formatCopy.lindex)))
+            var dataObject = this._dataObjects
+                .Where(
+                    d =>
+                        (d.FORMATETC.cfFormat == formatCopy.cfFormat) &&
+                        (d.FORMATETC.dwAspect == formatCopy.dwAspect) &&
+                        (0 != (d.FORMATETC.tymed & formatCopy.tymed) &&
+                            (d.FORMATETC.lindex == formatCopy.lindex)))
                 .FirstOrDefault();
             if (dataObject != null) {
-                if (!IsAsynchronous && (FILEDESCRIPTORW == dataObject.FORMATETC.cfFormat) && !_inOperation) {
+                if (!this.IsAsynchronous && (FILEDESCRIPTORW == dataObject.FORMATETC.cfFormat) && !this._inOperation) {
                     // Enter the operation and call the start action
-                    _inOperation = true;
-                    if (null != _startAction) {
-                        _startAction(this);
+                    this._inOperation = true;
+                    if (null != this._startAction) {
+                        this._startAction(this);
                     }
                 }
 
@@ -225,7 +251,8 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// </summary>
     /// <param name="format">A pointer to a FORMATETC structure that defines the format, medium, and target device to use when passing the data.</param>
     /// <param name="medium">A STGMEDIUM that defines the storage medium containing the data being transferred.</param>
-    void System.Runtime.InteropServices.ComTypes.IDataObject.GetDataHere(ref FORMATETC format, ref STGMEDIUM medium) {
+    void System.Runtime.InteropServices.ComTypes.IDataObject.GetDataHere(ref FORMATETC format, ref STGMEDIUM medium)
+    {
         throw new NotImplementedException();
     }
 
@@ -234,10 +261,11 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// </summary>
     /// <param name="format">A pointer to a FORMATETC structure that defines the format, medium, and target device to use for the query.</param>
     /// <returns>HRESULT success code.</returns>
-    int System.Runtime.InteropServices.ComTypes.IDataObject.QueryGetData(ref FORMATETC format) {
+    int System.Runtime.InteropServices.ComTypes.IDataObject.QueryGetData(ref FORMATETC format)
+    {
         var formatCopy =
             format; // Cannot use ref or out parameter inside an anonymous method, lambda expression, or query expression
-        var formatMatches = _dataObjects.Where(d => d.FORMATETC.cfFormat == formatCopy.cfFormat).ToList();
+        var formatMatches = this._dataObjects.Where(d => d.FORMATETC.cfFormat == formatCopy.cfFormat).ToList();
         if (!formatMatches.Any()) {
             return NativeMethods.DV_E_FORMATETC;
         }
@@ -261,10 +289,15 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// <param name="formatIn">A FORMATETC structure that defines the format used by the data object when interpreting the data contained in the storage medium.</param>
     /// <param name="medium">A STGMEDIUM structure that defines the storage medium in which the data is being passed.</param>
     /// <param name="release">true to specify that the data object called, which implements SetData, owns the storage medium after the call returns.</param>
-    [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
+    [SuppressMessage(
+        "Microsoft.Security",
+        "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
         Justification = "Method doesn't decrease security.")]
-    void System.Runtime.InteropServices.ComTypes.IDataObject.SetData(ref FORMATETC formatIn, ref STGMEDIUM medium,
-        bool release) {
+    void System.Runtime.InteropServices.ComTypes.IDataObject.SetData(
+        ref FORMATETC formatIn,
+        ref STGMEDIUM medium,
+        bool release)
+    {
         var handled = false;
         if ((formatIn.dwAspect == DVASPECT.DVASPECT_CONTENT) &&
             (formatIn.tymed == TYMED.TYMED_HGLOBAL) &&
@@ -277,7 +310,7 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
                     var data = new byte[length];
                     Marshal.Copy(ptr, data, 0, length);
                     // Store it in our own format
-                    SetData(formatIn.cfFormat, data);
+                    this.SetData(formatIn.cfFormat, data);
                     handled = true;
                 } finally {
                     NativeMethods.GlobalUnlock(medium.unionmember);
@@ -291,13 +324,13 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
         }
 
         // Handle synchronous mode
-        if (!IsAsynchronous && (PERFORMEDDROPEFFECT == formatIn.cfFormat) && _inOperation) {
+        if (!this.IsAsynchronous && (PERFORMEDDROPEFFECT == formatIn.cfFormat) && this._inOperation) {
             // Call the end action and exit the operation
-            if (null != _endAction) {
-                _endAction(this);
+            if (null != this._endAction) {
+                this._endAction(this);
             }
 
-            _inOperation = false;
+            this._inOperation = false;
         }
 
         // Throw if unhandled
@@ -313,21 +346,22 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// </summary>
     /// <param name="dataFormat">Data format.</param>
     /// <param name="data">Sequence of data.</param>
-    public void SetData(short dataFormat, IEnumerable<byte> data) {
-        _dataObjects.Add(
-            new DataObject {
-                FORMATETC = new FORMATETC {
+    public void SetData(short dataFormat, IEnumerable<byte> data)
+    {
+        this._dataObjects.Add(
+            new() {
+                FORMATETC = new() {
                     cfFormat = dataFormat,
                     ptd = IntPtr.Zero,
                     dwAspect = DVASPECT.DVASPECT_CONTENT,
                     lindex = -1,
-                    tymed = TYMED.TYMED_HGLOBAL
+                    tymed = TYMED.TYMED_HGLOBAL,
                 },
                 GetData = () => {
                     var dataArray = data.ToArray();
                     var ptr = Marshal.AllocHGlobal(dataArray.Length);
                     Marshal.Copy(dataArray, 0, ptr, dataArray.Length);
-                    return new Tuple<IntPtr, int>(ptr, NativeMethods.S_OK);
+                    return new(ptr, NativeMethods.S_OK);
                 },
             });
     }
@@ -342,15 +376,16 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// Uses Stream instead of IEnumerable(T) because Stream is more likely
     /// to be natural for the expected scenarios.
     /// </remarks>
-    public void SetData(short dataFormat, int index, Action<Stream>? streamData) {
-        _dataObjects.Add(
-            new DataObject {
-                FORMATETC = new FORMATETC {
+    public void SetData(short dataFormat, int index, Action<Stream>? streamData)
+    {
+        this._dataObjects.Add(
+            new() {
+                FORMATETC = new() {
                     cfFormat = dataFormat,
                     ptd = IntPtr.Zero,
                     dwAspect = DVASPECT.DVASPECT_CONTENT,
                     lindex = index,
-                    tymed = TYMED.TYMED_ISTREAM
+                    tymed = TYMED.TYMED_ISTREAM,
                 },
                 GetData = () => {
                     // Create IStream for data
@@ -364,7 +399,7 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
                     // Return an IntPtr for the IStream
                     var ptr = Marshal.GetComInterfaceForObject(iStream, typeof(IStream));
                     Marshal.ReleaseComObject(iStream);
-                    return new Tuple<IntPtr, int>(ptr, NativeMethods.S_OK);
+                    return new(ptr, NativeMethods.S_OK);
                 },
             });
     }
@@ -373,13 +408,14 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// Provides data for the specified data format (FILEGROUPDESCRIPTOR/FILEDESCRIPTOR)
     /// </summary>
     /// <param name="fileDescriptorsEnumerable">Collection of virtual files.</param>
-    public void SetData(IEnumerable<FileDescriptor> fileDescriptorsEnumerable) {
+    public void SetData(IEnumerable<FileDescriptor> fileDescriptorsEnumerable)
+    {
         var fileDescriptors = fileDescriptorsEnumerable.ToList();
         // Prepare buffer
         var bytes = new List<byte>();
         // Add FILEGROUPDESCRIPTOR header
         bytes.AddRange(
-            StructureBytes(new NativeMethods.FILEGROUPDESCRIPTOR {cItems = (uint) (fileDescriptors.Count())}));
+            StructureBytes(new NativeMethods.FILEGROUPDESCRIPTOR { cItems = (uint) (fileDescriptors.Count()) }));
         // Add n FILEDESCRIPTORs
         foreach (var fileDescriptor in fileDescriptors) {
             // Set required fields
@@ -410,11 +446,11 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
         }
 
         // Set CFSTR_FILEDESCRIPTORW
-        SetData(FILEDESCRIPTORW, bytes);
+        this.SetData(FILEDESCRIPTORW, bytes);
         // Set n CFSTR_FILECONTENTS
         var index = 0;
         foreach (var fileDescriptor in fileDescriptors) {
-            SetData(FILECONTENTS, index, fileDescriptor.StreamContents);
+            this.SetData(FILECONTENTS, index, fileDescriptor.StreamContents);
             index++;
         }
     }
@@ -423,24 +459,24 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// Gets or sets the CFSTR_PASTESUCCEEDED value for the object.
     /// </summary>
     public DragDropEffects? PasteSucceeded {
-        get => GetDropEffect(PASTESUCCEEDED);
-        set => SetData(PASTESUCCEEDED, BitConverter.GetBytes((uint) (value ?? DragDropEffects.None)));
+        get => this.GetDropEffect(PASTESUCCEEDED);
+        set => this.SetData(PASTESUCCEEDED, BitConverter.GetBytes((uint) (value ?? DragDropEffects.None)));
     }
 
     /// <summary>
     /// Gets or sets the CFSTR_PERFORMEDDROPEFFECT value for the object.
     /// </summary>
     public DragDropEffects? PerformedDropEffect {
-        get => GetDropEffect(PERFORMEDDROPEFFECT);
-        set => SetData(PERFORMEDDROPEFFECT, BitConverter.GetBytes((uint) (value ?? DragDropEffects.None)));
+        get => this.GetDropEffect(PERFORMEDDROPEFFECT);
+        set => this.SetData(PERFORMEDDROPEFFECT, BitConverter.GetBytes((uint) (value ?? DragDropEffects.None)));
     }
 
     /// <summary>
     /// Gets or sets the CFSTR_PREFERREDDROPEFFECT value for the object.
     /// </summary>
     public DragDropEffects? PreferredDropEffect {
-        get => GetDropEffect(PREFERREDDROPEFFECT);
-        set => SetData(PREFERREDDROPEFFECT, BitConverter.GetBytes((uint) (value ?? DragDropEffects.None)));
+        get => this.GetDropEffect(PREFERREDDROPEFFECT);
+        set => this.SetData(PREFERREDDROPEFFECT, BitConverter.GetBytes((uint) (value ?? DragDropEffects.None)));
     }
 
     /// <summary>
@@ -448,13 +484,17 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// </summary>
     /// <param name="format">Clipboard format.</param>
     /// <returns>DragDropEffects value or null.</returns>
-    [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
+    [SuppressMessage(
+        "Microsoft.Security",
+        "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
         Justification = "Method doesn't decrease security.")]
-    private DragDropEffects? GetDropEffect(short format) {
+    private DragDropEffects? GetDropEffect(short format)
+    {
         // Get the most recent setting
-        var dataObject = _dataObjects
-            .LastOrDefault(d => (format == d.FORMATETC.cfFormat) &&
-                                d.FORMATETC is {dwAspect: DVASPECT.DVASPECT_CONTENT, tymed: TYMED.TYMED_HGLOBAL});
+        var dataObject = this._dataObjects
+            .LastOrDefault(
+                d => (format == d.FORMATETC.cfFormat) &&
+                    d.FORMATETC is { dwAspect: DVASPECT.DVASPECT_CONTENT, tymed: TYMED.TYMED_HGLOBAL });
         if (null != dataObject) {
             // Read the value and return it
             var result = dataObject.GetData();
@@ -486,26 +526,29 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// Called by a drop source to specify whether the data object supports asynchronous data extraction.
     /// </summary>
     /// <param name="fDoOpAsync">A Boolean value that is set to VARIANT_TRUE to indicate that an asynchronous operation is supported, or VARIANT_FALSE otherwise.</param>
-    void IAsyncOperation.SetAsyncMode(int fDoOpAsync) {
-        IsAsynchronous = NativeMethods.VARIANT_FALSE != fDoOpAsync;
+    void IAsyncOperation.SetAsyncMode(int fDoOpAsync)
+    {
+        this.IsAsynchronous = NativeMethods.VARIANT_FALSE != fDoOpAsync;
     }
 
     /// <summary>
     /// Called by a drop target to determine whether the data object supports asynchronous data extraction.
     /// </summary>
     /// <param name="pfIsOpAsync">A Boolean value that is set to VARIANT_TRUE to indicate that an asynchronous operation is supported, or VARIANT_FALSE otherwise.</param>
-    void IAsyncOperation.GetAsyncMode(out int pfIsOpAsync) {
-        pfIsOpAsync = IsAsynchronous ? NativeMethods.VARIANT_TRUE : NativeMethods.VARIANT_FALSE;
+    void IAsyncOperation.GetAsyncMode(out int pfIsOpAsync)
+    {
+        pfIsOpAsync = this.IsAsynchronous ? NativeMethods.VARIANT_TRUE : NativeMethods.VARIANT_FALSE;
     }
 
     /// <summary>
     /// Called by a drop target to indicate that asynchronous data extraction is starting.
     /// </summary>
     /// <param name="pbcReserved">Reserved. Set this value to NULL.</param>
-    void IAsyncOperation.StartOperation(IBindCtx pbcReserved) {
-        _inOperation = true;
-        if (null != _startAction) {
-            _startAction(this);
+    void IAsyncOperation.StartOperation(IBindCtx pbcReserved)
+    {
+        this._inOperation = true;
+        if (null != this._startAction) {
+            this._startAction(this);
         }
     }
 
@@ -513,8 +556,9 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// Called by the drop source to determine whether the target is extracting data asynchronously.
     /// </summary>
     /// <param name="pfInAsyncOp">Set to VARIANT_TRUE if data extraction is being handled asynchronously, or VARIANT_FALSE otherwise.</param>
-    void IAsyncOperation.InOperation(out int pfInAsyncOp) {
-        pfInAsyncOp = _inOperation ? NativeMethods.VARIANT_TRUE : NativeMethods.VARIANT_FALSE;
+    void IAsyncOperation.InOperation(out int pfInAsyncOp)
+    {
+        pfInAsyncOp = this._inOperation ? NativeMethods.VARIANT_TRUE : NativeMethods.VARIANT_FALSE;
     }
 
     /// <summary>
@@ -523,12 +567,13 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// <param name="hResult">An HRESULT value that indicates the outcome of the data extraction. Set to S_OK if successful, or a COM error code otherwise.</param>
     /// <param name="pbcReserved">Reserved. Set to NULL.</param>
     /// <param name="dwEffects">A DROPEFFECT value that indicates the result of an optimized move. This should be the same value that would be passed to the data object as a CFSTR_PERFORMEDDROPEFFECT format with a normal data extraction operation.</param>
-    void IAsyncOperation.EndOperation(int hResult, IBindCtx pbcReserved, uint dwEffects) {
-        if (null != _endAction) {
-            _endAction(this);
+    void IAsyncOperation.EndOperation(int hResult, IBindCtx pbcReserved, uint dwEffects)
+    {
+        if (null != this._endAction) {
+            this._endAction(this);
         }
 
-        _inOperation = false;
+        this._inOperation = false;
     }
 
     #endregion
@@ -538,9 +583,12 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// </summary>
     /// <param name="source">Structure to return.</param>
     /// <returns>In-memory representation of structure.</returns>
-    [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
+    [SuppressMessage(
+        "Microsoft.Security",
+        "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands",
         Justification = "Method doesn't decrease security.")]
-    private static IEnumerable<byte> StructureBytes(object source) {
+    private static IEnumerable<byte> StructureBytes(object source)
+    {
         // Set up for call to StructureToPtr
         var size = Marshal.SizeOf(source.GetType());
         var ptr = Marshal.AllocHGlobal(size);
@@ -559,7 +607,9 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
     /// <summary>
     /// Class representing a virtual file for use by drag/drop or the clipboard.
     /// </summary>
-    [SuppressMessage("Microsoft.Design", "CA1034:NestedTypesShouldNotBeVisible",
+    [SuppressMessage(
+        "Microsoft.Design",
+        "CA1034:NestedTypesShouldNotBeVisible",
         Justification = "Deliberate to provide obvious coupling.")]
     public class FileDescriptor {
         /// <summary>
@@ -622,9 +672,10 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
         /// </summary>
         /// <param name="item1">The value of the tuple's first component.</param>
         /// <param name="item2">The value of the tuple's second component.</param>
-        public Tuple(T1 item1, T2 item2) {
-            Item1 = item1;
-            Item2 = item2;
+        public Tuple(T1 item1, T2 item2)
+        {
+            this.Item1 = item1;
+            this.Item2 = item2;
         }
     }
 
@@ -641,8 +692,9 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
         /// Initializes a new instance of the IStreamWrapper class.
         /// </summary>
         /// <param name="iStream">IStream instance to wrap.</param>
-        public IStreamWrapper(IStream iStream) {
-            _iStream = iStream;
+        public IStreamWrapper(IStream iStream)
+        {
+            this._iStream = iStream;
         }
 
         /// <summary>
@@ -663,7 +715,8 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
         /// <summary>
         /// Clears all buffers for this stream and causes any buffered data to be written to the underlying device.
         /// </summary>
-        public override void Flush() {
+        public override void Flush()
+        {
             throw new NotImplementedException();
         }
 
@@ -687,7 +740,8 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
         /// <param name="offset">The zero-based byte offset in buffer at which to begin storing the data read from the current stream.</param>
         /// <param name="count">The maximum number of bytes to be read from the current stream.</param>
         /// <returns>The total number of bytes read into the buffer. This can be less than the number of bytes requested if that many bytes are not currently available, or zero (0) if the end of the stream has been reached.</returns>
-        public override int Read(byte[] buffer, int offset, int count) {
+        public override int Read(byte[] buffer, int offset, int count)
+        {
             throw new NotImplementedException();
         }
 
@@ -697,7 +751,8 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
         /// <param name="offset">A byte offset relative to the origin parameter.</param>
         /// <param name="origin">A value of type SeekOrigin indicating the reference point used to obtain the new position.</param>
         /// <returns>The new position within the current stream.</returns>
-        public override long Seek(long offset, SeekOrigin origin) {
+        public override long Seek(long offset, SeekOrigin origin)
+        {
             throw new NotImplementedException();
         }
 
@@ -705,7 +760,8 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
         /// Sets the length of the current stream.
         /// </summary>
         /// <param name="value">The desired length of the current stream in bytes.</param>
-        public override void SetLength(long value) {
+        public override void SetLength(long value)
+        {
             throw new NotImplementedException();
         }
 
@@ -715,13 +771,14 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
         /// <param name="buffer">An array of bytes. This method copies count bytes from buffer to the current stream.</param>
         /// <param name="offset">The zero-based byte offset in buffer at which to begin copying bytes to the current stream.</param>
         /// <param name="count">The number of bytes to be written to the current stream.</param>
-        public override void Write(byte[] buffer, int offset, int count) {
+        public override void Write(byte[] buffer, int offset, int count)
+        {
             if (offset == 0) {
                 // Optimize common case to avoid creating extra buffers
-                _iStream.Write(buffer, count, IntPtr.Zero);
+                this._iStream.Write(buffer, count, IntPtr.Zero);
             } else {
                 // Easy way to provide the relevant byte[]
-                _iStream.Write(buffer.Skip(offset).ToArray(), count, IntPtr.Zero);
+                this._iStream.Write(buffer.Skip(offset).ToArray(), count, IntPtr.Zero);
             }
         }
     }
@@ -752,7 +809,9 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
         public const string CFSTR_PERFORMEDDROPEFFECT = "Performed DropEffect";
         public const string CFSTR_PREFERREDDROPEFFECT = "Preferred DropEffect";
 
-        [SuppressMessage("Microsoft.Performance", "CA1815:OverrideEqualsAndOperatorEqualsOnValueTypes",
+        [SuppressMessage(
+            "Microsoft.Performance",
+            "CA1815:OverrideEqualsAndOperatorEqualsOnValueTypes",
             Justification = "Structure exists for interop.")]
         [StructLayout(LayoutKind.Sequential)]
         public struct FILEGROUPDESCRIPTOR {
@@ -760,7 +819,9 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
             // Followed by 0 or more FILEDESCRIPTORs
         }
 
-        [SuppressMessage("Microsoft.Performance", "CA1815:OverrideEqualsAndOperatorEqualsOnValueTypes",
+        [SuppressMessage(
+            "Microsoft.Performance",
+            "CA1815:OverrideEqualsAndOperatorEqualsOnValueTypes",
             Justification = "Structure exists for interop.")]
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         public struct FILEDESCRIPTOR {
@@ -792,19 +853,26 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
             int GiveFeedback(uint dwEffect);
         }
 
-        [SuppressMessage("Microsoft.Design", "CA1021:AvoidOutParameters", MessageId = "2#",
+        [SuppressMessage(
+            "Microsoft.Design",
+            "CA1021:AvoidOutParameters",
+            MessageId = "2#",
             Justification = "Win32 API.")]
         [DllImport("shell32.dll")]
         public static extern int SHCreateStdEnumFmtEtc(uint cfmt, FORMATETC[] afmt, out IEnumFORMATETC ppenumFormatEtc);
 
         [return: MarshalAs(UnmanagedType.Interface)]
         [DllImport("ole32.dll", PreserveSig = false)]
-        public static extern IStream CreateStreamOnHGlobal(IntPtr hGlobal,
+        public static extern IStream CreateStreamOnHGlobal(
+            IntPtr hGlobal,
             [MarshalAs(UnmanagedType.Bool)] bool fDeleteOnRelease);
 
         [DllImport("ole32.dll", CharSet = CharSet.Auto, ExactSpelling = true, PreserveSig = false)]
-        public static extern void DoDragDrop(System.Runtime.InteropServices.ComTypes.IDataObject dataObject,
-            IDropSource dropSource, int allowedEffects, int[] finalEffect);
+        public static extern void DoDragDrop(
+            System.Runtime.InteropServices.ComTypes.IDataObject dataObject,
+            IDropSource dropSource,
+            int allowedEffects,
+            int[] finalEffect);
 
         [DllImport("kernel32.dll")]
         public static extern IntPtr GlobalLock(IntPtr hMem);
@@ -821,7 +889,8 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
         /// </summary>
         /// <param name="hr">HRESULT to check.</param>
         /// <returns>True iff a success code.</returns>
-        public static bool Succeeded(int hr) {
+        public static bool Succeeded(int hr)
+        {
             return 0 <= hr;
         }
     }

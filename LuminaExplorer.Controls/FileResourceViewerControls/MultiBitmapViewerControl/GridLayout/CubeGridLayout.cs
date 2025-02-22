@@ -15,10 +15,11 @@ public sealed class CubeGridLayout : IGridLayout {
         int cellWidth,
         int cellHeight,
         int horizontalSpacing,
-        int verticalSpacing) {
-        GridSize = new(cellWidth * 4 + horizontalSpacing * 3, cellHeight * 3 + verticalSpacing * 2);
-        Spacing = new(horizontalSpacing, verticalSpacing);
-        _cells = Enumerable.Range(0, 6)
+        int verticalSpacing)
+    {
+        this.GridSize = new(cellWidth * 4 + horizontalSpacing * 3, cellHeight * 3 + verticalSpacing * 2);
+        this.Spacing = new(horizontalSpacing, verticalSpacing);
+        this._cells = Enumerable.Range(0, 6)
             .Select(x => new GridLayoutCell(x, imageIndex, mipmap, x, cellWidth, cellHeight))
             .ToArray();
     }
@@ -32,7 +33,8 @@ public sealed class CubeGridLayout : IGridLayout {
     //
     // Unwrap ref
     // https://learnopengl.com/Advanced-OpenGL/Cubemaps
-    public Rectangle RectOf(int cellIndex) {
+    public Rectangle RectOf(int cellIndex)
+    {
         var (x, y) = cellIndex switch {
             // positive x (left)
             0 => (2, 1),
@@ -48,17 +50,17 @@ public sealed class CubeGridLayout : IGridLayout {
             5 => (3, 1),
             _ => throw new ArgumentOutOfRangeException(nameof(cellIndex), cellIndex, null),
         };
-        var cell = _cells[cellIndex];
+        var cell = this._cells[cellIndex];
         return new(
-            (cell.Width + Spacing.Width) * x,
-            (cell.Height + Spacing.Height) * y,
+            (cell.Width + this.Spacing.Width) * x,
+            (cell.Height + this.Spacing.Height) * y,
             cell.Width,
             cell.Height);
     }
 
-    public GridLayoutCell this[int cellIndex] => _cells[cellIndex];
+    public GridLayoutCell this[int cellIndex] => this._cells[cellIndex];
 
-    public IEnumerator<GridLayoutCell> GetEnumerator() => ((IEnumerable<GridLayoutCell>) _cells).GetEnumerator();
+    public IEnumerator<GridLayoutCell> GetEnumerator() => ((IEnumerable<GridLayoutCell>) this._cells).GetEnumerator();
 
-    IEnumerator IEnumerable.GetEnumerator() => _cells.GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator() => this._cells.GetEnumerator();
 }

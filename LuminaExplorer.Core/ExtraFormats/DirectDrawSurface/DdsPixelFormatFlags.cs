@@ -25,13 +25,13 @@ public enum DdsPixelFormatFlags {
     /// contain valid data.
     /// </summary>
     Rgb = 0x40,
-    
+
     /// <summary>
     /// Used in some older DDS files for YUV uncompressed data (dwRGBBitCount contains the YUV bit count; dwRBitMask
     /// contains the Y mask, dwGBitMask contains the U mask, dwBBitMask contains the V mask)	
     /// </summary>
     Yuv = 0x200,
-    
+
     /// <summary>
     /// Used in some older DDS files for single channel color uncompressed data (dwRGBBitCount contains the luminance
     /// channel bit count; dwRBitMask contains the channel mask).

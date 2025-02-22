@@ -25,26 +25,28 @@ public class AnimationSet : IAnimation {
         ImmutableList<AnimationBlock> blocks,
         float duration,
         float blockDuration,
-        float frameDuration) {
-        Blocks = blocks;
-        BlockDuration = blockDuration;
-        FrameDuration = frameDuration;
-        Duration = duration;
-        _concatAnimation = new(blocks);
+        float frameDuration)
+    {
+        this.Blocks = blocks;
+        this.BlockDuration = blockDuration;
+        this.FrameDuration = frameDuration;
+        this.Duration = duration;
+        this._concatAnimation = new(blocks);
     }
 
     public float Duration { get; }
-    public ImmutableSortedSet<int> AffectedBoneIndices => _concatAnimation.AffectedBoneIndices;
-    public IVector3Track Translation(int boneIndex) => _concatAnimation.Translation(boneIndex);
-    public IQuaternionTrack Rotation(int boneIndex) => _concatAnimation.Rotation(boneIndex);
-    public IVector3Track Scale(int boneIndex) => _concatAnimation.Scale(boneIndex);
+    public ImmutableSortedSet<int> AffectedBoneIndices => this._concatAnimation.AffectedBoneIndices;
+    public IVector3Track Translation(int boneIndex) => this._concatAnimation.Translation(boneIndex);
+    public IQuaternionTrack Rotation(int boneIndex) => this._concatAnimation.Rotation(boneIndex);
+    public IVector3Track Scale(int boneIndex) => this._concatAnimation.Scale(boneIndex);
 
-    public static AnimationSet Decode(Node animationBinding) {
+    public static AnimationSet Decode(Node animationBinding)
+    {
         if (!animationBinding.AsMap.TryGetValue("animation", out var v) ||
             v is not ValueNode v2 ||
             v2.Node.Definition.Name != "hkaSplineCompressedAnimation")
             throw new NotSupportedException();
-        
+
         if (!animationBinding.AsMap.TryGetValue("transformTrackToBoneIndices", out var v3) ||
             v3 is not ValueArray v4 ||
             v4.InnerType.ElementType != FieldElementType.Integer)
@@ -53,23 +55,25 @@ public class AnimationSet : IAnimation {
         return Decode(v2.Node, v4.Values.Select(x => ((ValueInt) x!).Value).ToImmutableList());
     }
 
-    public static AnimationSet Decode(Node sca,
-        ImmutableList<int> transformTrackToBoneIndices) {
+    public static AnimationSet Decode(
+        Node sca,
+        ImmutableList<int> transformTrackToBoneIndices)
+    {
         var res = new List<AnimationBlock>();
 
         var numFrames = ((ValueInt) sca.AsMap["numFrames"]!).Value;
         var maxFramesPerBlock = ((ValueInt) sca.AsMap["maxFramesPerBlock"]!).Value;
         var numberOfTransformTracks = ((ValueInt) sca.AsMap["numberOfTransformTracks"]!).Value;
-        
+
         var duration = ((ValueFloat) sca.AsMap["duration"]!).Value;
         var frameDuration = ((ValueFloat) sca.AsMap["frameDuration"]!).Value;
         var maxBlockDuration = ((ValueFloat) sca.AsMap["blockDuration"]!).Value;
-        
+
         var blockOffsets = ((ValueArray) sca.AsMap["blockOffsets"]!).Values
             .Select(x => ((ValueInt) x!).Value).ToArray();
         var data = ((ValueArray) sca.AsMap["data"]!).Values
             .Select(x => ((ValueByte) x!).Value).ToArray();
-        
+
         var numPendingFrames = numFrames;
         var pendingDuration = duration;
         foreach (var blockOffset in blockOffsets) {
@@ -85,16 +89,33 @@ public class AnimationSet : IAnimation {
             pendingDuration -= blockDuration;
             var tracks = new List<AnimationTrack>();
             foreach (var mask in masks) {
-                var translations = VectorTrackFromSplineData(reader, mask.Translation, mask.TranslationQuantization,
-                    numBlockFrames, frameDuration, blockDuration, false);
+                var translations = VectorTrackFromSplineData(
+                    reader,
+                    mask.Translation,
+                    mask.TranslationQuantization,
+                    numBlockFrames,
+                    frameDuration,
+                    blockDuration,
+                    false);
                 reader.WithAlign(4);
 
-                var rotations = QuaternionTrackFromSplineData(reader, mask.Rotation, mask.RotationQuantization,
-                    numBlockFrames, frameDuration, blockDuration);
+                var rotations = QuaternionTrackFromSplineData(
+                    reader,
+                    mask.Rotation,
+                    mask.RotationQuantization,
+                    numBlockFrames,
+                    frameDuration,
+                    blockDuration);
                 reader.WithAlign(4);
 
-                var scales = VectorTrackFromSplineData(reader, mask.Scale, mask.ScaleQuantization, numBlockFrames,
-                    frameDuration, blockDuration, true);
+                var scales = VectorTrackFromSplineData(
+                    reader,
+                    mask.Scale,
+                    mask.ScaleQuantization,
+                    numBlockFrames,
+                    frameDuration,
+                    blockDuration,
+                    true);
                 reader.WithAlign(4);
 
                 tracks.Add(new(translations, rotations, scales));
@@ -113,7 +134,8 @@ public class AnimationSet : IAnimation {
         int numFrames,
         float frameDuration,
         float blockDuration,
-        bool isScale) {
+        bool isScale)
+    {
         if (vt.Spline()) {
             reader.ReadInto(out ushort numItems);
             reader.ReadInto(out byte degree);
@@ -176,16 +198,22 @@ public class AnimationSet : IAnimation {
                 translationControlPoints.Add(position);
             }
 
-            return new SplineVector3Track(new(3, translationControlPoints, knots, degree), blockDuration, numFrames - 1,
+            return new SplineVector3Track(
+                new(3, translationControlPoints, knots, degree),
+                blockDuration,
+                numFrames - 1,
                 frameDuration);
         }
 
         if (vt.Static()) {
-            return new StaticVector3Track(new(
-                vt.StaticX() ? reader.ReadSingle() : (isScale ? 1f : 0f),
-                vt.StaticY() ? reader.ReadSingle() : (isScale ? 1f : 0f),
-                vt.StaticZ() ? reader.ReadSingle() : (isScale ? 1f : 0f)
-            ), blockDuration, false);
+            return new StaticVector3Track(
+                new(
+                    vt.StaticX() ? reader.ReadSingle() : (isScale ? 1f : 0f),
+                    vt.StaticY() ? reader.ReadSingle() : (isScale ? 1f : 0f),
+                    vt.StaticZ() ? reader.ReadSingle() : (isScale ? 1f : 0f)
+                ),
+                blockDuration,
+                false);
         }
 
         return new StaticVector3Track(
@@ -200,17 +228,19 @@ public class AnimationSet : IAnimation {
         QuaternionQuantization quantType,
         int numFrames,
         float frameDuration,
-        float blockDuration) {
+        float blockDuration)
+    {
         if (qt.Spline()) {
             reader.ReadInto(out ushort numItems);
             reader.ReadInto(out byte degree);
             var knots = reader.ReadBytes(numItems + degree + 2);
-            
-            reader.WithAlign(quantType switch {
-                QuaternionQuantization.Quat32 => 4,
-                QuaternionQuantization.Quat48 => 2,
-                _ => 1
-            });
+
+            reader.WithAlign(
+                quantType switch {
+                    QuaternionQuantization.Quat32 => 4,
+                    QuaternionQuantization.Quat48 => 2,
+                    _ => 1,
+                });
 
             var rotationControlPoints = new List<float[]>();
             for (var i = 0; i <= numItems; ++i) {
@@ -218,23 +248,28 @@ public class AnimationSet : IAnimation {
                     QuaternionQuantization.Quat32 => reader.ReadHk32BitQuaternion(),
                     QuaternionQuantization.Quat40 => reader.ReadHk40BitQuaternion(),
                     QuaternionQuantization.Quat48 => reader.ReadHk48BitQuaternion(),
-                    _ => throw new NotSupportedException()
+                    _ => throw new NotSupportedException(),
                 };
 
-                rotationControlPoints.Add(new[] {rotation.X, rotation.Y, rotation.Z, rotation.W});
+                rotationControlPoints.Add([rotation.X, rotation.Y, rotation.Z, rotation.W]);
             }
 
-            return new SplineQuaternionTrack(new(4, rotationControlPoints, knots, degree), blockDuration, numFrames - 1,
+            return new SplineQuaternionTrack(
+                new(4, rotationControlPoints, knots, degree),
+                blockDuration,
+                numFrames - 1,
                 frameDuration);
         }
 
         if (qt.Static()) {
-            return new StaticQuaternionTrack(quantType switch {
+            return new StaticQuaternionTrack(
+                quantType switch {
                     QuaternionQuantization.Quat32 => reader.ReadHk32BitQuaternion(),
                     QuaternionQuantization.Quat40 => reader.ReadHk40BitQuaternion(),
                     QuaternionQuantization.Quat48 => reader.ReadHk48BitQuaternion(),
-                    _ => throw new NotSupportedException()
-                }, blockDuration,
+                    _ => throw new NotSupportedException(),
+                },
+                blockDuration,
                 false);
         }
 

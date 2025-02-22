@@ -6,9 +6,10 @@ using System.Runtime.InteropServices;
 namespace LuminaExplorer.App.Utils;
 
 public static partial class UiUtils {
-    private static readonly string[] SizeUnits = {"B", "KB", "MB", "GB", "TB"};
+    private static readonly string[] SizeUnits = ["B", "KB", "MB", "GB", "TB"];
 
-    public static string FormatSize(long size) {
+    public static string FormatSize(long size)
+    {
         if (size == 0)
             return "0 B";
 
@@ -21,7 +22,8 @@ public static partial class UiUtils {
         return $"{size:##,###} {SizeUnits[^1]}";
     }
 
-    public static string FormatSize(ulong size) {
+    public static string FormatSize(ulong size)
+    {
         if (size == 0)
             return "0 B";
 
@@ -34,7 +36,8 @@ public static partial class UiUtils {
         return $"{size:##,###} {SizeUnits[^1]}";
     }
 
-    public static Icon? ExtractPeIcon(string filePath, int index, bool largeIcon) {
+    public static Icon? ExtractPeIcon(string filePath, int index, bool largeIcon)
+    {
         if (filePath == null)
             throw new ArgumentNullException(nameof(filePath));
 
@@ -64,10 +67,18 @@ public static partial class UiUtils {
     private static partial bool DestroyIcon(nint hIcon);
 
     [LibraryImport("shell32", StringMarshalling = StringMarshalling.Utf16)]
-    private static partial int ExtractIconExW(string lpszFile, int nIconIndex, out nint phiconLarge, nint phiconSmall,
+    private static partial int ExtractIconExW(
+        string lpszFile,
+        int nIconIndex,
+        out nint phiconLarge,
+        nint phiconSmall,
         int nIcons);
 
     [LibraryImport("shell32", StringMarshalling = StringMarshalling.Utf16)]
-    private static partial int ExtractIconExW(string lpszFile, int nIconIndex, nint phiconLarge, out nint phiconSmall,
+    private static partial int ExtractIconExW(
+        string lpszFile,
+        int nIconIndex,
+        nint phiconLarge,
+        out nint phiconSmall,
         int nIcons);
 }

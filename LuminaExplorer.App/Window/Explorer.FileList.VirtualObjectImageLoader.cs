@@ -9,7 +9,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Lumina.Data.Structs;
-using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.VirtualFileSystem;
 using LuminaExplorer.Core.VirtualFileSystem.Physical;
@@ -34,168 +33,171 @@ public partial class Explorer {
         private int _height;
         private int _configurationGeneration;
 
-        public VirtualObjectImageLoader(int numThreads = default) {
+        public VirtualObjectImageLoader(int numThreads = default)
+        {
             if (numThreads == default)
                 numThreads = Environment.ProcessorCount;
 
-            _workers = Enumerable
+            this._workers = Enumerable
                 .Range(0, numThreads)
-                .Select(_ => Task.Factory.StartNew(
-                    WorkerBody,
-                    _disposing.Token,
-                    TaskCreationOptions.LongRunning,
-                    TaskScheduler.Default).Unwrap())
+                .Select(
+                    _ => Task.Factory.StartNew(
+                        this.WorkerBody,
+                        this._disposing.Token,
+                        TaskCreationOptions.LongRunning,
+                        TaskScheduler.Default).Unwrap())
                 .ToArray();
         }
 
-        public void Dispose() {
-            _disposing.Cancel();
+        public void Dispose()
+        {
+            this._disposing.Cancel();
             try {
-                Task.WaitAll(_workers);
+                Task.WaitAll(this._workers);
             } catch (Exception) {
                 // ignore
             }
 
-            lock (_syncRoot)
-                _previews.Dispose();
+            lock (this._syncRoot) this._previews.Dispose();
         }
 
         public event Action<VirtualObject, IVirtualFile, Bitmap>? ImageLoaded;
 
         public int Width {
-            get => _width;
+            get => this._width;
             set {
-                if (_width == value)
+                if (this._width == value)
                     return;
 
-                _width = value;
-                Flush();
+                this._width = value;
+                this.Flush();
             }
         }
 
         public int Height {
-            get => _height;
+            get => this._height;
             set {
-                if (_height == value)
+                if (this._height == value)
                     return;
 
-                _height = value;
-                Flush();
+                this._height = value;
+                this.Flush();
             }
         }
 
         public int Capacity {
-            get => _previews.Capacity;
+            get => this._previews.Capacity;
             set {
                 if (value < 0)
                     throw new ArgumentOutOfRangeException(nameof(value), value, null);
 
-                _previews.Capacity = value;
-                lock (_syncRoot) {
-                    while (_requests.Count > value) {
-                        var (vo, _) = _requestsOrdered.RemoveFront();
-                        _requests.Remove(vo);
+                this._previews.Capacity = value;
+                lock (this._syncRoot) {
+                    while (this._requests.Count > value) {
+                        var (vo, _) = this._requestsOrdered.RemoveFront();
+                        this._requests.Remove(vo);
                     }
                 }
             }
         }
 
         public InterpolationMode InterpolationMode {
-            get => _interpolationMode;
+            get => this._interpolationMode;
             set {
-                if (value == _interpolationMode)
+                if (value == this._interpolationMode)
                     return;
-                _interpolationMode = value;
-                Flush();
+                this._interpolationMode = value;
+                this.Flush();
             }
         }
 
-        public int Threads => _workers.Length;
+        public int Threads => this._workers.Length;
 
         public float CropThresholdAspectRatioRatio {
-            get => _cropThresholdAspectRatioRatio;
+            get => this._cropThresholdAspectRatioRatio;
             set {
-                if (EqualityComparer<float>.Default.Equals(_cropThresholdAspectRatioRatio, value))
+                if (EqualityComparer<float>.Default.Equals(this._cropThresholdAspectRatioRatio, value))
                     return;
 
-                _cropThresholdAspectRatioRatio = value;
-                Flush();
+                this._cropThresholdAspectRatioRatio = value;
+                this.Flush();
             }
         }
 
-        public void Flush() {
-            lock (_syncRoot) {
-                foreach (var f in _previews)
+        public void Flush()
+        {
+            lock (this._syncRoot) {
+                foreach (var f in this._previews)
                     f.Value.ShouldReload = true;
-                _requests.Clear();
-                _requestsOrdered.Clear();
-                _configurationGeneration++;
+                this._requests.Clear();
+                this._requestsOrdered.Clear();
+                this._configurationGeneration++;
             }
         }
 
         public bool TryGetBitmap(
             VirtualObject virtualObject,
             [MaybeNullWhen(false)] out Bitmap bitmap,
-            out bool isAssociationIcon) {
+            out bool isAssociationIcon)
+        {
             bitmap = null!;
             isAssociationIcon = false;
 
             if (virtualObject.IsFolder)
                 return false;
 
-            if (_previews.Capacity == 0)
+            if (this._previews.Capacity == 0)
                 return false;
 
-            lock (_syncRoot) {
-                if (_previews.TryGet(virtualObject.File, out var task)) {
+            lock (this._syncRoot) {
+                if (this._previews.TryGet(virtualObject.File, out var task)) {
                     bitmap = task.Bitmap;
                     isAssociationIcon = task.IsAssociationIcon;
                 }
 
-                if (task?.ShouldReload is not false && !_requests.Contains(virtualObject)) {
-                    _requests.Add(virtualObject);
+                if (task?.ShouldReload is not false && !this._requests.Contains(virtualObject)) {
+                    this._requests.Add(virtualObject);
 
-                    while (_requests.Count > _previews.Capacity) {
-                        var (vo, _) = _requestsOrdered.RemoveFront();
-                        _requests.Remove(vo);
+                    while (this._requests.Count > this._previews.Capacity) {
+                        var (vo, _) = this._requestsOrdered.RemoveFront();
+                        this._requests.Remove(vo);
                     }
 
-                    _requestsOrdered.AddBack(Tuple.Create(virtualObject, virtualObject.File));
+                    this._requestsOrdered.AddBack(Tuple.Create(virtualObject, virtualObject.File));
 
-                    if (_requestSemaphore.CurrentCount == 0)
-                        _requestSemaphore.Release();
+                    if (this._requestSemaphore.CurrentCount == 0) this._requestSemaphore.Release();
                 }
             }
 
             return bitmap is not null;
         }
 
-        private async Task WorkerBody() {
-            while (!_disposing.IsCancellationRequested) {
+        private async Task WorkerBody()
+        {
+            while (!this._disposing.IsCancellationRequested) {
                 int configurationGenerationOnTaking;
                 VirtualObject virtualObject;
                 IVirtualFile vfile;
                 while (true) {
-                    lock (_syncRoot) {
-                        if (!_requestsOrdered.IsEmpty) {
-                            (virtualObject, vfile) = _requestsOrdered.RemoveBack();
-                            configurationGenerationOnTaking = _configurationGeneration;
+                    lock (this._syncRoot) {
+                        if (!this._requestsOrdered.IsEmpty) {
+                            (virtualObject, vfile) = this._requestsOrdered.RemoveBack();
+                            configurationGenerationOnTaking = this._configurationGeneration;
 
-                            if (!_previews.TryGet(vfile, out var previousItem))
+                            if (!this._previews.TryGet(vfile, out var previousItem))
                                 break;
 
                             if (previousItem.Bitmap is null || previousItem.ShouldReload)
                                 break;
 
-                            lock (_syncRoot)
-                                _requests.Remove(virtualObject);
+                            lock (this._syncRoot) this._requests.Remove(virtualObject);
                         }
 
-                        if (!_requestsOrdered.IsEmpty)
+                        if (!this._requestsOrdered.IsEmpty)
                             continue;
                     }
 
-                    await _requestSemaphore.WaitAsync(_disposing.Token);
+                    await this._requestSemaphore.WaitAsync(this._disposing.Token);
                 }
 
                 var item = new PendingItem();
@@ -215,7 +217,7 @@ public partial class Explorer {
                     mightBeTexture |= ImagingExtensions.ThumbnailSupportedExtensions.Any(
                         x => vfile.Name.EndsWith(x, StringComparison.InvariantCultureIgnoreCase));
                     // may be an .atex file
-                    mightBeTexture |= !vfile.NameResolved && lookup is {Type: FileType.Standard, Size: > 256};
+                    mightBeTexture |= !vfile.NameResolved && lookup is { Type: FileType.Standard, Size: > 256 };
 
                     if (!mightBeTexture) {
                         if (vfile is PhysicalFile pf) {
@@ -231,22 +233,22 @@ public partial class Explorer {
                         continue;
                     }
 
-                    var w = Width;
-                    var h = Height;
+                    var w = this.Width;
+                    var h = this.Height;
                     await using var stream = lookup.CreateStream();
 
                     if (definitelyTexture)
                         sourceBitmap = await stream.ExtractMipmapOfSizeAtLeastForTex(
                             Math.Max(w, h),
                             virtualObject.PlatformId,
-                            _disposing.Token);
+                            this._disposing.Token);
                     else
                         sourceBitmap = await stream.ExtractMipmapOfSizeAtLeast(
                             Math.Max(w, h),
                             virtualObject.PlatformId,
-                            _disposing.Token);
+                            this._disposing.Token);
 
-                    if (_disposing.IsCancellationRequested)
+                    if (this._disposing.IsCancellationRequested)
                         return;
 
                     if (sourceBitmap.Width <= w && sourceBitmap.Height <= w) {
@@ -262,8 +264,8 @@ public partial class Explorer {
                     var targetAspectRatio = (float) w / h;
                     if (sourceAspectRatio < targetAspectRatio) {
                         // horizontally wider
-                        if (sourceAspectRatio < targetAspectRatio / _cropThresholdAspectRatioRatio) {
-                            sourceAspectRatio = targetAspectRatio / _cropThresholdAspectRatioRatio;
+                        if (sourceAspectRatio < targetAspectRatio / this._cropThresholdAspectRatioRatio) {
+                            sourceAspectRatio = targetAspectRatio / this._cropThresholdAspectRatioRatio;
                             srcRect.Width = (int) (sourceBitmap.Height / sourceAspectRatio);
                             srcRect.X = (sourceBitmap.Width - srcRect.Width) / 2;
                         }
@@ -272,8 +274,8 @@ public partial class Explorer {
                         h = (int) (w * sourceAspectRatio);
                     } else {
                         // vertically wider
-                        if (sourceAspectRatio > targetAspectRatio * _cropThresholdAspectRatioRatio) {
-                            sourceAspectRatio = targetAspectRatio * _cropThresholdAspectRatioRatio;
+                        if (sourceAspectRatio > targetAspectRatio * this._cropThresholdAspectRatioRatio) {
+                            sourceAspectRatio = targetAspectRatio * this._cropThresholdAspectRatioRatio;
                             srcRect.Height = (int) (sourceBitmap.Width * sourceAspectRatio);
                             srcRect.Y = (sourceBitmap.Height - srcRect.Height) / 2;
                         }
@@ -284,7 +286,7 @@ public partial class Explorer {
 
                     targetBitmap = new(w, h, PixelFormat.Format32bppArgb);
                     using var g = Graphics.FromImage(targetBitmap);
-                    g.InterpolationMode = _interpolationMode;
+                    g.InterpolationMode = this._interpolationMode;
                     g.DrawImage(sourceBitmap, new Rectangle(0, 0, w, h), srcRect, GraphicsUnit.Pixel);
 
                     item.Bitmap = targetBitmap;
@@ -296,23 +298,22 @@ public partial class Explorer {
                     sourceBitmap?.Dispose();
                     targetBitmap?.Dispose();
                     lookup?.Dispose();
-                    lock (_syncRoot) {
-                        if (_requests.Remove(virtualObject)) {
+                    lock (this._syncRoot) {
+                        if (this._requests.Remove(virtualObject)) {
                             // did any of the configuration get changed while the process?
-                            if (configurationGenerationOnTaking == _configurationGeneration) {
+                            if (configurationGenerationOnTaking == this._configurationGeneration) {
                                 if (item.TaskStatus == TaskStatus.Created)
                                     item.CompletionSource.SetResult();
                                 else
-                                    _previews.Add(vfile, item);
-                                if (item.Bitmap is { } b)
-                                    ImageLoaded?.Invoke(virtualObject, vfile, b);
+                                    this._previews.Add(vfile, item);
+                                if (item.Bitmap is { } b) this.ImageLoaded?.Invoke(virtualObject, vfile, b);
                             } else {
                                 item.Bitmap?.Dispose();
 
                                 // if the object still points to a same file, queue the task again.
                                 if (Equals(virtualObject.File, vfile)) {
-                                    _requests.Add(virtualObject);
-                                    _requestsOrdered.Add(Tuple.Create(virtualObject, vfile));
+                                    this._requests.Add(virtualObject);
+                                    this._requestsOrdered.Add(Tuple.Create(virtualObject, vfile));
                                 }
                             }
                         } else {
@@ -327,7 +328,7 @@ public partial class Explorer {
         private sealed class PendingItem : IDisposable {
             public TaskCompletionSource CompletionSource = new();
 
-            public TaskStatus TaskStatus => CompletionSource.Task.Status;
+            public TaskStatus TaskStatus => this.CompletionSource.Task.Status;
 
             public bool ShouldReload;
 
@@ -335,11 +336,12 @@ public partial class Explorer {
 
             public bool IsAssociationIcon;
 
-            public void Dispose() {
-                if (CompletionSource.Task.Status == TaskStatus.Created)
+            public void Dispose()
+            {
+                if (this.CompletionSource.Task.Status == TaskStatus.Created)
                     return;
 
-                CompletionSource.Task.ContinueWith(_ => { Bitmap?.Dispose(); });
+                this.CompletionSource.Task.ContinueWith(_ => { this.Bitmap?.Dispose(); });
             }
         }
     }

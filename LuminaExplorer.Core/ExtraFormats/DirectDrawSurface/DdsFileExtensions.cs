@@ -2,7 +2,9 @@
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using BCnEncoder.Shared.ImageFiles;
 using Lumina.Data.Files;
+using TerraFX.Interop.DirectX;
 
 namespace LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
 
@@ -13,7 +15,8 @@ public static class DdsFileExtensions {
             TexFile.TextureFormat.B4G4R4A4,
             TexFile.TextureFormat.B5G5R5A1);
 
-    public static DdsFile ToDdsFile(this TexFile tex, params TexFile.TextureFormat[] formatsToConvertToB8G8R8A8) {
+    public static DdsFile ToDdsFile(this TexFile tex, params TexFile.TextureFormat[] formatsToConvertToB8G8R8A8)
+    {
         var texFormat = tex.Header.Format;
         var texBuf = tex.TextureBuffer;
         var (dxgiFormat, _) = TexFile.GetDxgiFormatFromTextureFormat(texFormat, false);
@@ -35,14 +38,14 @@ public static class DdsFileExtensions {
                 Caps = DdsCaps1.Texture,
                 PixelFormat = new() {
                     Size = Unsafe.SizeOf<DdsPixelFormat>(),
-                }
+                },
             },
         };
 
-        if (tex.Header.MipLevels > 1) {
+        if (tex.Header.MipCount > 1) {
             legacyHeader.Header.Caps |= DdsCaps1.Complex | DdsCaps1.Mipmap;
             legacyHeader.Header.Flags |= DdsHeaderFlags.MipmapCount;
-            legacyHeader.Header.MipMapCount = tex.Header.MipLevels;
+            legacyHeader.Header.MipMapCount = tex.Header.MipCount;
         }
 
         if (tex.Header.Type.HasFlag(TexFile.Attribute.TextureType3D)) {
@@ -164,7 +167,7 @@ public static class DdsFileExtensions {
         DdsHeaderDxt10 dxt10Header;
         if (UseDxt10Header) {
             dxt10Header = new() {
-                DxgiFormat = (DxgiFormat) dxgiFormat,
+                DxgiFormat = (DXGI_FORMAT) dxgiFormat,
                 ArraySize = 1,
                 MiscFlags2 = DdsHeaderDxt10MiscFlags2.AlphaModeStraight,
             };

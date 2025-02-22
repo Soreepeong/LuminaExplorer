@@ -11,5 +11,5 @@ public struct ShcdHeader {
     public uint ShaderBytecodeBlockOffset;
     public uint InputStringBlockOffset;
 
-    public override string ToString() => $"{DirectXVersion}: {ShaderType}";
+    public override string ToString() => $"{this.DirectXVersion}: {this.ShaderType}";
 }

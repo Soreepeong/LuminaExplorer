@@ -17,19 +17,17 @@ public class YuvPixFmt : IPixFmt, IEquatable<YuvPixFmt> {
         ChannelDefinition? u = null,
         ChannelDefinition? v = null,
         ChannelDefinition? a = null,
-        ChannelDefinition? x = null) {
-        Alpha = alphaType;
-        Y = y ?? new();
-        U = u ?? new();
-        V = v ?? new();
-        A = a ?? new();
-        X = x ?? new();
-        Bpp = new[] {
-            Y.Bits + Y.Shift,
-            U.Bits + U.Shift,
-            V.Bits + V.Shift,
-            A.Bits + A.Shift,
-            X.Bits + X.Shift,
+        ChannelDefinition? x = null)
+    {
+        this.Alpha = alphaType;
+        this.Y = y ?? new();
+        this.U = u ?? new();
+        this.V = v ?? new();
+        this.A = a ?? new();
+        this.X = x ?? new();
+        this.Bpp = new[] {
+            this.Y.Bits + this.Y.Shift, this.U.Bits + this.U.Shift, this.V.Bits + this.V.Shift,
+            this.A.Bits + this.A.Shift, this.X.Bits + this.X.Shift,
         }.Max();
     }
 
@@ -37,19 +35,26 @@ public class YuvPixFmt : IPixFmt, IEquatable<YuvPixFmt> {
 
     public int Bpp { get; }
 
-    public void ToB8G8R8A8(Span<byte> target, int targetStride, ReadOnlySpan<byte> source, int sourceStride, int width,
-        int height) {
+    public void ToB8G8R8A8(
+        Span<byte> target,
+        int targetStride,
+        ReadOnlySpan<byte> source,
+        int sourceStride,
+        int width,
+        int height)
+    {
         throw new NotImplementedException();
     }
 
-    public bool Equals(YuvPixFmt? other) {
+    public bool Equals(YuvPixFmt? other)
+    {
         if (ReferenceEquals(null, other)) return false;
         if (ReferenceEquals(this, other)) return true;
-        return Y.Equals(other.Y) && U.Equals(other.U) && V.Equals(other.V) && A.Equals(other.A) && X.Equals(other.X) &&
-            Alpha == other.Alpha;
+        return this.Y.Equals(other.Y) && this.U.Equals(other.U) && this.V.Equals(other.V) && this.A.Equals(other.A) &&
+            this.X.Equals(other.X) && this.Alpha == other.Alpha;
     }
 
-    public override bool Equals(object? obj) => Equals(obj as YuvPixFmt);
+    public override bool Equals(object? obj) => this.Equals(obj as YuvPixFmt);
 
-    public override int GetHashCode() => HashCode.Combine(Y, U, V, A, X, (int) Alpha);
+    public override int GetHashCode() => HashCode.Combine(this.Y, this.U, this.V, this.A, this.X, (int) this.Alpha);
 }

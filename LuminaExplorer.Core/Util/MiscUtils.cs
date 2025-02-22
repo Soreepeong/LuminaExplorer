@@ -4,22 +4,26 @@ using System.Text;
 namespace LuminaExplorer.Core.Util;
 
 public static class MiscUtils {
-    public static int PositiveMod(int dividend, int divisor) {
+    public static int PositiveMod(int dividend, int divisor)
+    {
         var r = dividend % divisor;
         return r >= 0 ? r : divisor + r;
     }
 
-    public static float PositiveMod(float dividend, float divisor) {
+    public static float PositiveMod(float dividend, float divisor)
+    {
         var r = dividend % divisor;
         return r >= 0 ? r : divisor + r;
     }
 
-    public static float DivRem(float dividend, float divisor, out float remainder) {
+    public static float DivRem(float dividend, float divisor, out float remainder)
+    {
         remainder = dividend % divisor;
         return (int) Math.Floor(dividend / divisor);
     }
 
-    public static unsafe string GetStringNullTerminated(this Encoding encoding, ReadOnlySpan<byte> data) {
+    public static unsafe string GetStringNullTerminated(this Encoding encoding, ReadOnlySpan<byte> data)
+    {
         // can IsSingleByte + encoding.GetMaxByteCount() be used to determine this value?
         var len = 0;
         switch (encoding.CodePage) {
@@ -44,7 +48,8 @@ public static class MiscUtils {
         }
     }
 
-    public static int CompareNullable<T>(T? v1, T? v2) where T : class, IComparable<T> {
+    public static int CompareNullable<T>(T? v1, T? v2) where T : class, IComparable<T>
+    {
         if (v1 is null && v2 is null)
             return 0;
         if (v1 is null)
@@ -54,7 +59,8 @@ public static class MiscUtils {
         return v1.CompareTo(v2);
     }
 
-    public static int CompareNullable<T>(T? v1, T? v2) where T : struct, IComparable<T> {
+    public static int CompareNullable<T>(T? v1, T? v2) where T : struct, IComparable<T>
+    {
         if (v1 is null && v2 is null)
             return 0;
         if (v1 is null)
@@ -64,7 +70,8 @@ public static class MiscUtils {
         return v1.Value.CompareTo(v2.Value);
     }
 
-    public static int CompareNatural(string str1, string str2) {
+    public static int CompareNatural(string str1, string str2)
+    {
         var span1 = str1.AsSpan();
         var span2 = str2.AsSpan();
 

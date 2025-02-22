@@ -18,23 +18,33 @@ public class QueryTokenizer {
     private readonly ObjectPool<MemoryStream> _memoryStreamPool =
         ObjectPool.Create(new MemoryStreamPooledObjectPolicy());
 
-    public QueryTokenizer(string query) {
-        _query = query;
+    public QueryTokenizer(string query)
+    {
+        this._query = query;
     }
 
-    public IMatcher? Parse() => _NextQuery(0, out _, out var o) ? o : null;
+    public IMatcher? Parse() => this._NextQuery(0, out _, out var o) ? o : null;
 
-    private bool _NextQuery(int i, out int next, out IMatcher o, params uint[] extraTerminatorsIfUnescaped) => 
-        _NextQueryOperator(i, out next, out o, MultipleConditionsMatcher.OperatorType.Default, extraTerminatorsIfUnescaped);
+    private bool _NextQuery(int i, out int next, out IMatcher o, params uint[] extraTerminatorsIfUnescaped) =>
+        this._NextQueryOperator(
+            i,
+            out next,
+            out o,
+            MultipleConditionsMatcher.OperatorType.Default,
+            extraTerminatorsIfUnescaped);
 
-    private bool _NextQueryOperator(int i, out int next, out IMatcher o,
-        MultipleConditionsMatcher.OperatorType @operator, params uint[] extraTerminatorsIfUnescaped) {
-
+    private bool _NextQueryOperator(
+        int i,
+        out int next,
+        out IMatcher o,
+        MultipleConditionsMatcher.OperatorType @operator,
+        params uint[] extraTerminatorsIfUnescaped)
+    {
         o = null!;
         var matchers = new List<IMatcher>();
-        for (; ; i = next) {
+        for (;; i = next) {
             if (matchers.Any()) {
-                if (!_NextWhitespace(i, out next))
+                if (!this._NextWhitespace(i, out next))
                     break;
 
                 if (@operator != MultipleConditionsMatcher.OperatorType.Default) {
@@ -44,10 +54,10 @@ public class QueryTokenizer {
                         MultipleConditionsMatcher.OperatorType.And => "AND",
                         _ => throw new ArgumentOutOfRangeException(nameof(@operator), @operator, null),
                     };
-                    if (!_NextExactLiteral(next, out next, opName, opName.Length, false, false))
+                    if (!this._NextExactLiteral(next, out next, opName, opName.Length, false, false))
                         break;
 
-                    if (!_NextWhitespace(next, out next))
+                    if (!this._NextWhitespace(next, out next))
                         break;
                 }
 
@@ -57,22 +67,34 @@ public class QueryTokenizer {
             IMatcher? matcher;
             switch (@operator) {
                 case MultipleConditionsMatcher.OperatorType.Default:
-                    if (!_NextQueryOperator(i, out next, out matcher, MultipleConditionsMatcher.OperatorType.Or,
+                    if (!this._NextQueryOperator(
+                            i,
+                            out next,
+                            out matcher,
+                            MultipleConditionsMatcher.OperatorType.Or,
                             extraTerminatorsIfUnescaped))
                         matcher = null;
                     break;
                 case MultipleConditionsMatcher.OperatorType.Or:
-                    if (!_NextQueryOperator(i, out next, out matcher, MultipleConditionsMatcher.OperatorType.Xor,
+                    if (!this._NextQueryOperator(
+                            i,
+                            out next,
+                            out matcher,
+                            MultipleConditionsMatcher.OperatorType.Xor,
                             extraTerminatorsIfUnescaped))
                         matcher = null;
                     break;
                 case MultipleConditionsMatcher.OperatorType.Xor:
-                    if (!_NextQueryOperator(i, out next, out matcher, MultipleConditionsMatcher.OperatorType.And,
+                    if (!this._NextQueryOperator(
+                            i,
+                            out next,
+                            out matcher,
+                            MultipleConditionsMatcher.OperatorType.And,
                             extraTerminatorsIfUnescaped))
                         matcher = null;
                     break;
                 case MultipleConditionsMatcher.OperatorType.And:
-                    if (!_NextCondition(i, out next, out matcher, extraTerminatorsIfUnescaped))
+                    if (!this._NextCondition(i, out next, out matcher, extraTerminatorsIfUnescaped))
                         matcher = null;
                     break;
                 default:
@@ -94,10 +116,11 @@ public class QueryTokenizer {
         return true;
     }
 
-    private bool _NextCondition(int i, out int next, out IMatcher o, params uint[] extraTerminatorsIfUnescaped) {
+    private bool _NextCondition(int i, out int next, out IMatcher o, params uint[] extraTerminatorsIfUnescaped)
+    {
         o = null!;
 
-        if (_NextValidCodepoint(i, out next, out var c)) {
+        if (this._NextValidCodepoint(i, out next, out var c)) {
             if (c is '(' or '[' or '{' or '<') {
                 i = next;
 
@@ -108,117 +131,126 @@ public class QueryTokenizer {
                     '<' => '>',
                     _ => throw new FailFastException("([{<"),
                 };
-                if (!_NextQuery(i, out next, out o, extraTerminatorsIfUnescaped.Append(terminator).ToArray()))
+                if (!this._NextQuery(i, out next, out o, extraTerminatorsIfUnescaped.Append(terminator).ToArray()))
                     return false;
 
                 i = next;
-                DrainWhitespaces(ref i);
+                this.DrainWhitespaces(ref i);
 
-                return _NextValidCodepoint(i, out next, out c) && c == ')';
+                return this._NextValidCodepoint(i, out next, out c) && c == ')';
             }
         } else {
             // All the following conditions will fail if no more characters are available.
             return false;
         }
 
-        if (_NextExactLiteral(i, out next, "NOT", 3, false, false)) {
-            if (_NextWhitespace(next, out next) && _NextCondition(next, out next, out o, extraTerminatorsIfUnescaped)) {
+        if (this._NextExactLiteral(i, out next, "NOT", 3, false, false)) {
+            if (this._NextWhitespace(next, out next) && this._NextCondition(
+                    next,
+                    out next,
+                    out o,
+                    extraTerminatorsIfUnescaped)) {
                 o = new NegatingMatcher(o).UnwrapIfPossible();
                 return true;
             }
         }
 
-        if (_NextExactLiteral(i, out next, "name", 1, true, true, ':', '=', ':')) {
-            if (_NextTextMatcher(next, out next, out var textMatcher, extraTerminatorsIfUnescaped)) {
+        if (this._NextExactLiteral(i, out next, "name", 1, true, true, ':', '=', ':')) {
+            if (this._NextTextMatcher(next, out next, out var textMatcher, extraTerminatorsIfUnescaped)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.MatchWhat.Name, textMatcher);
                 return true;
             }
         }
 
-        if (_NextExactLiteral(i, out next, "path", 1, true, true, ':', '=', ':')) {
-            if (_NextTextMatcher(next, out next, out var textMatcher, extraTerminatorsIfUnescaped)) {
+        if (this._NextExactLiteral(i, out next, "path", 1, true, true, ':', '=', ':')) {
+            if (this._NextTextMatcher(next, out next, out var textMatcher, extraTerminatorsIfUnescaped)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.MatchWhat.Path, textMatcher);
                 return true;
             }
         }
 
-        if (_NextExactLiteral(i, out next, "data", 1, true, true, ':', '=', ':')) {
-            if (_NextTextMatcher(next, out next, out var textMatcher, extraTerminatorsIfUnescaped)) {
+        if (this._NextExactLiteral(i, out next, "data", 1, true, true, ':', '=', ':')) {
+            if (this._NextTextMatcher(next, out next, out var textMatcher, extraTerminatorsIfUnescaped)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.MatchWhat.Data, textMatcher);
                 return true;
             }
         }
 
-        if (_NextExactLiteral(i, out next, "type", 1, true, true, ':', '=', ':')) {
+        if (this._NextExactLiteral(i, out next, "type", 1, true, true, ':', '=', ':')) {
             var i2 = next;
-            if (_NextExactLiteral(i2, out next, "file", 2, true, false)) {
+            if (this._NextExactLiteral(i2, out next, "file", 2, true, false)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.TypeConstraint.File);
                 return true;
             }
 
-            if (_NextExactLiteral(i2, out next, "folder", 2, true, false) ||
-                _NextExactLiteral(i2, out next, "directory", 1, true, false)) {
+            if (this._NextExactLiteral(i2, out next, "folder", 2, true, false) ||
+                this._NextExactLiteral(i2, out next, "directory", 1, true, false)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.TypeConstraint.Folder);
                 return true;
             }
 
-            if (_NextExactLiteral(i2, out next, "empty", 1, true, false) ||
-                _NextExactLiteral(i2, out next, "placeholder", 2, true, false)) {
+            if (this._NextExactLiteral(i2, out next, "empty", 1, true, false) ||
+                this._NextExactLiteral(i2, out next, "placeholder", 2, true, false)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.TypeConstraint.Empty);
                 return true;
             }
 
-            if (_NextExactLiteral(i2, out next, "standard", 1, true, false) ||
-                _NextExactLiteral(i2, out next, "binary", 1, true, false)) {
+            if (this._NextExactLiteral(i2, out next, "standard", 1, true, false) ||
+                this._NextExactLiteral(i2, out next, "binary", 1, true, false)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.TypeConstraint.Standard);
                 return true;
             }
 
-            if (_NextExactLiteral(i2, out next, "texture", 1, true, false) ||
-                _NextExactLiteral(i2, out next, "image", 1, true, false) ||
-                _NextExactLiteral(i2, out next, "picture", 2, true, false)) {
+            if (this._NextExactLiteral(i2, out next, "texture", 1, true, false) ||
+                this._NextExactLiteral(i2, out next, "image", 1, true, false) ||
+                this._NextExactLiteral(i2, out next, "picture", 2, true, false)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.TypeConstraint.Texture);
                 return true;
             }
 
-            if (_NextExactLiteral(i2, out next, "model", 1, true, false) ||
-                _NextExactLiteral(i2, out next, "object", 1, true, false)) {
+            if (this._NextExactLiteral(i2, out next, "model", 1, true, false) ||
+                this._NextExactLiteral(i2, out next, "object", 1, true, false)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.TypeConstraint.Model);
                 return true;
             }
         }
 
-        if (_NextExactLiteral(i, out next, "hash", 1, true, true, ':', '=', ':')) {
-            if (_NextHashMatcher(next, out next, out var hashMatcher)) {
+        if (this._NextExactLiteral(i, out next, "hash", 1, true, true, ':', '=', ':')) {
+            if (this._NextHashMatcher(next, out next, out var hashMatcher)) {
                 o = new SingleConditionMatcher(hashMatcher);
                 return true;
             }
         }
 
-        if (_NextExactLiteral(i, out next, "size", 1, true, true, ':', '=', ':') ||
-            _NextExactLiteral(i, out next, "rawsize", 1, true, true, ':', '=', ':') ||
-            _NextExactLiteral(i, out next, "length", 1, true, true, ':', '=', ':')) {
-            if (_NextSizeMatcher(next, out next, out var sizeMatcher)) {
+        if (this._NextExactLiteral(i, out next, "size", 1, true, true, ':', '=', ':') ||
+            this._NextExactLiteral(i, out next, "rawsize", 1, true, true, ':', '=', ':') ||
+            this._NextExactLiteral(i, out next, "length", 1, true, true, ':', '=', ':')) {
+            if (this._NextSizeMatcher(next, out next, out var sizeMatcher)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.MatchWhat.RawSize, sizeMatcher);
                 return true;
             }
         }
 
-        if (_NextExactLiteral(i, out next, "occupied", 1, true, true, ':', '=', ':')) {
-            if (_NextSizeMatcher(next, out next, out var sizeMatcher)) {
+        if (this._NextExactLiteral(i, out next, "occupied", 1, true, true, ':', '=', ':')) {
+            if (this._NextSizeMatcher(next, out next, out var sizeMatcher)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.MatchWhat.OccupiedSize, sizeMatcher);
                 return true;
             }
         }
 
-        if (_NextExactLiteral(i, out next, "reserved", 1, true, true, ':', '=', ':')) {
-            if (_NextSizeMatcher(next, out next, out var sizeMatcher)) {
+        if (this._NextExactLiteral(i, out next, "reserved", 1, true, true, ':', '=', ':')) {
+            if (this._NextSizeMatcher(next, out next, out var sizeMatcher)) {
                 o = new SingleConditionMatcher(SingleConditionMatcher.MatchWhat.ReservedSize, sizeMatcher);
                 return true;
             }
         }
 
-        if (_NextTextFallbackMatcher(i, out next, out var defaultTextMatcher, out var isPath, extraTerminatorsIfUnescaped)) {
+        if (this._NextTextFallbackMatcher(
+                i,
+                out next,
+                out var defaultTextMatcher,
+                out var isPath,
+                extraTerminatorsIfUnescaped)) {
             o = new SingleConditionMatcher(
                 isPath ? SingleConditionMatcher.MatchWhat.Path : SingleConditionMatcher.MatchWhat.Name,
                 defaultTextMatcher);
@@ -228,13 +260,14 @@ public class QueryTokenizer {
         return false;
     }
 
-    private bool _NextSizeMatcher(int i, out int next, out SizeMatcher o) {
+    private bool _NextSizeMatcher(int i, out int next, out SizeMatcher o)
+    {
         o = null!;
 
         var rangeSpecifier = SizeMatcher.ComparisonType.Invalid;
-        if (_NextValidCodepoint(i, out next, out var c) && c is '<' or '=' or '>') {
+        if (this._NextValidCodepoint(i, out next, out var c) && c is '<' or '=' or '>') {
             i = next;
-            if (c is '<' or '>' && _NextValidCodepoint(i, out next, out var c2) && c2 is '=') {
+            if (c is '<' or '>' && this._NextValidCodepoint(i, out next, out var c2) && c2 is '=') {
                 rangeSpecifier = c switch {
                     '>' => SizeMatcher.ComparisonType.GreaterThanOrEquals,
                     '<' => SizeMatcher.ComparisonType.LessThanOrEquals,
@@ -252,7 +285,7 @@ public class QueryTokenizer {
 
         var radix = NumberRadix.Dec;
         for (var j = 0; j < 2; j++) {
-            if (_NextValidCodepoint(i + j, out next, out c)) {
+            if (this._NextValidCodepoint(i + j, out next, out c)) {
                 var parsedRadix = c switch {
                     'b' or 'B' or 'y' or 'Y' => NumberRadix.Bin,
                     'o' or 'O' => NumberRadix.Oct,
@@ -272,14 +305,19 @@ public class QueryTokenizer {
             }
         }
 
-        if (!_NextLiteralFloat(i, out next, out var bytes, BitConverter.IsLittleEndian, radix,
+        if (!this._NextLiteralFloat(
+                i,
+                out next,
+                out var bytes,
+                BitConverter.IsLittleEndian,
+                radix,
                 FloatWidth.Double))
             return false;
 
         i = next;
 
         var unitMultiplier = 1ul;
-        if (_NextValidCodepoint(i, out next, out c)) {
+        if (this._NextValidCodepoint(i, out next, out c)) {
             unitMultiplier = c switch {
                 'b' or 'B' => 1ul,
                 'k' or 'K' => 1024ul,
@@ -295,7 +333,7 @@ public class QueryTokenizer {
                 i = next;
                 if (unitMultiplier > 1) {
                     // deal with "kb" rather than "k"
-                    if (!_NextValidCodepoint(i, out next, out c) && c is 'b' or 'B')
+                    if (!this._NextValidCodepoint(i, out next, out c) && c is 'b' or 'B')
                         next = i;
                 }
             }
@@ -315,9 +353,16 @@ public class QueryTokenizer {
         return true;
     }
 
-    private bool _NextHashMatcher(int i, out int next, out HashMatcher o) {
+    private bool _NextHashMatcher(int i, out int next, out HashMatcher o)
+    {
         o = null!;
-        if (!_NextLiteralInteger(i, out next, out var bytes, false, BitConverter.IsLittleEndian, NumberRadix.Hex,
+        if (!this._NextLiteralInteger(
+                i,
+                out next,
+                out var bytes,
+                false,
+                BitConverter.IsLittleEndian,
+                NumberRadix.Hex,
                 IntegerWidth.Dword))
             return false;
 
@@ -325,13 +370,17 @@ public class QueryTokenizer {
         return true;
     }
 
-    private bool _NextTextMatcher(int i, out int next, out TextMatcher o,
-        params uint[] extraTerminatorsIfUnescaped) {
+    private bool _NextTextMatcher(
+        int i,
+        out int next,
+        out TextMatcher o,
+        params uint[] extraTerminatorsIfUnescaped)
+    {
         o = null!;
 
         // options terminator
         var optionsEscapeTerminator = 0u;
-        if (_NextValidCodepoint(i, out next, out var c)) {
+        if (this._NextValidCodepoint(i, out next, out var c)) {
             var newOptionTerminator = c switch {
                 '[' => ']',
                 '(' => ')',
@@ -348,7 +397,7 @@ public class QueryTokenizer {
         var matchType = TextMatcher.SearchMatchType.Wildcard;
         var noEscape = false;
         var negate = false;
-        for (; _NextValidCodepoint(i, out next, out c); i = next) {
+        for (; this._NextValidCodepoint(i, out next, out c); i = next) {
             if (optionsEscapeTerminator == 0u && extraTerminatorsIfUnescaped.Contains(c))
                 return false;
 
@@ -400,19 +449,24 @@ public class QueryTokenizer {
             }
         }
 
-        if (!_NextLiteralString(i, out next, out var str, !noEscape, extraTerminatorsIfUnescaped))
+        if (!this._NextLiteralString(i, out next, out var str, !noEscape, extraTerminatorsIfUnescaped))
             return false;
 
         o = new(equalityType, matchType, negate, str);
         return true;
     }
 
-    private bool _NextTextFallbackMatcher(int i, out int next, out TextMatcher o, out bool containsPathSeparator, 
-        params uint[] extraTerminatorsIfUnescaped) {
+    private bool _NextTextFallbackMatcher(
+        int i,
+        out int next,
+        out TextMatcher o,
+        out bool containsPathSeparator,
+        params uint[] extraTerminatorsIfUnescaped)
+    {
         containsPathSeparator = false;
         o = null!;
 
-        if (!_NextLiteralString(i, out next, out var str, true, extraTerminatorsIfUnescaped))
+        if (!this._NextLiteralString(i, out next, out var str, true, extraTerminatorsIfUnescaped))
             return false;
 
         containsPathSeparator = str.Contains('/');
@@ -426,13 +480,18 @@ public class QueryTokenizer {
         return true;
     }
 
-    private bool _NextLiteralString(int i, out int next, out string s, bool useEscapeSequence,
-        params uint[] extraTerminatorsIfUnescaped) {
-        var sb = _stringBuilderPool.Get();
+    private bool _NextLiteralString(
+        int i,
+        out int next,
+        out string s,
+        bool useEscapeSequence,
+        params uint[] extraTerminatorsIfUnescaped)
+    {
+        var sb = this._stringBuilderPool.Get();
         try {
             var inQuote = 0u;
 
-            for (; _NextValidCodepoint(i, out next, out var c); i = next) {
+            for (; this._NextValidCodepoint(i, out next, out var c); i = next) {
                 if (c.IsWhiteSpace() || extraTerminatorsIfUnescaped.Contains(c))
                     break;
 
@@ -446,53 +505,82 @@ public class QueryTokenizer {
                         break;
                     case '\\' when useEscapeSequence:
                         i = next;
-                        if (!_NextValidCodepoint(i, out next, out c))
+                        if (!this._NextValidCodepoint(i, out next, out c))
                             break;
 
                         var isLittleEndian = true;
                         if (c is '<' or '>') {
                             isLittleEndian = c == '<';
                             i = next;
-                            if (!_NextValidCodepoint(i, out next, out c))
+                            if (!this._NextValidCodepoint(i, out next, out c))
                                 break;
                         }
 
                         byte[] bytes;
                         int next2;
                         switch (c) {
-                            case '=' when _NextLiteralBase64(next, out next2, out bytes):
-                            case '@' when _NextLiteralFormatted(next, out next2, out bytes, extraTerminatorsIfUnescaped):
-                            case >= '0' and <= '7' when _NextLiteralInteger(next, out next2, out bytes, false,
-                                isLittleEndian, NumberRadix.Oct, IntegerWidth.Byte):
-                            case 'x' when _NextLiteralInteger(next, out next2, out bytes, false, isLittleEndian,
-                                NumberRadix.Hex, IntegerWidth.Byte):
-                            case 'u' when _NextLiteralInteger(next, out next2, out bytes, false, isLittleEndian,
-                                NumberRadix.Hex, IntegerWidth.Word):
-                            case 'U' when _NextLiteralInteger(next, out next2, out bytes, false, isLittleEndian,
-                                NumberRadix.Hex, IntegerWidth.Dword):
+                            case '=' when this._NextLiteralBase64(next, out next2, out bytes):
+                            case '@' when this._NextLiteralFormatted(
+                                next,
+                                out next2,
+                                out bytes,
+                                extraTerminatorsIfUnescaped):
+                            case >= '0' and <= '7' when this._NextLiteralInteger(
+                                next,
+                                out next2,
+                                out bytes,
+                                false,
+                                isLittleEndian,
+                                NumberRadix.Oct,
+                                IntegerWidth.Byte):
+                            case 'x' when this._NextLiteralInteger(
+                                next,
+                                out next2,
+                                out bytes,
+                                false,
+                                isLittleEndian,
+                                NumberRadix.Hex,
+                                IntegerWidth.Byte):
+                            case 'u' when this._NextLiteralInteger(
+                                next,
+                                out next2,
+                                out bytes,
+                                false,
+                                isLittleEndian,
+                                NumberRadix.Hex,
+                                IntegerWidth.Word):
+                            case 'U' when this._NextLiteralInteger(
+                                next,
+                                out next2,
+                                out bytes,
+                                false,
+                                isLittleEndian,
+                                NumberRadix.Hex,
+                                IntegerWidth.Dword):
                                 sb.EnsureCapacity(sb.Length + bytes.Length);
                                 foreach (var b in bytes)
-                                    sb.Append((char)b);
+                                    sb.Append((char) b);
                                 next = next2;
                                 break;
                             case >= 0x100:
                                 bytes = Encoding.UTF8.GetBytes(char.ConvertFromUtf32((int) c));
                                 sb.EnsureCapacity(sb.Length + bytes.Length);
                                 foreach (var b in bytes)
-                                    sb.Append((char)b);
+                                    sb.Append((char) b);
                                 break;
                             default:
-                                sb.Append((char) (c switch {
-                                    'a' => '\a',
-                                    'b' => '\b',
-                                    'e' => 0x1b,
-                                    'f' => '\f',
-                                    'n' => '\n',
-                                    'r' => '\r',
-                                    't' => '\t',
-                                    'v' => '\v',
-                                    _ => (char) c,
-                                }));
+                                sb.Append(
+                                    (char) (c switch {
+                                        'a' => '\a',
+                                        'b' => '\b',
+                                        'e' => 0x1b,
+                                        'f' => '\f',
+                                        'n' => '\n',
+                                        'r' => '\r',
+                                        't' => '\t',
+                                        'v' => '\v',
+                                        _ => (char) c,
+                                    }));
                                 break;
                         }
 
@@ -501,7 +589,7 @@ public class QueryTokenizer {
                         bytes = Encoding.UTF8.GetBytes(char.ConvertFromUtf32((int) c));
                         sb.EnsureCapacity(sb.Length + bytes.Length);
                         foreach (var b in bytes)
-                            sb.Append((char)b);
+                            sb.Append((char) b);
                         break;
                 }
             }
@@ -510,12 +598,19 @@ public class QueryTokenizer {
             s = sb.ToString();
             return s.Any();
         } finally {
-            _stringBuilderPool.Return(sb);
+            this._stringBuilderPool.Return(sb);
         }
     }
 
-    private bool _NextLiteralInteger(int i, out int next, out byte[] bytes, bool signed, bool isLittleEndian,
-        NumberRadix radix, IntegerWidth width) {
+    private bool _NextLiteralInteger(
+        int i,
+        out int next,
+        out byte[] bytes,
+        bool signed,
+        bool isLittleEndian,
+        NumberRadix radix,
+        IntegerWidth width)
+    {
         bytes = null!;
 
         var numBits = (int) width * 8;
@@ -535,18 +630,18 @@ public class QueryTokenizer {
 
         var signedMultiplier = 1;
         if (signed) {
-            if (_NextDigit(i, out next, out d, radix)) {
+            if (this._NextDigit(i, out next, out d, radix)) {
                 i = next;
                 value = d;
                 readBits++;
-            } else if (_NextValidCodepoint(i, out next, out var c) && c is '-' or '+') {
+            } else if (this._NextValidCodepoint(i, out next, out var c) && c is '-' or '+') {
                 i = next;
                 if (c == '-')
                     signedMultiplier = -1;
             }
         }
 
-        for (; readBits < numBits && _NextDigit(i, out next, out d, radix); readBits += bitsPerCharacter, i = next)
+        for (; readBits < numBits && this._NextDigit(i, out next, out d, radix); readBits += bitsPerCharacter, i = next)
             value = value * (uint) radix + d;
 
         if (readBits == 0)
@@ -554,14 +649,14 @@ public class QueryTokenizer {
 
         bytes = signed
             ? width switch {
-                IntegerWidth.Byte => new[] {unchecked((byte) (sbyte) (signedMultiplier * (long) value))},
+                IntegerWidth.Byte => [unchecked((byte) (sbyte) (signedMultiplier * (long) value))],
                 IntegerWidth.Word => BitConverter.GetBytes(unchecked((short) (signedMultiplier * (long) value))),
                 IntegerWidth.Dword => BitConverter.GetBytes(unchecked((int) (signedMultiplier * (long) value))),
                 IntegerWidth.Qword => BitConverter.GetBytes(signedMultiplier * (long) value),
                 _ => throw new ArgumentOutOfRangeException(nameof(width), width, null),
             }
             : width switch {
-                IntegerWidth.Byte => new[] {unchecked((byte) value)},
+                IntegerWidth.Byte => [unchecked((byte) value)],
                 IntegerWidth.Word => BitConverter.GetBytes(unchecked((ushort) value)),
                 IntegerWidth.Dword => BitConverter.GetBytes(unchecked((uint) value)),
                 IntegerWidth.Qword => BitConverter.GetBytes(value),
@@ -575,8 +670,14 @@ public class QueryTokenizer {
         return true;
     }
 
-    private bool _NextLiteralFloat(int i, out int next, out byte[] bytes, bool isLittleEndian, NumberRadix radix,
-        FloatWidth width) {
+    private bool _NextLiteralFloat(
+        int i,
+        out int next,
+        out byte[] bytes,
+        bool isLittleEndian,
+        NumberRadix radix,
+        FloatWidth width)
+    {
         bytes = null!;
 
         next = i;
@@ -585,11 +686,11 @@ public class QueryTokenizer {
         var len = 0;
 
         var signedMultiplier = 1;
-        if (_NextDigit(i, out next, out var d, radix)) {
+        if (this._NextDigit(i, out next, out var d, radix)) {
             i = next;
             value = d;
             len++;
-        } else if (_NextValidCodepoint(i, out next, out c)) {
+        } else if (this._NextValidCodepoint(i, out next, out c)) {
             i = next;
             switch (c) {
                 case '+':
@@ -602,14 +703,14 @@ public class QueryTokenizer {
             }
         }
 
-        for (; _NextDigit(i, out next, out d, radix); i = next, len++)
+        for (; this._NextDigit(i, out next, out d, radix); i = next, len++)
             value = value * (uint) radix + d;
 
-        if (_NextValidCodepoint(i, out next, out c)
+        if (this._NextValidCodepoint(i, out next, out c)
             && c == Thread.CurrentThread.CurrentUICulture.NumberFormat.NumberDecimalSeparator[0]) {
             i = next;
             var rationalMultiplier = 0.1;
-            for (; _NextDigit(i, out next, out d, radix); i = next, rationalMultiplier /= (uint) radix, len++)
+            for (; this._NextDigit(i, out next, out d, radix); i = next, rationalMultiplier /= (uint) radix, len++)
                 value += d * rationalMultiplier;
         }
 
@@ -632,22 +733,24 @@ public class QueryTokenizer {
         return true;
     }
 
-    private bool _NextLiteralBase64(int i, out int next, out byte[] bytes) {
+    private bool _NextLiteralBase64(int i, out int next, out byte[] bytes)
+    {
         bytes = null!;
 
-        var sb = _stringBuilderPool.Get();
+        var sb = this._stringBuilderPool.Get();
         try {
-            for (; _NextValidCodepoint(i, out next, out var c); i = next) {
-                sb.Append(c switch {
-                    '=' when sb.Length % 4 != 0 => '=',
-                    >= 'a' and <= 'z' => c,
-                    >= 'A' and <= 'Z' => c,
-                    >= '0' and <= '9' => c,
-                    '+' or '/' => c,
-                    '-' => '+',
-                    '_' => '/',
-                    _ => 0,
-                });
+            for (; this._NextValidCodepoint(i, out next, out var c); i = next) {
+                sb.Append(
+                    c switch {
+                        '=' when sb.Length % 4 != 0 => '=',
+                        >= 'a' and <= 'z' => c,
+                        >= 'A' and <= 'Z' => c,
+                        >= '0' and <= '9' => c,
+                        '+' or '/' => c,
+                        '-' => '+',
+                        '_' => '/',
+                        _ => 0,
+                    });
 
                 if (sb[^1] == 0) {
                     sb.Remove(sb.Length - 1, 1);
@@ -665,19 +768,20 @@ public class QueryTokenizer {
             next = i;
             return true;
         } finally {
-            _stringBuilderPool.Return(sb);
+            this._stringBuilderPool.Return(sb);
         }
     }
 
-    private bool _NextLiteralFormatted(int i, out int next, out byte[] bytes, uint[] extraTerminatorsIfUnescaped) {
+    private bool _NextLiteralFormatted(int i, out int next, out byte[] bytes, uint[] extraTerminatorsIfUnescaped)
+    {
         var isLittleEndian = true;
-        if (_NextValidCodepoint(i, out next, out var c) && c is '<' or '>') {
+        if (this._NextValidCodepoint(i, out next, out var c) && c is '<' or '>') {
             isLittleEndian = c == '<';
             i = next;
         }
 
         var radix = NumberRadix.Hex;
-        if (_NextValidCodepoint(i, out next, out c)) {
+        if (this._NextValidCodepoint(i, out next, out c)) {
             var parsedRadix = c switch {
                 'b' or 'B' or 'y' or 'Y' => NumberRadix.Bin,
                 'o' or 'O' => NumberRadix.Oct,
@@ -695,7 +799,7 @@ public class QueryTokenizer {
         var floatWidth = FloatWidth.Invalid;
         var signed = true;
         // https://docs.python.org/3/library/struct.html#format-characters
-        if (_NextValidCodepoint(i, out next, out c)) {
+        if (this._NextValidCodepoint(i, out next, out c)) {
             if (c switch {
                     'b' or 'c' => Tuple.Create(IntegerWidth.Byte, FloatWidth.Invalid, true),
                     'B' or 'C' => Tuple.Create(IntegerWidth.Byte, FloatWidth.Invalid, false),
@@ -716,7 +820,7 @@ public class QueryTokenizer {
         }
 
         var arrayTerminator = 0u;
-        if (_NextValidCodepoint(i, out next, out c)) {
+        if (this._NextValidCodepoint(i, out next, out c)) {
             if (c switch {
                     '[' => ']',
                     '(' => ')',
@@ -729,16 +833,16 @@ public class QueryTokenizer {
             }
         }
 
-        var ms = _memoryStreamPool.Get();
+        var ms = this._memoryStreamPool.Get();
         try {
             while (true) {
                 if (intWidth != IntegerWidth.Invalid) {
-                    if (!_NextLiteralInteger(i, out next, out var b, signed, isLittleEndian, radix, intWidth))
+                    if (!this._NextLiteralInteger(i, out next, out var b, signed, isLittleEndian, radix, intWidth))
                         break;
                     ms.Write(b);
                     i = next;
                 } else if (floatWidth != FloatWidth.Invalid) {
-                    if (!_NextLiteralFloat(i, out next, out var b, isLittleEndian, radix, floatWidth))
+                    if (!this._NextLiteralFloat(i, out next, out var b, isLittleEndian, radix, floatWidth))
                         break;
                     ms.Write(b);
                     i = next;
@@ -748,7 +852,7 @@ public class QueryTokenizer {
                 if (arrayTerminator == 0)
                     break;
 
-                if (!_NextValidCodepoint(i, out next, out c))
+                if (!this._NextValidCodepoint(i, out next, out c))
                     break;
 
                 if (extraTerminatorsIfUnescaped.Contains(c))
@@ -758,21 +862,22 @@ public class QueryTokenizer {
                     break;
 
                 next = i;
-                while (!_NextDigit(i, out next, out var d, radix))
+                while (!this._NextDigit(i, out next, out var d, radix))
                     i = next;
             }
 
             bytes = ms.Length == 0 ? null! : ms.ToArray();
             return bytes != null!;
         } finally {
-            _memoryStreamPool.Return(ms);
+            this._memoryStreamPool.Return(ms);
         }
     }
 
-    private bool _NextDigit(int i, out int next, out uint d, NumberRadix radix, bool ignoreUnderscores = true) {
+    private bool _NextDigit(int i, out int next, out uint d, NumberRadix radix, bool ignoreUnderscores = true)
+    {
         d = uint.MaxValue;
 
-        while (_NextValidCodepoint(i, out next, out var c)) {
+        while (this._NextValidCodepoint(i, out next, out var c)) {
             switch (c) {
                 case < '0':
                     return false;
@@ -803,11 +908,12 @@ public class QueryTokenizer {
         return false;
     }
 
-    public bool DrainWhitespaces(ref int i) => _NextWhitespace(i, out i);
+    public bool DrainWhitespaces(ref int i) => this._NextWhitespace(i, out i);
 
-    private bool _NextWhitespace(int i, out int next) {
+    private bool _NextWhitespace(int i, out int next)
+    {
         var count = 0;
-        for (; _NextValidCodepoint(i, out next, out var c); i = next, count++) {
+        for (; this._NextValidCodepoint(i, out next, out var c); i = next, count++) {
             if (!c.IsWhiteSpace())
                 break;
         }
@@ -816,12 +922,19 @@ public class QueryTokenizer {
         return count > 0;
     }
 
-    private bool _NextExactLiteral(int i, out int next, string literal, int minLength, bool ignoreCase,
-        bool mustEndWithTerminator, params uint[] terminators) {
+    private bool _NextExactLiteral(
+        int i,
+        out int next,
+        string literal,
+        int minLength,
+        bool ignoreCase,
+        bool mustEndWithTerminator,
+        params uint[] terminators)
+    {
         uint c;
 
         foreach (var fc in literal) {
-            if (!_NextValidCodepoint(i, out next, out c))
+            if (!this._NextValidCodepoint(i, out next, out c))
                 return false;
 
             minLength--;
@@ -835,7 +948,7 @@ public class QueryTokenizer {
             i = next;
         }
 
-        if (_NextValidCodepoint(i, out next, out c)) {
+        if (this._NextValidCodepoint(i, out next, out c)) {
             if (terminators.Contains(c))
                 return true;
         }
@@ -844,24 +957,25 @@ public class QueryTokenizer {
         return !mustEndWithTerminator;
     }
 
-    private bool _NextValidCodepoint(int i, out int next, out uint c) {
-        for (; i < _query.Length; i++) {
-            switch (_query[i] & 0xFC00) {
+    private bool _NextValidCodepoint(int i, out int next, out uint c)
+    {
+        for (; i < this._query.Length; i++) {
+            switch (this._query[i] & 0xFC00) {
                 case 0xD800:
-                    if (i + 1 >= _query.Length || (_query[i + 1] & 0xFC00) != 0xDC00) {
+                    if (i + 1 >= this._query.Length || (this._query[i + 1] & 0xFC00) != 0xDC00) {
                         // invalid; surrogate #2 must appear here.
                         continue;
                     }
 
                     next = i + 2;
-                    c = 0x10000u + ((_query[i] & 0x3FFu) << 10 | (_query[i + 1] & 0x3FFu));
+                    c = 0x10000u + ((this._query[i] & 0x3FFu) << 10 | (this._query[i + 1] & 0x3FFu));
                     return true;
                 case 0xDC00:
                     // invalid; surrogate #2 cannot appear here.
                     continue;
                 default:
                     next = i + 1;
-                    c = _query[i];
+                    c = this._query[i];
                     return true;
             }
         }

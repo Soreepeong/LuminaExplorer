@@ -6,10 +6,11 @@ namespace LuminaExplorer.Core.ExtraFormats.GenericAnimation.QuaternionTrack;
 public class StaticQuaternionTrack : IQuaternionTrack {
     private readonly Quaternion _value;
 
-    public StaticQuaternionTrack(Quaternion value, float duration, bool isEmpty) {
-        _value = value;
-        IsEmpty = isEmpty;
-        Duration = duration;
+    public StaticQuaternionTrack(Quaternion value, float duration, bool isEmpty)
+    {
+        this._value = value;
+        this.IsEmpty = isEmpty;
+        this.Duration = duration;
     }
 
     public bool IsEmpty { get; }
@@ -18,11 +19,12 @@ public class StaticQuaternionTrack : IQuaternionTrack {
 
     public float Duration { get; }
 
-    public IEnumerable<float> GetFrameTimes() => new[] {0f};
+    public IEnumerable<float> GetFrameTimes() => [0f];
 
-    public Quaternion Interpolate(float t) => _value;
+    public Quaternion Interpolate(float t) => this._value;
 
-    public override string ToString() => IsEmpty 
-        ? $"StaticQuaternionTrack({Duration:0.00}s): empty"
-        : $"StaticQuaternionTrack({Duration:0.00}s): {_value}";
+    public override string ToString() =>
+        this.IsEmpty
+            ? $"StaticQuaternionTrack({this.Duration:0.00}s): empty"
+            : $"StaticQuaternionTrack({this.Duration:0.00}s): {this._value}";
 }

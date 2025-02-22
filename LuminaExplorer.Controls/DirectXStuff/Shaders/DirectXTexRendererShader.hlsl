@@ -53,10 +53,9 @@ float4 blend_colors(float4 bg, float4 fg) {
 float4 main_ps(VSOutput input) : SV_TARGET {
 	float4 fg = g_texture.Sample(g_sampler, input.uv);
 	float4 color;
-	
+
 	if (g_channelFilter == 4) {
 		color = float4(fg.w, fg.w, fg.w, 1);
-		
 	} else if (!g_useAlphaChannel) {
 		if (g_channelFilter == 1)
 			color = float4(fg.x, fg.x, fg.x, 1);
@@ -66,7 +65,6 @@ float4 main_ps(VSOutput input) : SV_TARGET {
 			color = float4(fg.z, fg.z, fg.z, 1);
 		else
 			color = float4(fg.xyz, 1);
-		
 	} else {
 		if (g_channelFilter == 1)
 			fg.y = fg.z = fg.x;

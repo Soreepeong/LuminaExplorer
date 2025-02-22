@@ -19,89 +19,104 @@ public class HashDatabase {
     private readonly FileStruct[] _files;
     private readonly byte[] _strings;
 
-    public HashDatabase(FileInfo cachedFile) {
+    public HashDatabase(FileInfo cachedFile)
+    {
         if (!cachedFile.Exists) {
-            _folders = Array.Empty<FolderStruct>();
-            _files = Array.Empty<FileStruct>();
-            _strings = Array.Empty<byte>();
+            this._folders = [];
+            this._files = [];
+            this._strings = [];
         } else {
             using (var readerCompressed = new BinaryReader(cachedFile.OpenRead())) {
-                _strings = new byte[readerCompressed.ReadInt32()];
+                this._strings = new byte[readerCompressed.ReadInt32()];
                 using (var readerDecompressed = new ZLibStream(readerCompressed.BaseStream, CompressionMode.Decompress))
-                using (var ms = new MemoryStream(_strings))
+                using (var ms = new MemoryStream(this._strings))
                     readerDecompressed.CopyTo(ms);
             }
 
-            using var reader = new BinaryReader(new MemoryStream(_strings));
+            using var reader = new BinaryReader(new MemoryStream(this._strings));
             var folderOffset = reader.ReadInt32();
             var fileOffset = reader.ReadInt32();
             var endOffset = reader.ReadInt32();
 
             reader.BaseStream.Position = folderOffset;
-            _folders = new FolderStruct[(fileOffset - folderOffset) / Unsafe.SizeOf<FolderStruct>()];
-            _files = new FileStruct[(endOffset - fileOffset) / Unsafe.SizeOf<FileStruct>()];
+            this._folders = new FolderStruct[(fileOffset - folderOffset) / Unsafe.SizeOf<FolderStruct>()];
+            this._files = new FileStruct[(endOffset - fileOffset) / Unsafe.SizeOf<FileStruct>()];
             unsafe {
-                fixed (void* b = _folders)
+                fixed (void* b = this._folders)
                     reader.BaseStream.ReadExactly(new(b, fileOffset - folderOffset));
-                fixed (void* b = _files)
+                fixed (void* b = this._files)
                     reader.BaseStream.ReadExactly(new(b, endOffset - fileOffset));
             }
 
-            _strings = _strings[..folderOffset];
+            this._strings = this._strings[..folderOffset];
         }
     }
 
-    public FolderStruct? GetFolderEntry(uint indexId, uint hash) {
-        var i = Array.BinarySearch(_folders, new() {
-            IndexId = indexId,
-            Hash = hash
-        });
+    public FolderStruct? GetFolderEntry(uint indexId, uint hash)
+    {
+        var i = Array.BinarySearch(
+            this._folders,
+            new() {
+                IndexId = indexId,
+                Hash = hash,
+            });
         if (i < 0)
             return null;
 
-        return _folders[i];
+        return this._folders[i];
     }
 
-    public string GetString(int offset) {
+    public string GetString(int offset)
+    {
         var length = 0;
-        while (_strings[offset + length] != 0)
+        while (this._strings[offset + length] != 0)
             length++;
 
-        return Encoding.UTF8.GetString(_strings, offset, length);
+        return Encoding.UTF8.GetString(this._strings, offset, length);
     }
 
-    public string? GetFileName(FolderStruct folder, uint hash) {
-        var i = Array.BinarySearch(_files, folder.FileIndex, folder.FileCount, new() {
-            Hash = hash
-        });
-        return i < 0 ? null : GetString(_files[i].NameOffset);
+    public string? GetFileName(FolderStruct folder, uint hash)
+    {
+        var i = Array.BinarySearch(
+            this._files,
+            folder.FileIndex,
+            folder.FileCount,
+            new() {
+                Hash = hash,
+            });
+        return i < 0 ? null : this.GetString(this._files[i].NameOffset);
     }
 
-    public string? FindFileName(uint indexId, uint hash) {
-        var folderFrom = Array.BinarySearch(_folders, new() {
-            IndexId = indexId,
-            Hash = uint.MinValue,
-        });
-        var folderTo = Array.BinarySearch(_folders, new() {
-            IndexId = indexId,
-            Hash = uint.MaxValue,
-        });
+    public string? FindFileName(uint indexId, uint hash)
+    {
+        var folderFrom = Array.BinarySearch(
+            this._folders,
+            new() {
+                IndexId = indexId,
+                Hash = uint.MinValue,
+            });
+        var folderTo = Array.BinarySearch(
+            this._folders,
+            new() {
+                IndexId = indexId,
+                Hash = uint.MaxValue,
+            });
         if (folderFrom < 0)
             folderFrom = ~folderFrom;
         if (folderTo < 0)
             folderTo = ~folderTo;
 
         var compareFile = new FileStruct {
-            Hash = hash
+            Hash = hash,
         };
         for (var folderIndex = folderFrom; folderIndex <= folderTo; folderIndex++) {
             var i = Array.BinarySearch(
-                _files,
-                _folders[folderIndex].FileIndex,
-                _folders[folderIndex].FileCount,
+                this._files,
+                this._folders[folderIndex].FileIndex,
+                this._folders[folderIndex].FileCount,
                 compareFile);
             if (i >= 0)
-                return GetString(_files[i].NameOffset);
+                return this.GetString(this._files[i].NameOffset);
         }
 
         return null;
@@ -114,23 +129,25 @@ public class HashDatabase {
         public int FileIndex;
         public int FileCount;
 
-        public int CompareTo(FolderStruct other) => IndexId == other.IndexId
-            ? Hash.CompareTo(other.Hash)
-            : IndexId.CompareTo(other.IndexId);
+        public int CompareTo(FolderStruct other) =>
+            this.IndexId == other.IndexId
+                ? this.Hash.CompareTo(other.Hash)
+                : this.IndexId.CompareTo(other.IndexId);
     }
 
     public struct FileStruct : IComparable<FileStruct> {
         public int NameOffset;
         public uint Hash;
 
-        public int CompareTo(FileStruct other) => Hash.CompareTo(other.Hash);
+        public int CompareTo(FileStruct other) => this.Hash.CompareTo(other.Hash);
     }
 
     public static async Task MakeCachedFile(
         string sourceUrl,
         Stream target,
         Action<float> progress,
-        CancellationToken cancellationToken) {
+        CancellationToken cancellationToken)
+    {
         const float progressWeightConnect = 0.1f;
         const float progressWeightDownload = 0.4f;
         const float progressWeightProcess = 0.5f;
@@ -214,8 +231,9 @@ public class HashDatabase {
             }
 
             if (folderIndex % 1000 == 0) {
-                progress(progressWeightConnect + progressWeightDownload +
-                         progressWeightProcess * ((float) folderIndex / folders.Length));
+                progress(
+                    progressWeightConnect + progressWeightDownload +
+                    progressWeightProcess * ((float) folderIndex / folders.Length));
             }
         }
 
@@ -254,34 +272,38 @@ public class HashDatabase {
     private class HashEntry {
         public readonly uint Hash;
 
-        public HashEntry(uint hash) {
-            Hash = hash;
+        public HashEntry(uint hash)
+        {
+            this.Hash = hash;
         }
     }
 
     private class FolderEntry : HashEntry {
         public readonly string Text;
-        public readonly List<FileEntry> Files = new();
+        public readonly List<FileEntry> Files = [];
 
         public FolderEntry(uint folderHash, string text)
-            : base(folderHash) {
-            Text = text;
+            : base(folderHash)
+        {
+            this.Text = text;
         }
 
-        public override string ToString() => Text;
+        public override string ToString() => this.Text;
     }
 
     private class FileEntry : HashEntry {
         public readonly string Text;
 
-        public FileEntry(uint fileHash, string text) : base(fileHash) {
-            Text = text;
+        public FileEntry(uint fileHash, string text) : base(fileHash)
+        {
+            this.Text = text;
         }
 
-        public override string ToString() => Text;
+        public override string ToString() => this.Text;
     }
 
-    private static uint? GetIndexId(string gamePath) {
+    private static uint? GetIndexId(string gamePath)
+    {
         var sep = gamePath.IndexOf('/');
         if (sep == -1)
             return null;

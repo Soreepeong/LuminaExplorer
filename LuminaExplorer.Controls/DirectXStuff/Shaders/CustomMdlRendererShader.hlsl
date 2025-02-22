@@ -113,21 +113,21 @@ Lighting GetLight(float3 pos3D, float3 eyeVector, float3 worldNormal) {
 			g_Light0.specular.xyz,
 			g_Light1.specular.xyz,
 			g_Light2.specular.xyz)[i];
-        
+
 		halfVectors[i] = normalize(eyeVector - lightDirections[i]);
 	}
 
 	const float3 dotL = mul(-lightDirections, worldNormal);
 	const float3 dotH = mul(halfVectors, worldNormal);
-    
+
 	const float3 zeroL = step(0, dotL);
 
-	const float3 diffuse  = zeroL * dotL;
+	const float3 diffuse = zeroL * dotL;
 	const float3 specular = pow(max(dotH, 0) * zeroL, m_SpecularPower);
 
 	Lighting result;
-    
-	result.diffuse  = mul(diffuse,  lightDiffuse)  * m_DiffuseColor.rgb + m_EmissiveColor;
+
+	result.diffuse = mul(diffuse, lightDiffuse) * m_DiffuseColor.rgb + m_EmissiveColor;
 	result.specular = mul(specular, lightSpecular) * m_SpecularColor;
 
 	return result;
@@ -140,7 +140,7 @@ void ApplySkinning(inout VSInput input) {
 	float3 t2 = 0;
 
 	[unroll]
-	for(int i = 0; i < 4; i++) {
+	for (int i = 0; i < 4; i++) {
 		const float3x4 joint = m_JointMatrixArray[input.blendIndices[i]];
 		const float w = input.blendWeight[i];
 
@@ -151,15 +151,15 @@ void ApplySkinning(inout VSInput input) {
 		pos.x += w * dot(input.position, joint[0]);
 		pos.y += w * dot(input.position, joint[1]);
 		pos.z += w * dot(input.position, joint[2]);
-		
+
 		norm.x += w * dot(input.normal, joint[0]);
 		norm.y += w * dot(input.normal, joint[1]);
 		norm.z += w * dot(input.normal, joint[2]);
-		
+
 		t1.x += w * dot(input.tangent1, joint[0]);
 		t1.y += w * dot(input.tangent1, joint[1]);
 		t1.z += w * dot(input.tangent1, joint[2]);
-		
+
 		t2.x += w * dot(input.tangent2, joint[0]);
 		t2.y += w * dot(input.tangent2, joint[1]);
 		t2.z += w * dot(input.tangent2, joint[2]);

@@ -22,14 +22,14 @@ public unsafe struct JointMatrixArray {
             if (i is < 0 or >= ValueCount)
                 throw new ArgumentOutOfRangeException(nameof(i), i, null);
             var value = new Matrix3X4<float>();
-            fixed (void* p = &Values[i * 12])
+            fixed (void* p = &this.Values[i * 12])
                 Buffer.MemoryCopy(p, &value, 48, 48);
             return value;
         }
         set {
             if (i is < 0 or >= ValueCount)
                 throw new ArgumentOutOfRangeException(nameof(i), i, null);
-            fixed (void* p = &Values[i * 12])
+            fixed (void* p = &this.Values[i * 12])
                 Buffer.MemoryCopy(&value, p, 48, 48);
         }
     }

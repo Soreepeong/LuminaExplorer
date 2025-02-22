@@ -12,25 +12,29 @@ public class Node {
     public readonly Definition Definition;
     public readonly IList<IValue?> Values;
 
-    public Node(Definition definition, IList<IValue?> values) {
-        Definition = definition;
-        Values = values;
+    public Node(Definition definition, IList<IValue?> values)
+    {
+        this.Definition = definition;
+        this.Values = values;
     }
 
-    public Dictionary<string, IValue?> AsMap => _cachedAsMap ??= Definition
-        .NestedFields
-        .Zip(Values)
-        .ToDictionary(x => x.First.Name, x => x.Second);
+    public Dictionary<string, IValue?> AsMap =>
+        this._cachedAsMap ??= this.Definition
+            .NestedFields
+            .Zip(this.Values)
+            .ToDictionary(x => x.First.Name, x => x.Second);
 
-    public IValue? this[string key] => AsMap[key];
+    public IValue? this[string key] => this.AsMap[key];
 
-    public override string ToString() => Values.Count switch {
-        0 => $"{Definition.Name} (empty)",
-        1 => $"{Definition.Name} (1 value)",
-        _ => $"{Definition.Name} ({Values.Count} value(s))",
-    };
+    public override string ToString() =>
+        this.Values.Count switch {
+            0 => $"{this.Definition.Name} (empty)",
+            1 => $"{this.Definition.Name} (1 value)",
+            _ => $"{this.Definition.Name} ({this.Values.Count} value(s))",
+        };
 
-    internal static void ReadAndInsert(Parser parser) {
+    internal static void ReadAndInsert(Parser parser)
+    {
         // Default to storing the node at the end of the node array.
         var nodeIndex = parser.Nodes.Count;
 

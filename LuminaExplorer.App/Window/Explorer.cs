@@ -14,91 +14,88 @@ public partial class Explorer : Form {
     private IVirtualFileSystem? _vfs;
     private AppConfig _appConfig;
 
-    public Explorer(AppConfig? appConfig = default, IVirtualFileSystem? vfs = default) {
-        InitializeComponent();
+    public Explorer(AppConfig? appConfig = default, IVirtualFileSystem? vfs = default)
+    {
+        this.InitializeComponent();
 
-        _appConfig = appConfig ?? new();
-        _vfs = vfs;
-        _previewHandler = new(this);
-        _fileListHandler = new(this);
-        _navigationHandler = new(this);
-        _fileTreeHandler = new(this);
-        _searchHandler = new(this);
+        this._appConfig = appConfig ?? new();
+        this._vfs = vfs;
+        this._previewHandler = new(this);
+        this._fileListHandler = new(this);
+        this._navigationHandler = new(this);
+        this._fileTreeHandler = new(this);
+        this._searchHandler = new(this);
 
-        _fileTreeHandler.ExpandTreeTo(AppConfig.LastFolder);
-        _ = _navigationHandler.NavigateTo(AppConfig.LastFolder);
+        this._fileTreeHandler.ExpandTreeTo(this.AppConfig.LastFolder);
+        _ = this._navigationHandler.NavigateTo(this.AppConfig.LastFolder);
     }
 
     public AppConfig AppConfig {
-        get => _appConfig;
+        get => this._appConfig;
         set {
-            if (_appConfig == value)
+            if (this._appConfig == value)
                 return;
 
-            _appConfig = value with { };
-            if (_fileListHandler is not null)
-                _fileListHandler.AppConfig = _appConfig;
-            if (_navigationHandler is not null)
-                _navigationHandler.AppConfig = _appConfig;
-            if (_searchHandler is not null)
-                _searchHandler.AppConfig = _appConfig;
+            this._appConfig = value with { };
+            if (this._fileListHandler is not null) this._fileListHandler.AppConfig = this._appConfig;
+            if (this._navigationHandler is not null) this._navigationHandler.AppConfig = this._appConfig;
+            if (this._searchHandler is not null) this._searchHandler.AppConfig = this._appConfig;
         }
     }
 
     public IVirtualFileSystem? Vfs {
-        get => _vfs;
+        get => this._vfs;
         set {
-            if (_vfs == value)
+            if (this._vfs == value)
                 return;
 
-            _vfs = value;
-            if (_fileListHandler is not null)
-                _fileListHandler.Vfs = value;
-            if (_navigationHandler is not null)
-                _navigationHandler.Vfs = value;
-            if (_fileTreeHandler is not null)
-                _fileTreeHandler.Vfs = value;
-            if (_searchHandler is not null)
-                _searchHandler.Vfs = value;
+            this._vfs = value;
+            if (this._fileListHandler is not null) this._fileListHandler.Vfs = value;
+            if (this._navigationHandler is not null) this._navigationHandler.Vfs = value;
+            if (this._fileTreeHandler is not null) this._fileTreeHandler.Vfs = value;
+            if (this._searchHandler is not null) this._searchHandler.Vfs = value;
         }
     }
 
-    protected override void Dispose(bool disposing) {
+    protected override void Dispose(bool disposing)
+    {
         if (disposing) {
-            Hide();
-            SafeDispose.One(ref _previewHandler);
-            SafeDispose.One(ref _fileListHandler);
-            SafeDispose.One(ref _navigationHandler);
-            SafeDispose.One(ref _fileTreeHandler);
-            SafeDispose.One(ref _searchHandler);
+            this.Hide();
+            SafeDispose.One(ref this._previewHandler);
+            SafeDispose.One(ref this._fileListHandler);
+            SafeDispose.One(ref this._navigationHandler);
+            SafeDispose.One(ref this._fileTreeHandler);
+            SafeDispose.One(ref this._searchHandler);
 
-            components?.Dispose();
+            this.components?.Dispose();
         }
 
         base.Dispose(disposing);
     }
 
-    protected override bool ProcessCmdKey(ref Message msg, Keys keyData) {
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
         switch (keyData) {
             case Keys.Control | Keys.F:
             case Keys.BrowserSearch:
-                txtSearch.Focus();
+                this.txtSearch.Focus();
                 return true;
             case Keys.F4:
-                txtPath.Focus();
+                this.txtPath.Focus();
                 return true;
             case Keys.BrowserBack:
-                _navigationHandler?.NavigateBack();
+                this._navigationHandler?.NavigateBack();
                 return true;
             case Keys.BrowserForward:
-                _navigationHandler?.NavigateForward();
+                this._navigationHandler?.NavigateForward();
                 return true;
             default:
                 return base.ProcessCmdKey(ref msg, keyData);
         }
     }
 
-    private void Explorer_Shown(object sender, EventArgs e) {
-        lvwFiles.Focus();
+    private void Explorer_Shown(object sender, EventArgs e)
+    {
+        this.lvwFiles.Focus();
     }
 }

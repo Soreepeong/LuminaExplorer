@@ -4,9 +4,10 @@ using System.Drawing;
 namespace LuminaExplorer.Controls.Util.ScaleMode;
 
 public readonly struct FitToBorderScaleMode : IScaleModeWithZoomInToFit {
-    public FitToBorderScaleMode(bool zoomInToFit, Direction directionToFit) {
-        ZoomInToFit = zoomInToFit;
-        DirectionToFit = directionToFit;
+    public FitToBorderScaleMode(bool zoomInToFit, Direction directionToFit)
+    {
+        this.ZoomInToFit = zoomInToFit;
+        this.DirectionToFit = directionToFit;
     }
 
     public bool ZoomInToFit { get; }
@@ -14,10 +15,10 @@ public readonly struct FitToBorderScaleMode : IScaleModeWithZoomInToFit {
     public Direction DirectionToFit { get; }
 
     public float CalcZoom(SizeF content, SizeF client, int exponentUnit) =>
-        CalcZoomStatic(content, client, ZoomInToFit, DirectionToFit);
+        CalcZoomStatic(content, client, this.ZoomInToFit, this.DirectionToFit);
 
     public float CalcZoomExponent(SizeF content, SizeF client, int exponentUnit) =>
-        CalcZoomExponentStatic(content, client, ZoomInToFit, DirectionToFit, exponentUnit);
+        CalcZoomExponentStatic(content, client, this.ZoomInToFit, this.DirectionToFit, exponentUnit);
 
     public static float CalcZoomStatic(SizeF content, SizeF client, bool zoomInToFit, Direction direction) =>
         content.IsEmpty || (!zoomInToFit && IScaleMode.ContentFitsIn(content, client))

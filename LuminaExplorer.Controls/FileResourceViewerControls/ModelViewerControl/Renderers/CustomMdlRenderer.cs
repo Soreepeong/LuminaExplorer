@@ -10,7 +10,7 @@ using LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter.VertexShade
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
 using LuminaExplorer.Core.ExtraFormats.GenericAnimation;
 using LuminaExplorer.Core.Util;
-using Silk.NET.Direct3D11;
+using TerraFX.Interop.DirectX;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.ModelViewerControl.Renderers;
 
@@ -31,212 +31,244 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
 
     public CustomMdlRenderer(ModelViewerControl control)
         // ReSharper disable once IntroduceOptionalParameters.Global
-        : this(control, null, null) { }
+        : this(control, null, null)
+    { }
 
     public CustomMdlRenderer(ModelViewerControl control, ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext)
-        : base(control, pDevice, pDeviceContext) {
-        _shader = new(Device, DeviceContext);
-        _paramCamera = new(Device, DeviceContext);
-        _paramCamera.DataPull += ParamCameraOnDataPull;
-        _paramWorldViewMatrix = new(Device, DeviceContext);
-        _paramWorldViewMatrix.DataPull += ParamWorldViewMatrixOnDataPull;
-        _paramWorldMisc = new(Device, DeviceContext);
-        _paramWorldMisc.DataPull += ParamWorldMiscOnDataPull;
-        _paramLight = new(Device, DeviceContext, false, CustomMdlRendererShader.LightParameters.Default);
-        Control.ViewportChanged += (_, _) => ResetCamera();
-        Control.AnimationSpeedChanged += (_, _) => UpdateAnimationSpeed();
-        Control.AnimationPlayingChanged += (_, _) => UpdateAnimationSpeed();
+        : base(control, pDevice, pDeviceContext)
+    {
+        this._shader = new(this.Device, this.DeviceContext);
+        this._paramCamera = new(this.Device, this.DeviceContext);
+        this._paramCamera.DataPull += this.ParamCameraOnDataPull;
+        this._paramWorldViewMatrix = new(this.Device, this.DeviceContext);
+        this._paramWorldViewMatrix.DataPull += this.ParamWorldViewMatrixOnDataPull;
+        this._paramWorldMisc = new(this.Device, this.DeviceContext);
+        this._paramWorldMisc.DataPull += this.ParamWorldMiscOnDataPull;
+        this._paramLight = new(this.Device, this.DeviceContext, false, CustomMdlRendererShader.LightParameters.Default);
+        this.Control.ViewportChanged += (_, _) => this.ResetCamera();
+        this.Control.AnimationSpeedChanged += (_, _) => this.UpdateAnimationSpeed();
+        this.Control.AnimationPlayingChanged += (_, _) => this.UpdateAnimationSpeed();
     }
 
-    protected override void Dispose(bool disposing) {
+    protected override void Dispose(bool disposing)
+    {
         if (disposing) {
-            ModelTask = null;
-            _ = SafeDispose.OneAsync(ref _shader!);
-            _ = SafeDispose.OneAsync(ref _paramCamera!);
-            _ = SafeDispose.OneAsync(ref _paramWorldViewMatrix!);
-            _ = SafeDispose.OneAsync(ref _paramWorldMisc!);
-            _ = SafeDispose.OneAsync(ref _paramLight!);
+            this.ModelTask = null;
+            _ = SafeDispose.OneAsync(ref this._shader!);
+            _ = SafeDispose.OneAsync(ref this._paramCamera!);
+            _ = SafeDispose.OneAsync(ref this._paramWorldViewMatrix!);
+            _ = SafeDispose.OneAsync(ref this._paramWorldMisc!);
+            _ = SafeDispose.OneAsync(ref this._paramLight!);
         }
 
         base.Dispose(disposing);
     }
 
     public override Task<MdlFile>? ModelTask {
-        get => _mdlTask;
+        get => this._mdlTask;
         set {
-            if (value == _mdlTask)
+            if (value == this._mdlTask)
                 return;
 
-            void ClearModel() {
-                _mdlTask = null;
-                _modelObject?.ContinueWith(r => {
-                    if (r.IsCompletedSuccessfully) {
-                        var modelObject = r.Result;
-                        modelObject.DdsFileRequested -= ModelObjectOnDdsFileRequested;
-                        modelObject.TextureLoadStateChanged -= ModelObjectOnLoadStateChanged;
-                        modelObject.MtrlFileRequested -= ModelObjectOnMtrlFileRequested;
-                    }
-                });
-                _modelObject = null;
-                _ = SafeDispose.OneAsync(ref _animator);
+            void ClearModel()
+            {
+                this._mdlTask = null;
+                this._modelObject?.ContinueWith(
+                    r => {
+                        if (r.IsCompletedSuccessfully) {
+                            var modelObject = r.Result;
+                            modelObject.DdsFileRequested -= this.ModelObjectOnDdsFileRequested;
+                            modelObject.TextureLoadStateChanged -= this.ModelObjectOnLoadStateChanged;
+                            modelObject.MtrlFileRequested -= this.ModelObjectOnMtrlFileRequested;
+                        }
+                    });
+                this._modelObject = null;
+                _ = SafeDispose.OneAsync(ref this._animator);
             }
 
             if (value is null) {
                 ClearModel();
             } else {
-                var prevTask = _mdlTask;
-                _mdlTask = value;
+                var prevTask = this._mdlTask;
+                this._mdlTask = value;
 
-                value.ContinueWith(r => {
-                    if (_mdlTask != value)
-                        return;
-                    if (prevTask?.IsCompletedSuccessfully is true && r.Result.FilePath == prevTask.Result.FilePath)
-                        return;
-
-                    ClearModel();
-                    _mdlTask = value;
-
-                    _modelObject = Task.Run(() => {
-                        var modelObject = new CustomMdlRendererShader.ModelObject(_shader, r.Result);
-                        modelObject.DdsFileRequested += ModelObjectOnDdsFileRequested;
-                        modelObject.TextureLoadStateChanged += ModelObjectOnLoadStateChanged;
-                        modelObject.MtrlFileRequested += ModelObjectOnMtrlFileRequested;
-                        return modelObject;
-                    });
-
-                    _sklbTask = Task
-                        .WhenAll(_modelObject,
-                            Control.ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(
-                                Control.GetTypedFileAsync<EstFile>,
-                                Control.GetTypedFileAsync<PbdFile>))
-                        .ContinueWith(_ => {
-                            if (_mdlTask != value)
-                                throw new OperationCanceledException();
-                            return Task.WhenAll(Control.ModelInfoResolverTask.Result
-                                .FindSklbPath(value.Result.FilePath.Path)
-                                .Select(x => _sklbCache.TryGet(x, out var sklb)
-                                    ? Task.FromResult(Tuple.Create(x, (SklbFile?) sklb))
-                                    : Control.GetTypedFileAsync<SklbFile>(x)
-                                        .ContinueWith(r2 => Tuple.Create(x, r2.Result))));
-                        }).Unwrap().ContinueWith(r2 => {
-                            if (r2.IsFaulted)
-                                throw r2.Exception!;
-                            if (!r2.IsCompletedSuccessfully || r2.Result is null)
-                                throw new("No associated skeleton file found");
-                            foreach (var (sklbPath, sklb) in r2.Result)
-                                if (sklb is not null)
-                                    _sklbCache.Add(sklbPath, sklb);
-
-                            LoadAnimationIfPossible();
-                            return r2.Result
-                                .Select(x => x.Item2)
-                                .Where(x => x is not null)
-                                .Select(x => x!)
-                                .ToArray();
-                        });
-
-                    Control.RunOnUiThreadAfter(_modelObject, r2 => {
-                        if (_mdlTask != value || !r2.IsCompletedSuccessfully)
+                value.ContinueWith(
+                    r => {
+                        if (this._mdlTask != value)
+                            return;
+                        if (prevTask?.IsCompletedSuccessfully is true && r.Result.FilePath == prevTask.Result.FilePath)
                             return;
 
-                        ResetCamera(_mdlTask.Result.ModelBoundingBoxes);
+                        ClearModel();
+                        this._mdlTask = value;
+
+                        this._modelObject = Task.Run(
+                            () => {
+                                var modelObject = new CustomMdlRendererShader.ModelObject(this._shader, r.Result);
+                                modelObject.DdsFileRequested += this.ModelObjectOnDdsFileRequested;
+                                modelObject.TextureLoadStateChanged += this.ModelObjectOnLoadStateChanged;
+                                modelObject.MtrlFileRequested += this.ModelObjectOnMtrlFileRequested;
+                                return modelObject;
+                            });
+
+                        this._sklbTask = Task
+                            .WhenAll(
+                                this._modelObject,
+                                this.Control.ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(
+                                    this.Control.GetTypedFileAsync<EstFile>,
+                                    this.Control.GetTypedFileAsync<PbdFile>))
+                            .ContinueWith(
+                                _ => {
+                                    if (this._mdlTask != value)
+                                        throw new OperationCanceledException();
+                                    return Task.WhenAll(
+                                        this.Control.ModelInfoResolverTask.Result
+                                            .FindSklbPath(value.Result.FilePath.Path)
+                                            .Select(
+                                                x => this._sklbCache.TryGet(x, out var sklb)
+                                                    ? Task.FromResult(Tuple.Create(x, (SklbFile?) sklb))
+                                                    : this.Control.GetTypedFileAsync<SklbFile>(x)
+                                                        .ContinueWith(r2 => Tuple.Create(x, r2.Result))));
+                                }).Unwrap().ContinueWith(
+                                r2 => {
+                                    if (r2.IsFaulted)
+                                        throw r2.Exception!;
+                                    if (!r2.IsCompletedSuccessfully || r2.Result is null)
+                                        throw new("No associated skeleton file found");
+                                    foreach (var (sklbPath, sklb) in r2.Result)
+                                        if (sklb is not null)
+                                            this._sklbCache.Add(sklbPath, sklb);
+
+                                    this.LoadAnimationIfPossible();
+                                    return r2.Result
+                                        .Select(x => x.Item2)
+                                        .Where(x => x is not null)
+                                        .Select(x => x!)
+                                        .ToArray();
+                                });
+
+                        this.Control.RunOnUiThreadAfter(
+                            this._modelObject,
+                            r2 => {
+                                if (this._mdlTask != value || !r2.IsCompletedSuccessfully)
+                                    return;
+
+                                this.ResetCamera(this._mdlTask.Result.ModelBoundingBoxes);
+                            });
                     });
-                });
             }
         }
     }
 
-    public override Task<SklbFile[]>? SkeletonTask => _sklbTask;
+    public override Task<SklbFile[]>? SkeletonTask => this._sklbTask;
 
     public override Task<IAnimation>[]? AnimationsTask {
-        get => _animationTasks;
+        get => this._animationTasks;
         set {
-            if (_animationTasks == value)
+            if (this._animationTasks == value)
                 return;
 
-            _animationTasks = value;
-            LoadAnimationIfPossible();            
+            this._animationTasks = value;
+            this.LoadAnimationIfPossible();
         }
     }
 
-    private void LoadAnimationIfPossible() {
-        var mdlTask = _mdlTask;
-        var sklbTask = _sklbTask;
+    private void LoadAnimationIfPossible()
+    {
+        var mdlTask = this._mdlTask;
+        var sklbTask = this._sklbTask;
         if (mdlTask is not null && sklbTask is not null) {
-            var animator = _animator;
+            var animator = this._animator;
             if (animator is null) {
-                _animator = animator = new(Task.Run(() => new AnimatingJointsConstantBufferResource(
-                    Device, DeviceContext, mdlTask.Result, sklbTask.Result)));
-                Control.RunOnUiThreadAfter(animator.Task, _ => Control.Invalidate());
-                UpdateAnimationSpeed();
+                this._animator = animator = new(
+                    Task.Run(
+                        () => new AnimatingJointsConstantBufferResource(
+                            this.Device,
+                            this.DeviceContext,
+                            mdlTask.Result,
+                            sklbTask.Result)));
+                this.Control.RunOnUiThreadAfter(animator.Task, _ => this.Control.Invalidate());
+                this.UpdateAnimationSpeed();
             }
 
-            var animationTasks = _animationTasks;
+            var animationTasks = this._animationTasks;
             if (animationTasks is not null) {
-                Control.RunOnUiThreadAfter(
+                this.Control.RunOnUiThreadAfter(
                     Task.WhenAll(animationTasks.Cast<Task>().Append(animator.Task))
-                        .ContinueWith(_ => {
-                            if (mdlTask != _mdlTask ||
-                                sklbTask != _sklbTask ||
-                                animationTasks != _animationTasks ||
-                                animator != _animator)
+                        .ContinueWith(
+                            _ => {
+                                if (mdlTask != this._mdlTask ||
+                                    sklbTask != this._sklbTask ||
+                                    animationTasks != this._animationTasks ||
+                                    animator != this._animator)
+                                    throw new OperationCanceledException();
+
+                                animator.Result.ChangeAnimations(
+                                    animationTasks
+                                        .Where(x => x.IsCompletedSuccessfully)
+                                        .Select(x => x.Result)
+                                        .ToArray());
+                                this.UpdateAnimationSpeed();
+                            }),
+                    _ => this.Control.Invalidate());
+            } else {
+                this.Control.RunOnUiThreadAfter(
+                    animator.Task.ContinueWith(
+                        _ => {
+                            if (mdlTask != this._mdlTask || sklbTask != this._sklbTask ||
+                                animationTasks != this._animationTasks ||
+                                animator != this._animator)
                                 throw new OperationCanceledException();
 
-                            animator.Result.ChangeAnimations(animationTasks
-                                .Where(x => x.IsCompletedSuccessfully)
-                                .Select(x => x.Result)
-                                .ToArray());
-                            UpdateAnimationSpeed();
-                        }), _ => Control.Invalidate());
-            } else {
-                Control.RunOnUiThreadAfter(animator.Task.ContinueWith(_ => {
-                    if (mdlTask != _mdlTask || sklbTask != _sklbTask || animationTasks != _animationTasks ||
-                        animator != _animator)
-                        throw new OperationCanceledException();
-
-                    animator.Result.ChangeAnimations(null);
-                    UpdateAnimationSpeed();
-                }), _ => Control.Invalidate());
+                            animator.Result.ChangeAnimations(null);
+                            this.UpdateAnimationSpeed();
+                        }),
+                    _ => this.Control.Invalidate());
             }
         }
     }
 
     private void ParamCameraOnDataPull(ConstantBufferResource<CameraParameter> sender) =>
-        _paramCamera.UpdateData(CameraParameter.FromViewProjection(
-            Control.Camera.View,
-            Control.Camera.Projection));
+        this._paramCamera.UpdateData(
+            CameraParameter.FromViewProjection(
+                this.Control.Camera.View,
+                this.Control.Camera.Projection));
 
     private void ParamWorldViewMatrixOnDataPull(ConstantBufferResource<WorldViewMatrix> sender) =>
-        _paramWorldViewMatrix.UpdateData(WorldViewMatrix.FromWorldView(Matrix4x4.Identity, Control.Camera.View));
+        this._paramWorldViewMatrix.UpdateData(
+            WorldViewMatrix.FromWorldView(Matrix4x4.Identity, this.Control.Camera.View));
 
     private void ParamWorldMiscOnDataPull(ConstantBufferResource<CustomMdlRendererShader.WorldMisc> sender) =>
-        _paramWorldMisc.UpdateData(CustomMdlRendererShader.WorldMisc.FromWorldViewProjection(
-            Matrix4x4.Identity,
-            Control.Camera.View,
-            Control.Camera.Projection));
+        this._paramWorldMisc.UpdateData(
+            CustomMdlRendererShader.WorldMisc.FromWorldViewProjection(
+                Matrix4x4.Identity,
+                this.Control.Camera.View,
+                this.Control.Camera.Projection));
 
-    protected override void Draw3D(ID3D11RenderTargetView* pRenderTarget) {
+    protected override void Draw3D(ID3D11RenderTargetView* pRenderTarget)
+    {
         base.Draw3D(pRenderTarget);
-        if (_modelObject?.IsCompletedSuccessfully is true) {
-            _shader.BindCamera(_paramCamera.Buffer);
-            _shader.BindWorldViewMatrix(_paramWorldViewMatrix.Buffer);
-            _shader.BindMiscWorldCamera(_paramWorldMisc.Buffer);
-            _shader.BindLight(_paramLight.Buffer);
+        if (this._modelObject?.IsCompletedSuccessfully is true) {
+            this._shader.BindCamera(this._paramCamera.Buffer);
+            this._shader.BindWorldViewMatrix(this._paramWorldViewMatrix.Buffer);
+            this._shader.BindMiscWorldCamera(this._paramWorldMisc.Buffer);
+            this._shader.BindLight(this._paramLight.Buffer);
 
-            if (_animator is {IsCompletedSuccessfully: true}) {
-                Span<nint> jointBuffers = stackalloc nint[_animator.Result.BufferCount];
-                _animator.Result.UpdateAnimationStateAndGetBuffers(jointBuffers);
-                _shader.Draw(_modelObject.Result, jointBuffers);
-                AutoInvalidate = true;
+            if (this._animator is { IsCompletedSuccessfully: true }) {
+                Span<nint> jointBuffers = stackalloc nint[this._animator.Result.BufferCount];
+                this._animator.Result.UpdateAnimationStateAndGetBuffers(jointBuffers);
+                this._shader.Draw(this._modelObject.Result, jointBuffers);
+                this.AutoInvalidate = true;
             } else {
-                _shader.Draw(_modelObject.Result, new());
-                AutoInvalidate = false;
+                this._shader.Draw(this._modelObject.Result, new());
+                this.AutoInvalidate = false;
             }
         }
     }
 
-    private void ResetCamera(MdlStructs.BoundingBoxStruct bboxTarget) {
-        var occ = Control.ObjectCentricCamera;
+    private void ResetCamera(MdlStructs.BoundingBoxStruct bboxTarget)
+    {
+        var occ = this.Control.ObjectCentricCamera;
         occ.Update(
             targetOffset: Vector3.Zero,
             targetBboxMin: new(bboxTarget.Min.AsSpan()),
@@ -244,19 +276,23 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
             yaw: 0,
             pitch: 0,
             resetDistance: true);
-        ResetCamera();
+        this.ResetCamera();
     }
 
-    private void ResetCamera() {
-        _paramCamera.EnablePull = _paramWorldViewMatrix.EnablePull = _paramWorldMisc.EnablePull = true;
-        Control.Invalidate();
+    private void ResetCamera()
+    {
+        this._paramCamera.EnablePull = this._paramWorldViewMatrix.EnablePull = this._paramWorldMisc.EnablePull = true;
+        this.Control.Invalidate();
     }
 
-    private void UpdateAnimationSpeed() {
-        _animator?.Task.ContinueWith(r => {
-            if (r.IsCompletedSuccessfully)
-                r.Result.AnimationSpeed = Control.AnimationSpeed * (Control.AnimationPlaying ? 1 : 0);
-            Control.Invalidate();
-        }, TaskScheduler.FromCurrentSynchronizationContext());
+    private void UpdateAnimationSpeed()
+    {
+        this._animator?.Task.ContinueWith(
+            r => {
+                if (r.IsCompletedSuccessfully)
+                    r.Result.AnimationSpeed = this.Control.AnimationSpeed * (this.Control.AnimationPlaying ? 1 : 0);
+                this.Control.Invalidate();
+            },
+            TaskScheduler.FromCurrentSynchronizationContext());
     }
 }

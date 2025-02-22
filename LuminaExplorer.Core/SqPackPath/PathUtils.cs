@@ -1,4 +1,3 @@
-﻿namespace LuminaExplorer.Core.SqPackPath; 
+﻿namespace LuminaExplorer.Core.SqPackPath;
 
-public class PathUtils {
-}
+public class PathUtils { }

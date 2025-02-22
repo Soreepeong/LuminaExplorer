@@ -21,18 +21,22 @@ public sealed class StandardSqpackFileStream : BaseSqpackFileStream {
     private byte[]? _blockBuffer;
 
     public StandardSqpackFileStream(string datPath, PlatformId platformId, long baseOffset, SqPackFileInfo info)
-        : base(platformId, info.RawFileSize) => _offsetManager = new(datPath, platformId, baseOffset, info);
+        : base(platformId, info.RawFileSize) =>
+        this._offsetManager = new(datPath, platformId, baseOffset, info);
 
     public StandardSqpackFileStream(StandardSqpackFileStream cloneFrom)
-        : base(cloneFrom.PlatformId, (uint) cloneFrom.Length) => _offsetManager = cloneFrom._offsetManager;
+        : base(cloneFrom.PlatformId, (uint) cloneFrom.Length) =>
+        this._offsetManager = cloneFrom._offsetManager;
 
-    ~StandardSqpackFileStream() {
-        Dispose(false);
+    ~StandardSqpackFileStream()
+    {
+        this.Dispose(false);
     }
 
     public override async Task<int>
-        ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) {
-        if (_offsetManager is null)
+        ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        if (this._offsetManager is null)
             throw new ObjectDisposedException(nameof(ModelSqpackFileStream));
 
         if (count == 0)
@@ -41,22 +45,23 @@ public sealed class StandardSqpackFileStream : BaseSqpackFileStream {
         var totalRead = 0;
 
         // 1. Drain previous read
-        if (_blockBuffer is not null) {
-            if (_offsetManager.RequestOffsets[_bufferBlockIndex] <= PositionUint &&
-                PositionUint < _offsetManager.RequestOffsets[_bufferBlockIndex + 1]) {
-                var bufferConsumed = PositionUint - _offsetManager.RequestOffsets[_bufferBlockIndex];
-                var bufferRemaining = _offsetManager.RequestOffsets[_bufferBlockIndex + 1] - PositionUint;
-                if (bufferConsumed < _bufferValidSize && bufferRemaining > 0) {
+        if (this._blockBuffer is not null) {
+            if (this._offsetManager.RequestOffsets[this._bufferBlockIndex] <= this.PositionUint &&
+                this.PositionUint < this._offsetManager.RequestOffsets[this._bufferBlockIndex + 1]) {
+                var bufferConsumed = this.PositionUint - this._offsetManager.RequestOffsets[this._bufferBlockIndex];
+                var bufferRemaining =
+                    this._offsetManager.RequestOffsets[this._bufferBlockIndex + 1] - this.PositionUint;
+                if (bufferConsumed < this._bufferValidSize && bufferRemaining > 0) {
                     var available = Math.Min((int) bufferRemaining, count);
-                    Array.Copy(_blockBuffer, bufferConsumed, buffer, offset, available);
+                    Array.Copy(this._blockBuffer, bufferConsumed, buffer, offset, available);
                     offset += available;
                     count -= available;
-                    PositionUint += (uint) available;
+                    this.PositionUint += (uint) available;
                     totalRead += available;
                     if (available == bufferRemaining) {
-                        _bufferBlockIndex = -1;
-                        _bufferValidSize = 0;
-                        ArrayPool<byte>.Shared.Return(ref _blockBuffer);
+                        this._bufferBlockIndex = -1;
+                        this._bufferValidSize = 0;
+                        ArrayPool<byte>.Shared.Return(ref this._blockBuffer);
                     }
 
                     if (count == 0)
@@ -66,25 +71,27 @@ public sealed class StandardSqpackFileStream : BaseSqpackFileStream {
         }
 
         // 2. New blocks!
-        var i = Array.BinarySearch(_offsetManager.RequestOffsets, PositionUint);
+        var i = Array.BinarySearch(this._offsetManager.RequestOffsets, this.PositionUint);
         if (i < 0)
             i = ~i - 1;
 
         byte[]? readBuffer = null;
         try {
-            for (; i < _offsetManager.NumBlocks; i++) {
+            for (; i < this._offsetManager.NumBlocks; i++) {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (_offsetManager.RequestOffsets[i + 1] <= PositionUint)
+                if (this._offsetManager.RequestOffsets[i + 1] <= this.PositionUint)
                     continue;
 
-                var bufferConsumed = PositionUint - _offsetManager.RequestOffsets[i];
-                var bufferRemaining = _offsetManager.RequestOffsets[i + 1] - PositionUint;
+                var bufferConsumed = this.PositionUint - this._offsetManager.RequestOffsets[i];
+                var bufferRemaining = this._offsetManager.RequestOffsets[i + 1] - this.PositionUint;
 
                 readBuffer = ArrayPool<byte>.Shared.RentAsNecessary(readBuffer, 16384);
-                await (_reader ??= _offsetManager.CreateNewReader())
-                    .WithSeek(_offsetManager.BaseOffset + _offsetManager.BlockOffsets[i])
-                    .BaseStream.ReadExactlyAsync(new(readBuffer, 0, _offsetManager.BlockSizes[i]), cancellationToken);
+                await (this._reader ??= this._offsetManager.CreateNewReader())
+                    .WithSeek(this._offsetManager.BaseOffset + this._offsetManager.BlockOffsets[i])
+                    .BaseStream.ReadExactlyAsync(
+                        new(readBuffer, 0, this._offsetManager.BlockSizes[i]),
+                        cancellationToken);
 
                 DatBlockHeader dbh;
                 unsafe {
@@ -94,32 +101,35 @@ public sealed class StandardSqpackFileStream : BaseSqpackFileStream {
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                _blockBuffer = ArrayPool<byte>.Shared.RentAsNecessary(_blockBuffer, (int) dbh.DecompressedSize);
+                this._blockBuffer = ArrayPool<byte>.Shared.RentAsNecessary(
+                    this._blockBuffer,
+                    (int) dbh.DecompressedSize);
                 if (dbh.IsCompressed) {
                     unsafe {
                         fixed (byte* b1 = &readBuffer[Unsafe.SizeOf<DatBlockHeader>()]) {
-                            using var s1 = new DeflateStream(new UnmanagedMemoryStream(b1, dbh.CompressedSize),
+                            using var s1 = new DeflateStream(
+                                new UnmanagedMemoryStream(b1, dbh.CompressedSize),
                                 CompressionMode.Decompress);
-                            s1.ReadExactly(new(_blockBuffer, 0, (int) dbh.DecompressedSize));
+                            s1.ReadExactly(new(this._blockBuffer, 0, (int) dbh.DecompressedSize));
                         }
                     }
                 } else {
-                    Array.Copy(readBuffer, 0, _blockBuffer, 0, dbh.DecompressedSize);
+                    Array.Copy(readBuffer, 0, this._blockBuffer, 0, dbh.DecompressedSize);
                 }
 
-                _bufferBlockIndex = i;
-                _bufferValidSize = dbh.DecompressedSize;
+                this._bufferBlockIndex = i;
+                this._bufferValidSize = dbh.DecompressedSize;
 
-                if (bufferConsumed < _bufferValidSize) {
+                if (bufferConsumed < this._bufferValidSize) {
                     var available = Math.Min((int) bufferRemaining, count);
-                    Array.Copy(_blockBuffer, bufferConsumed, buffer, offset, available);
+                    Array.Copy(this._blockBuffer, bufferConsumed, buffer, offset, available);
                     offset += available;
                     count -= available;
-                    PositionUint += (uint) available;
+                    this.PositionUint += (uint) available;
                     totalRead += available;
                     if (available == bufferRemaining) {
-                        _bufferBlockIndex = -1;
-                        _bufferValidSize = 0;
+                        this._bufferBlockIndex = -1;
+                        this._bufferValidSize = 0;
                     }
 
                     if (count == 0)
@@ -128,25 +138,27 @@ public sealed class StandardSqpackFileStream : BaseSqpackFileStream {
             }
         } finally {
             ArrayPool<byte>.Shared.Return(ref readBuffer);
-            if (_bufferValidSize == 0)
-                ArrayPool<byte>.Shared.Return(ref _blockBuffer);
+            if (this._bufferValidSize == 0)
+                ArrayPool<byte>.Shared.Return(ref this._blockBuffer);
         }
 
         // 3. Pad.
-        totalRead += ReadImplPadTo(buffer, ref offset, ref count, (uint) Length);
+        totalRead += this.ReadImplPadTo(buffer, ref offset, ref count, (uint) this.Length);
 
         return totalRead;
     }
 
     public override BaseSqpackFileStream Clone(bool keepOpen) => new StandardSqpackFileStream(this);
 
-    protected override void Dispose(bool disposing) {
-        CloseButOpenAgainWhenNecessary();
+    protected override void Dispose(bool disposing)
+    {
+        this.CloseButOpenAgainWhenNecessary();
         base.Dispose(disposing);
     }
 
-    public override void CloseButOpenAgainWhenNecessary() {
-        SafeDispose.One(ref _reader);
+    public override void CloseButOpenAgainWhenNecessary()
+    {
+        SafeDispose.One(ref this._reader);
     }
 
     private class OffsetManager : BaseOffsetManager {
@@ -156,22 +168,23 @@ public sealed class StandardSqpackFileStream : BaseSqpackFileStream {
         public readonly ushort[] BlockSizes;
 
         public OffsetManager(string datPath, PlatformId platformId, long baseOffset, SqPackFileInfo info)
-            : base(datPath, platformId, baseOffset) {
-            NumBlocks = (int) info.NumberOfBlocks;
-            RequestOffsets = new uint[NumBlocks + 1];
-            RequestOffsets[^1] = info.RawFileSize;
-            BlockOffsets = new uint[NumBlocks];
-            BlockSizes = new ushort[NumBlocks];
+            : base(datPath, platformId, baseOffset)
+        {
+            this.NumBlocks = (int) info.NumberOfBlocks;
+            this.RequestOffsets = new uint[this.NumBlocks + 1];
+            this.RequestOffsets[^1] = info.RawFileSize;
+            this.BlockOffsets = new uint[this.NumBlocks];
+            this.BlockSizes = new ushort[this.NumBlocks];
 
-            using var reader = CreateNewReader();
+            using var reader = this.CreateNewReader();
             var blockInfos = reader
-                .WithSeek(BaseOffset + (uint) Unsafe.SizeOf<SqPackFileInfo>())
-                .ReadStructuresAsArray<DatStdFileBlockInfos>(NumBlocks);
+                .WithSeek(this.BaseOffset + (uint) Unsafe.SizeOf<SqPackFileInfo>())
+                .ReadStructuresAsArray<DatStdFileBlockInfos>(this.NumBlocks);
 
-            for (var i = 0; i < NumBlocks; i++) {
-                RequestOffsets[i] = i == 0 ? 0 : RequestOffsets[i - 1] + blockInfos[i - 1].UncompressedSize;
-                BlockSizes[i] = blockInfos[i].CompressedSize;
-                BlockOffsets[i] = info.Size + blockInfos[i].Offset;
+            for (var i = 0; i < this.NumBlocks; i++) {
+                this.RequestOffsets[i] = i == 0 ? 0 : this.RequestOffsets[i - 1] + blockInfos[i - 1].UncompressedSize;
+                this.BlockSizes[i] = blockInfos[i].CompressedSize;
+                this.BlockOffsets[i] = info.Size + blockInfos[i].Offset;
             }
         }
     }

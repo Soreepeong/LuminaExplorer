@@ -10,9 +10,8 @@ using Lumina.Data.Structs;
 using Lumina.Models.Materials;
 using LuminaExplorer.Controls.DirectXStuff.Resources;
 using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
-using Silk.NET.Core.Native;
-using Silk.NET.Direct3D11;
-using Silk.NET.DXGI;
+using LuminaExplorer.Core.Util;
+using TerraFX.Interop.DirectX;
 
 namespace LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter;
 
@@ -31,97 +30,103 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
     private readonly ID3D11Buffer*[] _pIndexBuffers;
     private readonly ID3D11Buffer*[] _pVertexBuffers;
 
-    public ModelObjectWithGameShader(GameShaderPool pool, MdlFile mdl, int variantId = 1,
-        LodLevel lod = LodLevel.Highest) {
-        Debug.Assert(mdl.Meshes.Length == mdl.VertexDeclarations.Length,
+    public ModelObjectWithGameShader(
+        GameShaderPool pool,
+        MdlFile mdl,
+        int variantId = 1,
+        LodLevel lod = LodLevel.Highest)
+    {
+        Debug.Assert(
+            mdl.Meshes.Length == mdl.VertexDeclarations.Length,
             "Mesh.ReadVertices seems to be expecting Meshes and VertexDeclarations to have same length.");
 
         try {
             // Ensure that we at least have non-null arrays in case of exceptions.
-            _materials = Array.Empty<Task<Material?>?>();
-            _shaderSets = Array.Empty<Task<ShaderSet?>?>();
-            _pInputLayouts = new ID3D11InputLayout*[0];
-            _textures = Array.Empty<Task<Texture2DShaderResource?>?[]>();
-            _pSamplers = Array.Empty<ID3D11SamplerState*[]>();
-            _pIndexBuffers = new ID3D11Buffer*[0];
-            _pVertexBuffers = new ID3D11Buffer*[0];
+            this._materials = [];
+            this._shaderSets = [];
+            this._pInputLayouts = [];
+            this._textures = [];
+            this._pSamplers = [];
+            this._pIndexBuffers = [];
+            this._pVertexBuffers = [];
 
-            _pool = pool;
-            _pool.CopyDeviceAndContext(out _pDevice, out _pDeviceContext);
+            this._pool = pool;
+            this._pool.CopyDeviceAndContext(out this._pDevice, out this._pDeviceContext);
 
-            _mdl = mdl;
-            _variantId = variantId;
-            _lodIndex = (int) lod;
-            _materials = new Task<Material?>?[mdl.FileHeader.MaterialCount];
-            _shaderSets = new Task<ShaderSet?>?[mdl.FileHeader.MaterialCount];
-            _textures = new Task<Texture2DShaderResource?>[_materials.Length][];
-            _pSamplers = new ID3D11SamplerState*[_materials.Length][];
+            this._mdl = mdl;
+            this._variantId = variantId;
+            this._lodIndex = (int) lod;
+            this._materials = new Task<Material?>?[mdl.FileHeader.MaterialCount];
+            this._shaderSets = new Task<ShaderSet?>?[mdl.FileHeader.MaterialCount];
+            this._textures = new Task<Texture2DShaderResource?>[this._materials.Length][];
+            this._pSamplers = new ID3D11SamplerState*[this._materials.Length][];
 
-            _pInputLayouts = new ID3D11InputLayout*[mdl.Meshes.Length];
+            this._pInputLayouts = new ID3D11InputLayout*[mdl.Meshes.Length];
 
-            _pIndexBuffers = new ID3D11Buffer*[_mdl.FileHeader.LodCount];
-            _pVertexBuffers = new ID3D11Buffer*[_mdl.FileHeader.LodCount];
-            for (var i = 0; i < _mdl.FileHeader.LodCount; i++) {
-                fixed (void* pData = &_mdl.Data[_mdl.FileHeader.IndexOffset[i]])
-                fixed (ID3D11Buffer** ppBuffer = &_pIndexBuffers[i]) {
-                    var data = new SubresourceData(pData);
-                    var desc = new BufferDesc(
-                        _mdl.FileHeader.IndexBufferSize[i],
-                        Usage.Default,
-                        (uint) BindFlag.IndexBuffer);
-                    ThrowH(_pDevice->CreateBuffer(&desc, &data, ppBuffer));
+            this._pIndexBuffers = new ID3D11Buffer*[this._mdl.FileHeader.LodCount];
+            this._pVertexBuffers = new ID3D11Buffer*[this._mdl.FileHeader.LodCount];
+            for (var i = 0; i < this._mdl.FileHeader.LodCount; i++) {
+                fixed (void* pData = &this._mdl.Data[this._mdl.FileHeader.IndexOffset[i]])
+                fixed (ID3D11Buffer** ppBuffer = &this._pIndexBuffers[i]) {
+                    var data = new D3D11_SUBRESOURCE_DATA { pSysMem = pData };
+                    var desc = new D3D11_BUFFER_DESC(
+                        this._mdl.FileHeader.IndexBufferSize[i],
+                        (uint) D3D11_BIND_FLAG.D3D11_BIND_INDEX_BUFFER);
+                    this._pDevice->CreateBuffer(&desc, &data, ppBuffer).Ensure();
                 }
 
-                fixed (void* pData = &_mdl.Data[_mdl.FileHeader.VertexOffset[i]])
-                fixed (ID3D11Buffer** ppBuffer = &_pVertexBuffers[i]) {
-                    var data = new SubresourceData(pData);
-                    var desc = new BufferDesc(
-                        _mdl.FileHeader.VertexBufferSize[i],
-                        Usage.Default,
-                        (uint) BindFlag.VertexBuffer);
-                    ThrowH(_pDevice->CreateBuffer(&desc, &data, ppBuffer));
+                fixed (void* pData = &this._mdl.Data[this._mdl.FileHeader.VertexOffset[i]])
+                fixed (ID3D11Buffer** ppBuffer = &this._pVertexBuffers[i]) {
+                    var data = new D3D11_SUBRESOURCE_DATA { pSysMem = pData };
+                    var desc = new D3D11_BUFFER_DESC(
+                        this._mdl.FileHeader.VertexBufferSize[i],
+                        (uint) D3D11_BIND_FLAG.D3D11_BIND_VERTEX_BUFFER);
+                    this._pDevice->CreateBuffer(&desc, &data, ppBuffer).Ensure();
                 }
             }
         } catch (Exception) {
-            DisposeInner(true);
+            this.DisposeInner(true);
             throw;
         }
     }
 
-    ~ModelObjectWithGameShader() => ReleaseUnmanagedResources();
+    ~ModelObjectWithGameShader() => this.ReleaseUnmanagedResources();
 
-    private void ReleaseUnmanagedResources() {
-        for (var i = 0; i < _pInputLayouts.Length; i++)
-            SafeRelease(ref _pInputLayouts[i]);
-        for (var i = 0; i < _pIndexBuffers.Length; i++)
-            SafeRelease(ref _pIndexBuffers[i]);
-        for (var i = 0; i < _pVertexBuffers.Length; i++)
-            SafeRelease(ref _pVertexBuffers[i]);
-        foreach (var t in _pSamplers) {
+    private void ReleaseUnmanagedResources()
+    {
+        for (var i = 0; i < this._pInputLayouts.Length; i++)
+            SafeRelease(ref this._pInputLayouts[i]);
+        for (var i = 0; i < this._pIndexBuffers.Length; i++)
+            SafeRelease(ref this._pIndexBuffers[i]);
+        for (var i = 0; i < this._pVertexBuffers.Length; i++)
+            SafeRelease(ref this._pVertexBuffers[i]);
+        foreach (var t in this._pSamplers) {
             if (t is not null) {
                 for (var i = 0; i < t.Length; i++)
                     SafeRelease(ref t[i]);
             }
         }
 
-        SafeRelease(ref _pDeviceContext);
-        SafeRelease(ref _pDevice);
+        SafeRelease(ref this._pDeviceContext);
+        SafeRelease(ref this._pDevice);
     }
 
-    private void DisposeInner(bool disposing) {
+    private void DisposeInner(bool disposing)
+    {
         if (disposing) {
-            foreach (var t in _textures) {
+            foreach (var t in this._textures) {
                 if (t is not null)
                     foreach (var j in t)
                         j?.Dispose();
             }
         }
 
-        ReleaseUnmanagedResources();
+        this.ReleaseUnmanagedResources();
     }
 
-    protected override void Dispose(bool disposing) {
-        DisposeInner(disposing);
+    protected override void Dispose(bool disposing)
+    {
+        this.DisposeInner(disposing);
         base.Dispose(disposing);
     }
 
@@ -131,30 +136,32 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
 
     public event Action? ResourceLoadStateChanged;
 
-    public void GetBuffers(LodLevel lod, out ID3D11Buffer* pVertexBuffer, out ID3D11Buffer* pIndexBuffer) {
-        pVertexBuffer = _pVertexBuffers[(int) lod];
-        pIndexBuffer = _pIndexBuffers[(int) lod];
+    public void GetBuffers(LodLevel lod, out ID3D11Buffer* pVertexBuffer, out ID3D11Buffer* pIndexBuffer)
+    {
+        pVertexBuffer = this._pVertexBuffers[(int) lod];
+        pIndexBuffer = this._pIndexBuffers[(int) lod];
     }
 
     public IEnumerable<MeshPart> Enumerate(
         int startMeshIndex,
-        int meshCount) {
+        int meshCount)
+    {
         for (var i = startMeshIndex; i < startMeshIndex + meshCount; i++) {
-            var mesh = _mdl.Meshes[i];
+            var mesh = this._mdl.Meshes[i];
 
             if (mesh.SubMeshCount == 0) {
                 yield return new(
                     i,
-                    mesh.VertexBufferOffset[_lodIndex],
-                    mesh.VertexBufferStride[_lodIndex],
+                    mesh.VertexBufferOffset[this._lodIndex],
+                    mesh.VertexBufferStride[this._lodIndex],
                     mesh.StartIndex,
                     mesh.IndexCount);
             } else {
-                foreach (var sm in _mdl.Submeshes.Skip(mesh.SubMeshIndex).Take(mesh.SubMeshCount))
+                foreach (var sm in this._mdl.Submeshes.Skip(mesh.SubMeshIndex).Take(mesh.SubMeshCount))
                     yield return new(
                         i,
-                        mesh.VertexBufferOffset[_lodIndex],
-                        mesh.VertexBufferStride[_lodIndex],
+                        mesh.VertexBufferOffset[this._lodIndex],
+                        mesh.VertexBufferStride[this._lodIndex],
                         sm.IndexOffset,
                         sm.IndexCount);
             }
@@ -166,88 +173,91 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
         out int materialIndex,
         [MaybeNullWhen(false)] out Material material,
         [MaybeNullWhen(false)] out ShaderSet shaderSet,
-        out ID3D11InputLayout* pInputLayout) {
-        materialIndex = _mdl.Meshes[meshIndex].MaterialIndex;
+        out ID3D11InputLayout* pInputLayout)
+    {
+        materialIndex = this._mdl.Meshes[meshIndex].MaterialIndex;
         material = null!;
         shaderSet = null!;
         pInputLayout = null;
 
-        var materialTask = _materials[materialIndex];
+        var materialTask = this._materials[materialIndex];
         if (materialTask is null) {
-            if (MtrlFileRequested is null)
+            if (this.MtrlFileRequested is null)
                 return false;
 
-            var mtrlPathSpan = _mdl.Strings.AsSpan((int) _mdl.MaterialNameOffsets[materialIndex]);
+            var mtrlPathSpan = this._mdl.Strings.AsSpan((int) this._mdl.MaterialNameOffsets[materialIndex]);
             mtrlPathSpan = mtrlPathSpan[..mtrlPathSpan.IndexOf((byte) 0)];
 
             var mtrlPath = Encoding.UTF8.GetString(mtrlPathSpan);
             if (mtrlPath.StartsWith('/')) {
-                mtrlPath = Material.ResolveRelativeMaterialPath(mtrlPath, _variantId);
+                mtrlPath = Material.ResolveRelativeMaterialPath(mtrlPath, this._variantId);
                 if (mtrlPath is null) {
-                    _materials[materialIndex] = Task.FromResult((Material?) null);
+                    this._materials[materialIndex] = Task.FromResult((Material?) null);
                     return false;
                 }
             }
 
             Task<MtrlFile?>? loader = null;
-            MtrlFileRequested?.Invoke(mtrlPath, ref loader);
+            this.MtrlFileRequested?.Invoke(mtrlPath, ref loader);
             if (loader is null)
                 return false;
 
-            var pDevice = _pDevice;
+            var pDevice = this._pDevice;
             pDevice->AddRef();
-            _materials[materialIndex] = materialTask = loader.ContinueWith(r => {
-                try {
-                    if (!r.IsCompletedSuccessfully || r.Result is not { } mtrlFile)
-                        return null;
-                    var m = new Material(mtrlFile);
-                    var materialIndex = _mdl.Meshes[meshIndex].MaterialIndex;
+            this._materials[materialIndex] = materialTask = loader.ContinueWith(
+                r => {
+                    try {
+                        if (!r.IsCompletedSuccessfully || r.Result is not { } mtrlFile)
+                            return null;
+                        var m = new Material(mtrlFile);
+                        var materialIndex = this._mdl.Meshes[meshIndex].MaterialIndex;
 
-                    _textures[materialIndex] = new Task<Texture2DShaderResource?>?[m.Textures.Length];
-                    var samplers = _pSamplers[materialIndex] = new ID3D11SamplerState*[m.Textures.Length];
+                        this._textures[materialIndex] = new Task<Texture2DShaderResource?>?[m.Textures.Length];
+                        var samplers = this._pSamplers[materialIndex] = new ID3D11SamplerState*[m.Textures.Length];
 
-                    var samplerDesc = new SamplerDesc {
-                        Filter = Filter.MinMagMipLinear,
-                        MaxAnisotropy = 0,
-                        AddressU = TextureAddressMode.Wrap,
-                        AddressV = TextureAddressMode.Wrap,
-                        AddressW = TextureAddressMode.Wrap,
-                        MipLODBias = 0f,
-                        MinLOD = 0,
-                        MaxLOD = float.MaxValue,
-                        ComparisonFunc = ComparisonFunc.Never,
-                    };
-                    for (var i = 0; i < mtrlFile.Samplers.Length; i++) {
-                        fixed (ID3D11SamplerState** ppSampler = &samplers[i])
-                            ThrowH(pDevice->CreateSamplerState(&samplerDesc, ppSampler));
+                        var samplerDesc = new D3D11_SAMPLER_DESC(
+                            filter: D3D11_FILTER.D3D11_FILTER_MIN_MAG_MIP_LINEAR,
+                            addressU: D3D11_TEXTURE_ADDRESS_MODE.D3D11_TEXTURE_ADDRESS_WRAP,
+                            addressV: D3D11_TEXTURE_ADDRESS_MODE.D3D11_TEXTURE_ADDRESS_WRAP,
+                            addressW: D3D11_TEXTURE_ADDRESS_MODE.D3D11_TEXTURE_ADDRESS_WRAP,
+                            mipLODBias: 0,
+                            maxAnisotropy: 0,
+                            comparisonFunc: D3D11_COMPARISON_FUNC.D3D11_COMPARISON_NEVER,
+                            borderColor: null,
+                            minLOD: 0,
+                            maxLOD: float.MaxValue);
+                        for (var i = 0; i < mtrlFile.Samplers.Length; i++) {
+                            fixed (ID3D11SamplerState** ppSampler = &samplers[i])
+                                pDevice->CreateSamplerState(&samplerDesc, ppSampler).Ensure();
+                        }
+
+                        return m;
+                    } finally {
+                        pDevice->Release();
                     }
-
-                    return m;
-                } finally {
-                    pDevice->Release();
-                }
-            });
-            materialTask.ContinueWith(_ => ResourceLoadStateChanged?.Invoke());
+                });
+            materialTask.ContinueWith(_ => this.ResourceLoadStateChanged?.Invoke());
         }
 
-        if (materialTask is not {IsCompletedSuccessfully: true, Result: { } mat})
+        if (materialTask is not { IsCompletedSuccessfully: true, Result: { } mat })
             return false;
 
         material = mat;
 
-        if (_shaderSets[materialIndex] == null) {
-            var t = _shaderSets[materialIndex] = _pool.GetShaderSet(_mdl, mat);
+        if (this._shaderSets[materialIndex] == null) {
+            var t = this._shaderSets[materialIndex] = this._pool.GetShaderSet(this._mdl, mat);
             if (t is null)
                 return false;
-            t.ContinueWith(_ => ResourceLoadStateChanged?.Invoke());
+            t.ContinueWith(_ => this.ResourceLoadStateChanged?.Invoke());
         }
 
-        if (_shaderSets[materialIndex] is not {IsCompletedSuccessfully: true, Result: { } set})
+        if (this._shaderSets[materialIndex] is not { IsCompletedSuccessfully: true, Result: { } set })
             return false;
 
-        pInputLayout = _pInputLayouts[meshIndex];
+        pInputLayout = this._pInputLayouts[meshIndex];
         if (pInputLayout is null) {
-            pInputLayout = _pInputLayouts[meshIndex] = shaderSet.Vs.GetInputLayout(_mdl.VertexDeclarations[meshIndex]);
+            pInputLayout = this._pInputLayouts[meshIndex] =
+                shaderSet.Vs.GetInputLayout(this._mdl.VertexDeclarations[meshIndex]);
             pInputLayout->AddRef();
         }
 
@@ -255,12 +265,13 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
         return true;
     }
 
-    public bool TryGetTexture(int materialIndex, int textureIndex, out ID3D11ShaderResourceView* pTexture) {
+    public bool TryGetTexture(int materialIndex, int textureIndex, out ID3D11ShaderResourceView* pTexture)
+    {
         pTexture = null;
-        if (_materials[materialIndex] is not {IsCompletedSuccessfully: true, Result: { } mat})
+        if (this._materials[materialIndex] is not { IsCompletedSuccessfully: true, Result: { } mat })
             return false;
 
-        if (_textures[materialIndex] is not { } textures)
+        if (this._textures[materialIndex] is not { } textures)
             return false;
 
         var task = textures[textureIndex];
@@ -272,28 +283,29 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
             }
 
             Task<DdsFile?>? loader = null;
-            DdsFileRequested?.Invoke(textureDefinition.TexturePath, ref loader);
+            this.DdsFileRequested?.Invoke(textureDefinition.TexturePath, ref loader);
             if (loader is null)
                 return false;
 
-            var pDevice = _pDevice;
+            var pDevice = this._pDevice;
             pDevice->AddRef();
-            textures[textureIndex] = task = loader.ContinueWith(r => {
-                try {
-                    if (!r.IsCompletedSuccessfully || r.Result is null)
-                        return null;
-                    return new Texture2DShaderResource(pDevice, r.Result);
-                } finally {
-                    pDevice->Release();
-                }
-            });
+            textures[textureIndex] = task = loader.ContinueWith(
+                r => {
+                    try {
+                        if (!r.IsCompletedSuccessfully || r.Result is null)
+                            return null;
+                        return new Texture2DShaderResource(pDevice, r.Result);
+                    } finally {
+                        pDevice->Release();
+                    }
+                });
 
             // Separate this out, since we want the task itself to be in completed state
             // when this callback is called.
-            task.ContinueWith(_ => ResourceLoadStateChanged?.Invoke());
+            task.ContinueWith(_ => this.ResourceLoadStateChanged?.Invoke());
         }
 
-        if (task is {IsCompletedSuccessfully: true, Result: { } result}) {
+        if (task is { IsCompletedSuccessfully: true, Result: { } result }) {
             pTexture = result.ShaderResourceView;
             return true;
         }
@@ -302,14 +314,18 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
         return false;
     }
 
-    public void Draw(GameShaderState state) {
-        _pool.SetSamplers();
-        _pDeviceContext->IASetPrimitiveTopology(D3DPrimitiveTopology.D3D11PrimitiveTopologyTrianglelist);
-        _pDeviceContext->IASetIndexBuffer(_pIndexBuffers[_lodIndex], Format.FormatR16Uint, 0);
+    public void Draw(GameShaderState state)
+    {
+        this._pool.SetSamplers();
+        this._pDeviceContext->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY.D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        this._pDeviceContext->IASetIndexBuffer(
+            this._pIndexBuffers[this._lodIndex],
+            DXGI_FORMAT.DXGI_FORMAT_R16_UINT,
+            0);
 
-        var lodInfo = _mdl.Lods[_lodIndex];
-        foreach (var part in Enumerate(lodInfo.MeshIndex, lodInfo.MeshIndex + lodInfo.MeshCount)) {
-            if (!TryGetMaterialAndShader(
+        var lodInfo = this._mdl.Lods[this._lodIndex];
+        foreach (var part in this.Enumerate(lodInfo.MeshIndex, lodInfo.MeshIndex + lodInfo.MeshCount)) {
+            if (!this.TryGetMaterialAndShader(
                     part.Index,
                     out var materialIndex,
                     out var material,
@@ -317,39 +333,45 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
                     out var pInputLayout))
                 continue;
 
-            _pDeviceContext->VSSetShader(shaderSet.Vs.Shader, null, 0);
+            this._pDeviceContext->VSSetShader(shaderSet.Vs.Shader, null, 0);
             state.BindConstantBuffersFor(shaderSet.Vs.ShaderEntry);
 
-            _pDeviceContext->IASetInputLayout(pInputLayout);
-            _pDeviceContext->IASetVertexBuffers(0, 1, _pVertexBuffers[_lodIndex], part.Stride, part.VertexOffset);
+            this._pDeviceContext->IASetInputLayout(pInputLayout);
+            var vbuf = this._pVertexBuffers[this._lodIndex];
+            this._pDeviceContext->IASetVertexBuffers(
+                0,
+                1,
+                &vbuf,
+                &part.Stride,
+                &part.VertexOffset);
 
-            _pDeviceContext->PSSetShader(shaderSet.Ps.Shader, null, 0);
+            this._pDeviceContext->PSSetShader(shaderSet.Ps.Shader, null, 0);
             state.BindConstantBuffersFor(shaderSet.Ps.ShaderEntry);
 
-            _pool.SetShaderResourcesToDummyTexture(0, 4);
+            this._pool.SetShaderResourcesToDummyTexture(0, 4);
 
             for (var j = 0; j < material.Textures.Length; j++) {
                 var t = material.Textures[j];
-                if (!TryGetTexture(materialIndex, j, out var pTexture))
+                if (!this.TryGetTexture(materialIndex, j, out var pTexture))
                     continue;
 
                 switch (t.TextureUsageSimple) {
                     case Texture.Usage.Diffuse:
-                        _pDeviceContext->PSSetShaderResources(0, 1, pTexture);
+                        this._pDeviceContext->PSSetShaderResources(0, 1, &pTexture);
                         break;
                     case Texture.Usage.Normal:
-                        _pDeviceContext->PSSetShaderResources(1, 1, pTexture);
+                        this._pDeviceContext->PSSetShaderResources(1, 1, &pTexture);
                         break;
                     case Texture.Usage.Specular:
-                        _pDeviceContext->PSSetShaderResources(2, 1, pTexture);
+                        this._pDeviceContext->PSSetShaderResources(2, 1, &pTexture);
                         break;
                     case Texture.Usage.Mask:
-                        _pDeviceContext->PSSetShaderResources(3, 1, pTexture);
+                        this._pDeviceContext->PSSetShaderResources(3, 1, &pTexture);
                         break;
                 }
             }
 
-            _pDeviceContext->DrawIndexed(part.IndexCount, part.IndexOffset, 0);
+            this._pDeviceContext->DrawIndexed(part.IndexCount, part.IndexOffset, 0);
         }
     }
 
@@ -360,12 +382,13 @@ public unsafe class ModelObjectWithGameShader : DirectXObject {
         public readonly uint IndexOffset;
         public readonly uint IndexCount;
 
-        public MeshPart(int index, uint vertexOffset, uint stride, uint indexOffset, uint indexCount) {
-            Index = index;
-            VertexOffset = vertexOffset;
-            Stride = stride;
-            IndexOffset = indexOffset;
-            IndexCount = indexCount;
+        public MeshPart(int index, uint vertexOffset, uint stride, uint indexOffset, uint indexCount)
+        {
+            this.Index = index;
+            this.VertexOffset = vertexOffset;
+            this.Stride = stride;
+            this.IndexOffset = indexOffset;
+            this.IndexCount = indexCount;
         }
     }
 }

@@ -8,17 +8,19 @@ namespace LuminaExplorer.Core.ExtraFormats.HavokTagfile.Value;
 public class ValueInt : IValue {
     public readonly int Value;
 
-    public ValueInt(int value) {
-        Value = value;
+    public ValueInt(int value)
+    {
+        this.Value = value;
     }
 
-    public override string ToString() => $"{Value}";
+    public override string ToString() => $"{this.Value}";
 
     public static implicit operator int(ValueInt d) => d.Value;
 
     internal static ValueInt Read(Parser parser) => new(parser.ReadInt());
 
-    internal static ValueArray ReadVector(Parser parser, int count) {
+    internal static ValueArray ReadVector(Parser parser, int count)
+    {
         var unknown = parser.ReadInt();
         if (unknown != 4)
             throw new InvalidDataException();

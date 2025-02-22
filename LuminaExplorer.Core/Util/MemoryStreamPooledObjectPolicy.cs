@@ -8,10 +8,11 @@ public class MemoryStreamPooledObjectPolicy : PooledObjectPolicy<MemoryStream> {
 
     public int MaximumRetainedCapacity { get; set; } = 4 * 1024;
 
-    public override MemoryStream Create() => new(InitialCapacity);
+    public override MemoryStream Create() => new(this.InitialCapacity);
 
-    public override bool Return(MemoryStream obj) {
-        if (obj.Capacity > MaximumRetainedCapacity) {
+    public override bool Return(MemoryStream obj)
+    {
+        if (obj.Capacity > this.MaximumRetainedCapacity) {
             // Too big. Discard this one.
             return false;
         }

@@ -1,4 +1,4 @@
-﻿namespace LuminaExplorer.Core.ExtraFormats; 
+﻿namespace LuminaExplorer.Core.ExtraFormats;
 
 public enum XivHumanSkeletonId : ushort {
     // Note: values are decimal; C# does not support octal literal notation
@@ -41,6 +41,6 @@ public enum XivHumanSkeletonId : ushort {
     VieraFemaleNpc = 1804,
     NpcMale = 9104,
     NpcFemale = 9204,
-    
+
     DefaultHuman = HyurMidlanderMale,
 }

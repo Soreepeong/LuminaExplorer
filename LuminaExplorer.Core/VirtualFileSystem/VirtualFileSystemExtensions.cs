@@ -24,149 +24,169 @@ public static class VirtualFileSystemExtensions {
         Action<IVirtualFile>? fileFoundCallback,
         int numThreads = default,
         TimeSpan timeoutPerEntry = default,
-        CancellationToken cancellationToken = default) => Task.Factory.StartNew(async () => {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        if (new QueryTokenizer(query).Parse() is not { } matcher)
-            return;
-
-        var stopwatches = ObjectPool.Create(new DefaultPooledObjectPolicy<Stopwatch>());
-
-        Debug.Print(matcher.ToString());
-
-        if (numThreads == default)
-            numThreads = Environment.ProcessorCount;
-        if (timeoutPerEntry == default)
-            timeoutPerEntry = TimeSpan.FromMilliseconds(500);
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var activeTasks = new HashSet<Task>();
-        var queue = System.Threading.Channels.Channel.CreateUnbounded<object?>();
-
-        var progress = new IVirtualFileSystem.SearchProgress(rootFolder);
-
-        async Task Traverse(IVirtualFolder folder) {
+        CancellationToken cancellationToken = default) => Task.Factory.StartNew(
+        async () => {
             cancellationToken.ThrowIfCancellationRequested();
 
-            await ivfs.AsFoldersResolved(folder);
-            var folders = ivfs.GetFolders(folder);
-            progress.Total += folders.Count;
+            if (new QueryTokenizer(query).Parse() is not { } matcher)
+                return;
+
+            var stopwatches = ObjectPool.Create(new DefaultPooledObjectPolicy<Stopwatch>());
+
+            Debug.Print(matcher.ToString());
+
+            if (numThreads == default)
+                numThreads = Environment.ProcessorCount;
+            if (timeoutPerEntry == default)
+                timeoutPerEntry = TimeSpan.FromMilliseconds(500);
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            var asFileNamesResolved = ivfs.AsFileNamesResolved(folder);
-            await queue.Writer.WriteAsync(folders, cancellationToken).ConfigureAwait(false);
-            foreach (var f in folders)
-                await Traverse(f);
+            var activeTasks = new HashSet<Task>();
+            var queue = System.Threading.Channels.Channel.CreateUnbounded<object?>();
 
-            var files = ivfs.GetFiles(await asFileNamesResolved);
-            progress.Total += files.Count;
-            await queue.Writer.WriteAsync(files, cancellationToken).ConfigureAwait(false);
-        }
+            var progress = new IVirtualFileSystem.SearchProgress(rootFolder);
 
-        long nextProgressReportedMilliseconds = 0;
-        progress.Stopwatch.Start();
+            async Task Traverse(IVirtualFolder folder)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
 
-        _ = Task.Run(async () => {
-            await queue.Writer.WriteAsync(new List<IVirtualFolder> {rootFolder}, cancellationToken);
-            await Traverse(rootFolder);
-            await queue.Writer.WriteAsync(null, cancellationToken);
-        }, cancellationToken);
+                await ivfs.AsFoldersResolved(folder);
+                var folders = ivfs.GetFolders(folder);
+                progress.Total += folders.Count;
 
-        var itemList = new List<object>();
-        while (true) {
-            while (activeTasks.Count >= numThreads) {
-                await Task.WhenAny(activeTasks);
-                activeTasks.RemoveWhere(x => x.IsCompleted);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var asFileNamesResolved = ivfs.AsFileNamesResolved(folder);
+                await queue.Writer.WriteAsync(folders, cancellationToken).ConfigureAwait(false);
+                foreach (var f in folders)
+                    await Traverse(f);
+
+                var files = ivfs.GetFiles(await asFileNamesResolved);
+                progress.Total += files.Count;
+                await queue.Writer.WriteAsync(files, cancellationToken).ConfigureAwait(false);
             }
 
-            var @object = await queue.Reader.ReadAsync(cancellationToken);
-            if (@object is null)
-                break;
+            long nextProgressReportedMilliseconds = 0;
+            progress.Stopwatch.Start();
 
-            progress.LastObject = @object;
-            if (progress.Stopwatch.ElapsedMilliseconds >= nextProgressReportedMilliseconds) {
-                progressCallback?.Invoke(progress);
-                nextProgressReportedMilliseconds = progress.Stopwatch.ElapsedMilliseconds + 200;
-            }
+            _ = Task.Run(
+                async () => {
+                    await queue.Writer.WriteAsync(new List<IVirtualFolder> { rootFolder }, cancellationToken);
+                    await Traverse(rootFolder);
+                    await queue.Writer.WriteAsync(null, cancellationToken);
+                },
+                cancellationToken);
 
-            itemList.Clear();
-            switch (@object) {
-                case List<IVirtualFolder> folders:
-                    itemList.AddRange(folders);
-                    break;
-                case List<IVirtualFile> files:
-                    itemList.AddRange(files);
-                    break;
-            }
-
-            foreach (var item in itemList) {
+            var itemList = new List<object>();
+            while (true) {
                 while (activeTasks.Count >= numThreads) {
                     await Task.WhenAny(activeTasks);
                     activeTasks.RemoveWhere(x => x.IsCompleted);
                 }
 
-                var task = Task.Run(
-                    async () => {
-                        var stopwatch = stopwatches.Get();
-                        try {
-                            switch (item) {
-                                case IVirtualFolder folder:
-                                    if (await matcher.Matches(ivfs, folder, stopwatch, timeoutPerEntry,
-                                            cancellationToken))
-                                        return () => folderFoundCallback?.Invoke(folder);
-                                    else
-                                        return null;
-                                case IVirtualFile file:
-                                    var lookup = new Lazy<IVirtualFileLookup>(() => ivfs.GetLookup(file));
-                                    try {
-                                        var data = new Task<Task<string>>(
-                                            async () => new(
-                                                // ReSharper disable once AccessToDisposedClosure
-                                                (await lookup.Value.ReadAll(cancellationToken))
-                                                .Select(x => (char) x)
-                                                .ToArray()),
-                                            cancellationToken);
-                                        if (await matcher.Matches(ivfs, file, lookup, data, stopwatch, timeoutPerEntry,
+                var @object = await queue.Reader.ReadAsync(cancellationToken);
+                if (@object is null)
+                    break;
+
+                progress.LastObject = @object;
+                if (progress.Stopwatch.ElapsedMilliseconds >= nextProgressReportedMilliseconds) {
+                    progressCallback?.Invoke(progress);
+                    nextProgressReportedMilliseconds = progress.Stopwatch.ElapsedMilliseconds + 200;
+                }
+
+                itemList.Clear();
+                switch (@object) {
+                    case List<IVirtualFolder> folders:
+                        itemList.AddRange(folders);
+                        break;
+                    case List<IVirtualFile> files:
+                        itemList.AddRange(files);
+                        break;
+                }
+
+                foreach (var item in itemList) {
+                    while (activeTasks.Count >= numThreads) {
+                        await Task.WhenAny(activeTasks);
+                        activeTasks.RemoveWhere(x => x.IsCompleted);
+                    }
+
+                    var task = Task.Run(
+                        async () => {
+                            var stopwatch = stopwatches.Get();
+                            try {
+                                switch (item) {
+                                    case IVirtualFolder folder:
+                                        if (await matcher.Matches(
+                                                ivfs,
+                                                folder,
+                                                stopwatch,
+                                                timeoutPerEntry,
                                                 cancellationToken))
-                                            return () => {
-                                                // Force name resolution
-                                                _ = file.Name;
-                                                fileFoundCallback?.Invoke(file);
-                                            };
+                                            return () => folderFoundCallback?.Invoke(folder);
                                         else
                                             return null;
-                                    } finally {
-                                        if (lookup.IsValueCreated)
-                                            lookup.Value.Dispose();
-                                    }
-                                default:
-                                    return (Action?) null;
+                                    case IVirtualFile file:
+                                        var lookup = new Lazy<IVirtualFileLookup>(() => ivfs.GetLookup(file));
+                                        try {
+                                            var data = new Task<Task<string>>(
+                                                async () => new(
+                                                    // ReSharper disable once AccessToDisposedClosure
+                                                    (await lookup.Value.ReadAll(cancellationToken))
+                                                    .Select(x => (char) x)
+                                                    .ToArray()),
+                                                cancellationToken);
+                                            if (await matcher.Matches(
+                                                    ivfs,
+                                                    file,
+                                                    lookup,
+                                                    data,
+                                                    stopwatch,
+                                                    timeoutPerEntry,
+                                                    cancellationToken))
+                                                return () => {
+                                                    // Force name resolution
+                                                    _ = file.Name;
+                                                    fileFoundCallback?.Invoke(file);
+                                                };
+                                            else
+                                                return null;
+                                        } finally {
+                                            if (lookup.IsValueCreated)
+                                                lookup.Value.Dispose();
+                                        }
+                                    default:
+                                        return (Action?) null;
+                                }
+                            } finally {
+                                stopwatches.Return(stopwatch);
+                                progress.Progress++;
                             }
-                        } finally {
-                            stopwatches.Return(stopwatch);
-                            progress.Progress++;
-                        }
-                    },
-                    cancellationToken);
-                _ = task.ContinueWith(x => {
-                    if (x is {IsCompletedSuccessfully: true, Result: { } foundAction})
-                        foundAction();
-                }, cancellationToken);
-                activeTasks.Add(task);
+                        },
+                        cancellationToken);
+                    _ = task.ContinueWith(
+                        x => {
+                            if (x is { IsCompletedSuccessfully: true, Result: { } foundAction })
+                                foundAction();
+                        },
+                        cancellationToken);
+                    activeTasks.Add(task);
+                }
             }
-        }
 
-        cancellationToken.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
 
-        await Task.WhenAll(activeTasks);
+            await Task.WhenAll(activeTasks);
 
-        progress.Completed = true;
-        progressCallback?.Invoke(progress);
-    }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
+            progress.Completed = true;
+            progressCallback?.Invoke(progress);
+        },
+        cancellationToken,
+        TaskCreationOptions.LongRunning,
+        TaskScheduler.Default).Unwrap();
 
-    internal static bool GetFileResourceTypeByMagic(uint magic, [MaybeNullWhen(false)] out Type type) {
+    internal static bool GetFileResourceTypeByMagic(uint magic, [MaybeNullWhen(false)] out Type type)
+    {
         type = magic switch {
             0x42444553u => typeof(ScdFile),
             0x46445845u => typeof(ExcelDataFile),
@@ -180,7 +200,7 @@ public static class VirtualFileSystemExtensions {
             SklbFile.MagicValue => typeof(SklbFile),
             _ => null,
         };
-        
+
         return type is not null;
     }
 }

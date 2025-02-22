@@ -9,12 +9,14 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 using LuminaExplorer.Core.Util;
-using WicNet;
+using TerraFX.Interop.Windows;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 
 public static class BitmapSourceExtensions {
-    public static Task<WicBitmapSource> GetWicBitmapSourceAsync(this IBitmapSource source, GridLayoutCell cell) =>
+    public static Task<ComPtr<IWICBitmapSource>> GetWicBitmapSourceAsync(
+        this IBitmapSource source,
+        GridLayoutCell cell) =>
         source.GetWicBitmapSourceAsync(cell.ImageIndex, cell.Mipmap, cell.Slice);
 
     public static bool HasWicBitmapSource(this IBitmapSource source, GridLayoutCell cell) =>
@@ -30,7 +32,8 @@ public static class BitmapSourceExtensions {
     public static async Task<bool> SetClipboardImage(
         this IBitmapSource source,
         TaskScheduler taskScheduler,
-        DataObject? data = null) {
+        DataObject? data = null)
+    {
         if (source.Layout.Count == 0)
             return false;
 
@@ -38,7 +41,7 @@ public static class BitmapSourceExtensions {
 
         Bitmap? bitmap = null;
         var disposeBitmap = false;
-        
+
         Stream? pngStream = null;
         Stream? dibStream = null;
         Stream? dibv5Stream = null;
@@ -85,10 +88,14 @@ public static class BitmapSourceExtensions {
 
             data.SetData(DataFormats.Bitmap, true, bitmapWithoutTransparency);
 
-            await Task.Factory.StartNew(() => {
-                Clipboard.Clear();
-                Clipboard.SetDataObject(data, true);
-            }, default, TaskCreationOptions.None, taskScheduler);
+            await Task.Factory.StartNew(
+                () => {
+                    Clipboard.Clear();
+                    Clipboard.SetDataObject(data, true);
+                },
+                default,
+                TaskCreationOptions.None,
+                taskScheduler);
 
             return true;
         } finally {
@@ -100,8 +107,9 @@ public static class BitmapSourceExtensions {
         }
     }
 
-    public static void ConvertToDib(Bitmap bitmap, bool v5, ref Stream? stream) {
-        using var bcopy = (Bitmap)bitmap.Clone(); 
+    public static void ConvertToDib(Bitmap bitmap, bool v5, ref Stream? stream)
+    {
+        using var bcopy = (Bitmap) bitmap.Clone();
         var lb = bcopy.LockBits(
             new(Point.Empty, bcopy.Size),
             ImageLockMode.ReadOnly,
@@ -109,10 +117,11 @@ public static class BitmapSourceExtensions {
         try {
             var bitmapSize = lb.Stride * lb.Height;
 
-            stream ??= new MemoryStream(new byte[
-                (v5 ? Unsafe.SizeOf<BitmapV5Header>() : Unsafe.SizeOf<BitmapInfo>()) +
-                bitmapSize
-            ]);
+            stream ??= new MemoryStream(
+                new byte[
+                    (v5 ? Unsafe.SizeOf<BitmapV5Header>() : Unsafe.SizeOf<BitmapInfo>()) +
+                    bitmapSize
+                ]);
 
             unsafe {
                 if (v5) {
@@ -131,7 +140,7 @@ public static class BitmapSourceExtensions {
                         CSType = 0x57696E20, // LCS_WINDOWS_COLOR_SPACE
                         Intent = 4, // LCS_GM_IMAGES
                     };
-                    
+
                     stream.Write(new(&h, h.Size));
                 } else {
                     var h = new BitmapInfo {
@@ -193,9 +202,9 @@ public static class BitmapSourceExtensions {
 
     [StructLayout(LayoutKind.Sequential)]
     public struct CieXyzTriple {
-        public DirectN.CIEXYZ ciexyzRed;
-        public DirectN.CIEXYZ ciexyzGreen;
-        public DirectN.CIEXYZ ciexyzBlue;
+        public CIEXYZ ciexyzRed;
+        public CIEXYZ ciexyzGreen;
+        public CIEXYZ ciexyzBlue;
     }
 
     [StructLayout(LayoutKind.Sequential)]

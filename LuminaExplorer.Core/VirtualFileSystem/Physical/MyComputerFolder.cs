@@ -7,7 +7,8 @@ namespace LuminaExplorer.Core.VirtualFileSystem.Physical;
 public sealed class MyComputerFolder : BasePhysicalFolder {
     public static readonly MyComputerFolder Instance = new();
 
-    private MyComputerFolder() { }
+    private MyComputerFolder()
+    { }
 
     public override bool Equals(IVirtualFolder? other) => other is MyComputerFolder;
 

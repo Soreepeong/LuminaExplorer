@@ -25,25 +25,27 @@ public class GltfAccessor : BaseGltfObject {
 
     [JsonProperty("type")]
     public string TypeString {
-        get => Type switch {
-            GltfAccessorTypes.Scalar => "SCALAR",
-            GltfAccessorTypes.Vec2 => "VEC2",
-            GltfAccessorTypes.Vec3 => "VEC3",
-            GltfAccessorTypes.Vec4 => "VEC4",
-            GltfAccessorTypes.Mat2 => "MAT2",
-            GltfAccessorTypes.Mat3 => "MAT3",
-            GltfAccessorTypes.Mat4 => "MAT4",
-            _ => throw new ArgumentOutOfRangeException(nameof(Type)),
-        };
-        set => Type = value switch {
-            "SCALAR" => GltfAccessorTypes.Scalar,
-            "VEC2" => GltfAccessorTypes.Vec2,
-            "VEC3" => GltfAccessorTypes.Vec3,
-            "VEC4" => GltfAccessorTypes.Vec4,
-            "MAT2" => GltfAccessorTypes.Mat2,
-            "MAT3" => GltfAccessorTypes.Mat3,
-            "MAT4" => GltfAccessorTypes.Mat4,
-            _ => throw new ArgumentOutOfRangeException(nameof(value)),
-        };
+        get =>
+            this.Type switch {
+                GltfAccessorTypes.Scalar => "SCALAR",
+                GltfAccessorTypes.Vec2 => "VEC2",
+                GltfAccessorTypes.Vec3 => "VEC3",
+                GltfAccessorTypes.Vec4 => "VEC4",
+                GltfAccessorTypes.Mat2 => "MAT2",
+                GltfAccessorTypes.Mat3 => "MAT3",
+                GltfAccessorTypes.Mat4 => "MAT4",
+                _ => throw new ArgumentOutOfRangeException(nameof(this.Type)),
+            };
+        set =>
+            this.Type = value switch {
+                "SCALAR" => GltfAccessorTypes.Scalar,
+                "VEC2" => GltfAccessorTypes.Vec2,
+                "VEC3" => GltfAccessorTypes.Vec3,
+                "VEC4" => GltfAccessorTypes.Vec4,
+                "MAT2" => GltfAccessorTypes.Mat2,
+                "MAT3" => GltfAccessorTypes.Mat3,
+                "MAT4" => GltfAccessorTypes.Mat4,
+                _ => throw new ArgumentOutOfRangeException(nameof(value)),
+            };
     }
 }

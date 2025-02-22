@@ -10,29 +10,31 @@ public class Parser {
     private const ulong HavokMagic = 0xD011FACECAB00D1E;
 
     internal readonly Dictionary<Tuple<string, int>, Definition> Definitions;
-    internal readonly List<Definition?> OrderedDefinitions = new() {null};
-    internal readonly List<Node?> Nodes = new();
-    internal readonly List<int> References = new() {-1};
+    internal readonly List<Definition?> OrderedDefinitions = [null];
+    internal readonly List<Node?> Nodes = [];
+    internal readonly List<int> References = [-1];
     internal readonly Dictionary<int, int> PendingReferences = new();
 
     private readonly BinaryReader _reader;
-    private readonly List<string?> _strings = new() {"", null};
+    private readonly List<string?> _strings = ["", null];
 
-    private Parser(BinaryReader reader, Dictionary<Tuple<string, int>, Definition> definitions) {
-        _reader = reader;
-        Definitions = definitions;
+    private Parser(BinaryReader reader, Dictionary<Tuple<string, int>, Definition> definitions)
+    {
+        this._reader = reader;
+        this.Definitions = definitions;
     }
 
     public int Version { get; private set; }
 
-    internal int ReadInt() {
-        var b = _reader.ReadByte();
+    internal int ReadInt()
+    {
+        var b = this._reader.ReadByte();
         var sign = (b & 1) == 1 ? -1 : 1;
         var val = (b >> 1) & 0x3F;
 
         var shift = 6;
         while ((b & 0x80) != 0) {
-            b = _reader.ReadByte();
+            b = this._reader.ReadByte();
             val |= (b & 0x7F) << shift;
             shift += 7;
         }
@@ -40,49 +42,52 @@ public class Parser {
         return val * sign;
     }
 
-    internal float ReadFloat() => _reader.ReadSingle();
+    internal float ReadFloat() => this._reader.ReadSingle();
 
-    internal byte ReadByte() => _reader.ReadByte();
+    internal byte ReadByte() => this._reader.ReadByte();
 
-    internal byte[] ReadBytes(int length) => _reader.ReadBytes(length);
+    internal byte[] ReadBytes(int length) => this._reader.ReadBytes(length);
 
-    internal string? ReadStringNullable() {
-        var indexOrLength = ReadInt();
+    internal string? ReadStringNullable()
+    {
+        var indexOrLength = this.ReadInt();
         if (indexOrLength <= 0)
-            return _strings[-indexOrLength];
+            return this._strings[-indexOrLength];
 
-        _strings.Add(Encoding.UTF8.GetString(_reader.ReadBytes(indexOrLength)));
-        return _strings[^1];
+        this._strings.Add(Encoding.UTF8.GetString(this._reader.ReadBytes(indexOrLength)));
+        return this._strings[^1];
     }
 
-    internal string ReadString() {
-        var res = ReadStringNullable();
+    internal string ReadString()
+    {
+        var res = this.ReadStringNullable();
         if (res is null)
             throw new NullReferenceException();
         return res;
     }
 
-    private void _Parse() {
-        if (_reader.ReadUInt64() != HavokMagic)
+    private void _Parse()
+    {
+        if (this._reader.ReadUInt64() != HavokMagic)
             throw new InvalidDataException();
 
         while (true) {
-            var tagType = (TagType) ReadInt();
+            var tagType = (TagType) this.ReadInt();
             switch (tagType) {
                 case TagType.Metadata:
-                    Version = ReadInt();
-                    if (Version != 3)
+                    this.Version = this.ReadInt();
+                    if (this.Version != 3)
                         throw new NotSupportedException();
                     break;
 
                 case TagType.Definition: {
                     var def = Definition.Read(this);
                     var defkey = Tuple.Create(def.Name, def.Version);
-                    if (Definitions.TryGetValue(defkey, out var exdef))
+                    if (this.Definitions.TryGetValue(defkey, out var exdef))
                         def = exdef;
                     else
-                        Definitions.Add(defkey, def);
-                    OrderedDefinitions.Add(def);
+                        this.Definitions.Add(defkey, def);
+                    this.OrderedDefinitions.Add(def);
                     break;
                 }
 
@@ -91,7 +96,7 @@ public class Parser {
                     break;
 
                 case TagType.EndOfFile:
-                    var remainingFields = OrderedDefinitions
+                    var remainingFields = this.OrderedDefinitions
                         .Where(x => x is not null)
                         .SelectMany(x => x!.Fields)
                         .Select(x => x.FieldType)
@@ -107,7 +112,7 @@ public class Parser {
                         }
 
                         if (f.ReferencedName is not null)
-                            f.ReferenceDefinition = OrderedDefinitions.First(x => x?.Name == f.ReferencedName);
+                            f.ReferenceDefinition = this.OrderedDefinitions.First(x => x?.Name == f.ReferencedName);
                     }
 
                     return;
@@ -121,7 +126,8 @@ public class Parser {
     public static Node Parse(
         BinaryReader reader,
         Dictionary<Tuple<string, int>, Definition>? definitions = null,
-        bool closeAfter = false) {
+        bool closeAfter = false)
+    {
         try {
             var parser = new Parser(reader, definitions ?? new());
             parser._Parse();

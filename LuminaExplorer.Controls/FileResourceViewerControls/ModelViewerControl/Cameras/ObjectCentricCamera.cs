@@ -20,13 +20,15 @@ public class ObjectCentricCamera : ICamera {
     private Matrix4x4? _view;
     private Matrix4x4? _projection;
 
-    public ObjectCentricCamera(System3D system) {
-        System = system;
+    public ObjectCentricCamera(System3D system)
+    {
+        this.System = system;
     }
 
-    public ObjectCentricCamera(Vector3 bboxMin, Vector3 bboxMax, System3D system) {
-        System = system;
-        Update(
+    public ObjectCentricCamera(Vector3 bboxMin, Vector3 bboxMax, System3D system)
+    {
+        this.System = system;
+        this.Update(
             targetOffset: Vector3.Zero,
             targetBboxMin: bboxMin,
             targetBboxMax: bboxMax,
@@ -36,76 +38,80 @@ public class ObjectCentricCamera : ICamera {
     }
 
     public Vector3 TargetOffset {
-        get => _targetOffset;
-        set => Update(targetOffset: value);
+        get => this._targetOffset;
+        set => this.Update(targetOffset: value);
     }
 
     public Vector3 TargetBboxMin {
-        get => _targetBboxMin;
-        set => Update(targetBboxMin: value);
+        get => this._targetBboxMin;
+        set => this.Update(targetBboxMin: value);
     }
 
     public Vector3 TargetBboxMax {
-        get => _targetBboxMax;
-        set => Update(targetBboxMax: value);
+        get => this._targetBboxMax;
+        set => this.Update(targetBboxMax: value);
     }
 
     public Vector2 Viewport {
-        get => _viewport;
-        set => Update(viewport: value);
+        get => this._viewport;
+        set => this.Update(viewport: value);
     }
 
     public float Yaw {
-        get => _yaw;
-        set => Update(yaw: value);
+        get => this._yaw;
+        set => this.Update(yaw: value);
     }
 
     public float Pitch {
-        get => _pitch;
-        set => Update(pitch: value);
+        get => this._pitch;
+        set => this.Update(pitch: value);
     }
 
     public float Roll {
-        get => _roll;
-        set => Update(roll: value);
+        get => this._roll;
+        set => this.Update(roll: value);
     }
 
     public float DistanceExponent {
-        get => _distanceExponent;
-        set => Update(distanceExponent: value);
+        get => this._distanceExponent;
+        set => this.Update(distanceExponent: value);
     }
 
     public float FovExponent {
-        get => _fovExponent;
-        set => Update(fovExponent: value);
+        get => this._fovExponent;
+        set => this.Update(fovExponent: value);
     }
 
-    public float ScaledDistance => MathF.Pow(2, _distanceExponent / 64f);
+    public float ScaledDistance => MathF.Pow(2, this._distanceExponent / 64f);
 
     public Matrix4x4 RotationMatrix =>
-        Matrix4x4.CreateRotationX(_pitch) * Matrix4x4.CreateRotationY(-_yaw);
+        Matrix4x4.CreateRotationX(this._pitch) * Matrix4x4.CreateRotationY(-this._yaw);
 
-    public bool IsUpsideDown => _pitch is >= MathF.PI / 2 and <= MathF.PI * 3 / 2;
+    public bool IsUpsideDown => this._pitch is >= MathF.PI / 2 and <= MathF.PI * 3 / 2;
 
     public Matrix4x4 View {
         get {
-            _view ??=
-                Matrix4x4.CreateTranslation((_targetBboxMin + _targetBboxMax) / -2) *
+            this._view ??=
+                Matrix4x4.CreateTranslation((this._targetBboxMin + this._targetBboxMax) / -2) *
                 Matrix4x4.CreateLookAt(
-                    cameraPosition: Vector3.Transform(System.Forward * ScaledDistance, RotationMatrix),
+                    cameraPosition: Vector3.Transform(this.System.Forward * this.ScaledDistance, this.RotationMatrix),
                     cameraTarget: Vector3.Zero,
-                    cameraUpVector: IsUpsideDown ? -System.Up : System.Up) *
-                Matrix4x4.CreateRotationZ(_roll) *
-                Matrix4x4.CreateTranslation(_targetOffset);
+                    cameraUpVector: this.IsUpsideDown ? -this.System.Up : this.System.Up) *
+                Matrix4x4.CreateRotationZ(this._roll) *
+                Matrix4x4.CreateTranslation(this._targetOffset);
 
-            return _view.Value;
+            return this._view.Value;
         }
     }
 
-    public Matrix4x4 Projection => _projection ??= _viewport.X <= 0 || _viewport.Y <= 0
-        ? Matrix4x4.Identity
-        : Matrix4x4.CreatePerspectiveFieldOfView(MathF.Pow(10, _fovExponent) / 10, _viewport.X / _viewport.Y, 0.1f,
-            10000.0f);
+    public Matrix4x4 Projection =>
+        this._projection ??= this._viewport.X <= 0 || this._viewport.Y <= 0
+            ? Matrix4x4.Identity
+            : Matrix4x4.CreatePerspectiveFieldOfView(
+                MathF.Pow(10, this._fovExponent) / 10,
+                this._viewport.X / this._viewport.Y,
+                0.1f,
+                10000.0f);
 
     public void Update(
         Vector3? targetOffset = null,
@@ -117,23 +123,25 @@ public class ObjectCentricCamera : ICamera {
         float? roll = null,
         float? distanceExponent = null,
         float? fovExponent = null,
-        bool resetDistance = false) {
-        _targetOffset = targetOffset ?? _targetOffset;
-        _targetBboxMin = targetBboxMin ?? _targetBboxMin;
-        _targetBboxMax = targetBboxMax ?? _targetBboxMax;
-        _viewport = viewport ?? _viewport;
-        _yaw = MiscUtils.PositiveMod(yaw ?? _yaw, MathF.PI * 2);
-        _pitch = MiscUtils.PositiveMod(pitch ?? _pitch, MathF.PI * 2);
-        _roll = MiscUtils.PositiveMod(roll ?? _roll, MathF.PI * 2);
-        _fovExponent = fovExponent ?? _fovExponent;
-        _distanceExponent = distanceExponent ?? _distanceExponent;
+        bool resetDistance = false)
+    {
+        this._targetOffset = targetOffset ?? this._targetOffset;
+        this._targetBboxMin = targetBboxMin ?? this._targetBboxMin;
+        this._targetBboxMax = targetBboxMax ?? this._targetBboxMax;
+        this._viewport = viewport ?? this._viewport;
+        this._yaw = MiscUtils.PositiveMod(yaw ?? this._yaw, MathF.PI * 2);
+        this._pitch = MiscUtils.PositiveMod(pitch ?? this._pitch, MathF.PI * 2);
+        this._roll = MiscUtils.PositiveMod(roll ?? this._roll, MathF.PI * 2);
+        this._fovExponent = fovExponent ?? this._fovExponent;
+        this._distanceExponent = distanceExponent ?? this._distanceExponent;
         if (resetDistance) {
-            _distanceExponent = MathF.Log2(Vector3.Dot(
-                Vector3.Abs(_targetBboxMax - _targetBboxMin) / 2,
-                Vector3.Abs(System.Up)) * 32) * 64;
+            this._distanceExponent = MathF.Log2(
+                Vector3.Dot(
+                    Vector3.Abs(this._targetBboxMax - this._targetBboxMin) / 2,
+                    Vector3.Abs(this.System.Up)) * 32) * 64;
         }
 
-        _view = null;
-        _projection = null;
+        this._view = null;
+        this._projection = null;
     }
 }

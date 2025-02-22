@@ -2,12 +2,14 @@
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using LuminaExplorer.Controls.FileResourceViewerControls;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
+using LuminaExplorer.Core.Util;
+using TerraFX.Interop.DirectX;
+using TerraFX.Interop.Windows;
 
 namespace LuminaExplorer.App.Window.FileViewers;
 
@@ -18,103 +20,122 @@ public class TabbedTextViewer : Form {
     private readonly TabbedTextViewerControl _viewerControl;
     private CancellationTokenSource _cancellationTokenSource = new();
 
-    public TabbedTextViewer() {
-        Controls.Add(_viewerControl = new() {
-            Dock = DockStyle.Fill,
-        });
+    public TabbedTextViewer()
+    {
+        this.Controls.Add(
+            this._viewerControl = new() {
+                Dock = DockStyle.Fill,
+            });
     }
 
-    protected override void Dispose(bool disposing) {
-        _cancellationTokenSource.Cancel();
+    protected override void Dispose(bool disposing)
+    {
+        this._cancellationTokenSource.Cancel();
         base.Dispose(disposing);
     }
 
-    public void ShowShader(ShcdFile shcdFile, Control? opener) {
-        _cancellationTokenSource.Cancel();
-        var cts = _cancellationTokenSource = new();
-        Text = shcdFile.FilePath.Path;
-        _viewerControl.Clear();
+    public void ShowShader(ShcdFile shcdFile, Control? opener)
+    {
+        this._cancellationTokenSource.Cancel();
+        var cts = this._cancellationTokenSource = new();
+        this.Text = shcdFile.FilePath.Path;
+        this._viewerControl.Clear();
         Task.Run(
                 () => {
-                    return DisassembleCsoData(shcdFile.ByteCode, out var d, out var e)
-                        ? new[] {d}
-                        : new[] {e.ToString()};
-                }, cts.Token)
+                    return this.DisassembleCsoData(shcdFile.ByteCode, out var d, out var e)
+                        ? [d]
+                        : new[] { e.ToString() };
+                },
+                cts.Token)
             .ContinueWith(
                 r => {
-                    if (cts.IsCancellationRequested || cts != _cancellationTokenSource || !r.IsCompletedSuccessfully)
+                    if (cts.IsCancellationRequested || cts != this._cancellationTokenSource ||
+                        !r.IsCompletedSuccessfully)
                         return;
 
-                    _viewerControl.SetTexts(new[] {shcdFile.FileHeader.ShaderType.ToString()}, r.Result);
-                    ShowWithParent(opener);
-                }, _cancellationTokenSource.Token, TaskContinuationOptions.None,
+                    this._viewerControl.SetTexts([shcdFile.FileHeader.ShaderType.ToString()], r.Result);
+                    this.ShowWithParent(opener);
+                },
+                this._cancellationTokenSource.Token,
+                TaskContinuationOptions.None,
                 TaskScheduler.FromCurrentSynchronizationContext());
     }
 
-    public void ShowShader(ShpkFile shpkFile, Control? opener) {
-        _cancellationTokenSource.Cancel();
-        var cts = _cancellationTokenSource = new();
-        Text = shpkFile.FilePath.Path;
-        _viewerControl.Clear();
+    public void ShowShader(ShpkFile shpkFile, Control? opener)
+    {
+        this._cancellationTokenSource.Cancel();
+        var cts = this._cancellationTokenSource = new();
+        this.Text = shpkFile.FilePath.Path;
+        this._viewerControl.Clear();
         var showed = false;
         var context = TaskScheduler.FromCurrentSynchronizationContext();
-        Task.Run(async () => {
-            const int updateFrequency = 1000;
-            var nextUpdate = Environment.TickCount64 + updateFrequency;
-            var names = new List<string>();
-            var disd = new List<string>();
+        Task.Run(
+            async () => {
+                const int updateFrequency = 1000;
+                var nextUpdate = Environment.TickCount64 + updateFrequency;
+                var names = new List<string>();
+                var disd = new List<string>();
 
-            async Task UpdateResults() {
-                if (!names.Any())
-                    return;
-
-                await Task.Factory.StartNew(() => {
-                    if (cts.IsCancellationRequested || cts != _cancellationTokenSource)
+                async Task UpdateResults()
+                {
+                    if (!names.Any())
                         return;
 
-                    _viewerControl.AppendTexts(names, disd);
-                    if (!showed) {
-                        ShowWithParent(opener);
-                        showed = true;
-                    }
-                }, _cancellationTokenSource.Token, TaskCreationOptions.None, context);
-                nextUpdate = Environment.TickCount64 + updateFrequency;
-                names.Clear();
-                disd.Clear();
-            }
+                    await Task.Factory.StartNew(
+                        () => {
+                            if (cts.IsCancellationRequested || cts != this._cancellationTokenSource)
+                                return;
 
-            for (var i = 0; i < shpkFile.VertexShaderEntries.Length; i++) {
-                if (cts.IsCancellationRequested || cts != _cancellationTokenSource)
-                    break;
+                            this._viewerControl.AppendTexts(names, disd);
+                            if (!showed) {
+                                this.ShowWithParent(opener);
+                                showed = true;
+                            }
+                        },
+                        this._cancellationTokenSource.Token,
+                        TaskCreationOptions.None,
+                        context);
+                    nextUpdate = Environment.TickCount64 + updateFrequency;
+                    names.Clear();
+                    disd.Clear();
+                }
 
-                names.Add($"VS#{i}");
-                disd.Add(DisassembleCsoData(shpkFile.VertexShaderEntries[i].ByteCode, out var d, out var e)
-                    ? d
-                    : e.ToString());
+                for (var i = 0; i < shpkFile.VertexShaderEntries.Length; i++) {
+                    if (cts.IsCancellationRequested || cts != this._cancellationTokenSource)
+                        break;
 
-                if (Environment.TickCount64 >= nextUpdate)
-                    await UpdateResults();
-            }
+                    names.Add($"VS#{i}");
+                    disd.Add(
+                        this.DisassembleCsoData(shpkFile.VertexShaderEntries[i].ByteCode, out var d, out var e)
+                            ? d
+                            : e.ToString());
 
-            for (var i = 0; i < shpkFile.PixelShaderEntries.Length; i++) {
-                if (cts.IsCancellationRequested || cts != _cancellationTokenSource)
-                    break;
+                    if (Environment.TickCount64 >= nextUpdate)
+                        await UpdateResults();
+                }
 
-                names.Add($"PS#{i}");
-                disd.Add(DisassembleCsoData(shpkFile.PixelShaderEntries[i].ByteCode, out var d, out var e)
-                    ? d
-                    : e.ToString());
+                for (var i = 0; i < shpkFile.PixelShaderEntries.Length; i++) {
+                    if (cts.IsCancellationRequested || cts != this._cancellationTokenSource)
+                        break;
 
-                if (Environment.TickCount64 >= nextUpdate)
-                    await UpdateResults();
-            }
+                    names.Add($"PS#{i}");
+                    disd.Add(
+                        this.DisassembleCsoData(shpkFile.PixelShaderEntries[i].ByteCode, out var d, out var e)
+                            ? d
+                            : e.ToString());
 
-            await UpdateResults();
-        }, cts.Token);
+                    if (Environment.TickCount64 >= nextUpdate)
+                        await UpdateResults();
+                }
+
+                await UpdateResults();
+            },
+            cts.Token);
     }
 
-    public void ShowWithParent(Control? opener) {
-        var rc = _viewerControl.GetViewportRectangleSuggestion(opener);
+    public void ShowWithParent(Control? opener)
+    {
+        var rc = this._viewerControl.GetViewportRectangleSuggestion(opener);
         if (rc.Width < MinimumDefaultWidth) {
             rc.X -= (MinimumDefaultWidth - rc.Width) / 2;
             rc.Width = MinimumDefaultWidth;
@@ -125,29 +146,25 @@ public class TabbedTextViewer : Form {
             rc.Height = MinimumDefaultHeight;
         }
 
-        SetBounds(rc.X, rc.Y, rc.Width, rc.Height);
-        Show();
+        this.SetBounds(rc.X, rc.Y, rc.Width, rc.Height);
+        this.Show();
     }
 
     private unsafe bool DisassembleCsoData(
         ReadOnlySpan<byte> data,
         [MaybeNullWhen(false)] out string disassembled,
-        [MaybeNullWhen(true)] out Exception exception) {
-        var api = Silk.NET.Direct3D.Compilers.D3DCompiler.GetApi();
-        Silk.NET.Core.Native.ID3D10Blob* pBlob = null;
+        [MaybeNullWhen(true)] out Exception exception)
+    {
+        using var blob = new ComPtr<ID3DBlob>();
         try {
             var i = 0;
-            while (i + 3 < data.Length && (
-                       data[i] != 'D' ||
-                       data[i + 1] != 'X' ||
-                       data[i + 2] != 'B' ||
-                       data[i + 3] != 'C'))
+            while (i + 3 < data.Length && !data[i..].StartsWith("DXBC"u8))
                 i++;
             fixed (void* pData = data)
-                Marshal.ThrowExceptionForHR(
-                    api.Disassemble((byte*) pData + i, (nuint) (data.Length - i), 0, (byte*) null, &pBlob));
+                DirectX.D3DDisassemble((byte*) pData + i, (nuint) (data.Length - i), 0, null, blob.GetAddressOf())
+                    .Ensure();
 
-            var slice = pBlob->Buffer;
+            var slice = new Span<byte>(blob.Get()->GetBufferPointer(), checked((int) blob.Get()->GetBufferSize()));
             while (!slice.IsEmpty && slice[^1] == 0)
                 slice = slice[..^1];
             disassembled = System.Text.Encoding.UTF8.GetString(slice);
@@ -157,9 +174,6 @@ public class TabbedTextViewer : Form {
             disassembled = null;
             exception = e;
             return false;
-        } finally {
-            if (pBlob is not null)
-                pBlob->Release();
         }
     }
 }

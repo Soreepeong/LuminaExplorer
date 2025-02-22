@@ -11,42 +11,44 @@ public class SqpackFolder : IEquatable<SqpackFolder>, IVirtualFolder {
     internal readonly Dictionary<string, SqpackFolder> Folders = new();
     internal readonly List<SqpackFile> Files = new();
 
-    private SqpackFolder(string name, uint hash, SqpackFolder? parent) {
-        ParentTyped = parent;
-        Name = $"{name}/";
-        PathHash = hash;
+    private SqpackFolder(string name, uint hash, SqpackFolder? parent)
+    {
+        this.ParentTyped = parent;
+        this.Name = $"{name}/";
+        this.PathHash = hash;
     }
 
     public SqpackFolder? ParentTyped { get; internal set; }
 
     public Exception? AccessException => null;
 
-    public IVirtualFolder? Parent => ParentTyped;
+    public IVirtualFolder? Parent => this.ParentTyped;
 
     public uint? PathHash { get; }
 
     public string Name { get; internal set; }
 
-    public void Refresh() { }
+    public void Refresh()
+    { }
 
     public bool FileNamesResolveAttempted { get; internal set; }
 
-    public bool IsUnknownContainer => Name == UnknownContainerName + "/";
+    public bool IsUnknownContainer => this.Name == UnknownContainerName + "/";
 
-    public bool IsUnknownFolder => Name.StartsWith("~") && Name.EndsWith(NotNormalSuffix);
+    public bool IsUnknownFolder => this.Name.StartsWith("~") && this.Name.EndsWith(NotNormalSuffix);
 
     public bool Equals(SqpackFolder? other) =>
-        PathHash!.Value == other?.PathHash!.Value &&
-        0 == string.Compare(Name, other?.Name, StringComparison.InvariantCultureIgnoreCase) &&
-        Equals(Parent, other?.Parent);
+        this.PathHash!.Value == other?.PathHash!.Value &&
+        0 == string.Compare(this.Name, other?.Name, StringComparison.InvariantCultureIgnoreCase) &&
+        Equals(this.Parent, other?.Parent);
 
-    public bool Equals(IVirtualFolder? other) => Equals(other as SqpackFolder);
+    public bool Equals(IVirtualFolder? other) => this.Equals(other as SqpackFolder);
 
-    public override bool Equals(object? obj) => Equals(obj as SqpackFolder);
+    public override bool Equals(object? obj) => this.Equals(obj as SqpackFolder);
 
-    public override int GetHashCode() => (int) PathHash!.Value;
+    public override int GetHashCode() => (int) this.PathHash!.Value;
 
-    public override string ToString() => Name;
+    public override string ToString() => this.Name;
 
     internal static SqpackFolder CreateRoot() => new("", Crc32.Get(Array.Empty<byte>()), null);
 

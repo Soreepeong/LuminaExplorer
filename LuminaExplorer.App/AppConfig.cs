@@ -5,11 +5,10 @@ using Newtonsoft.Json;
 namespace LuminaExplorer.App;
 
 public record AppConfig {
-    [JsonIgnore]
-    public string BaseDirectory { get; init; }
-    
+    [JsonIgnore] public string BaseDirectory { get; init; }
+
     public string PathListUrl { get; init; } = "https://rl2.perchbird.dev/download/export/PathList.gz";
-    
+
     public string SqPackRootDirectoryPath { get; init; } =
         @"C:\Program Files (x86)\SquareEnix\FINAL FANTASY XIV - A Realm Reborn\game\sqpack";
 

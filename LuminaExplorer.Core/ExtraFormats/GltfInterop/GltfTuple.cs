@@ -3,13 +3,12 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
-using DirectN;
 using Lumina.Data;
 using Lumina.Data.Files;
 using Lumina.Data.Parsing;
-using Lumina.Data.Structs;
 using Lumina.Models.Materials;
 using Lumina.Models.Models;
 using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
@@ -18,7 +17,9 @@ using LuminaExplorer.Core.ExtraFormats.GenericAnimation;
 using LuminaExplorer.Core.ExtraFormats.GltfInterop.Models;
 using LuminaExplorer.Core.Util;
 using Newtonsoft.Json;
-using WicNet;
+using TerraFX.Interop.Windows;
+using IWICBitmapSource = TerraFX.Interop.Windows.IWICBitmapSource;
+using PlatformId = Lumina.Data.Structs.PlatformId;
 
 namespace LuminaExplorer.Core.ExtraFormats.GltfInterop;
 
@@ -30,14 +31,16 @@ public class GltfTuple {
     public readonly GltfRoot Root;
     public readonly MemoryStream DataStream;
 
-    public GltfTuple() {
-        Root = new();
-        DataStream = new();
-        Root.Buffers.Add(new());
-        Root.Scene = Root.Scenes.AddAndGetIndex(new());
+    public GltfTuple()
+    {
+        this.Root = new();
+        this.DataStream = new();
+        this.Root.Buffers.Add(new());
+        this.Root.Scene = this.Root.Scenes.AddAndGetIndex(new());
     }
 
-    public GltfTuple(Stream glbStream, bool leaveOpen = false) {
+    public GltfTuple(Stream glbStream, bool leaveOpen = false)
+    {
         using var lbr = new LuminaBinaryReader(glbStream, Encoding.UTF8, leaveOpen, PlatformId.Win32);
         if (lbr.ReadUInt32() != GlbMagic)
             throw new InvalidDataException("Not a glb file.");
@@ -50,24 +53,25 @@ public class GltfTuple {
         if (lbr.ReadUInt32() != GlbJsonMagic)
             throw new InvalidDataException("First entry must be a JSON file.");
 
-        Root = JsonConvert.DeserializeObject<GltfRoot>(lbr.ReadFString(jsonLength))
+        this.Root = JsonConvert.DeserializeObject<GltfRoot>(lbr.ReadFString(jsonLength))
             ?? throw new InvalidDataException("JSON was empty.");
 
         var dataLength = lbr.ReadInt32();
         if (lbr.ReadUInt32() != GlbDataMagic)
             throw new InvalidDataException("Second entry must be a data file.");
 
-        DataStream = new();
-        DataStream.SetLength(dataLength);
-        glbStream.ReadExactly(DataStream.GetBuffer().AsSpan(0, dataLength));
+        this.DataStream = new();
+        this.DataStream.SetLength(dataLength);
+        glbStream.ReadExactly(this.DataStream.GetBuffer().AsSpan(0, dataLength));
     }
 
-    public ReadOnlySpan<byte> Data => DataStream.GetBuffer().AsSpan(0, (int) DataStream.Length);
+    public ReadOnlySpan<byte> Data => this.DataStream.GetBuffer().AsSpan(0, (int) this.DataStream.Length);
 
-    public void Compile(Stream target) {
-        Root.Buffers[0].ByteLength = DataStream.Length;
+    public void Compile(Stream target)
+    {
+        this.Root.Buffers[0].ByteLength = this.DataStream.Length;
 
-        var json = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(Root));
+        var json = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(this.Root));
         if (json.Length % 4 != 0) {
             var rv = new byte[(json.Length + 3) / 4 * 4];
             Buffer.BlockCopy(json, 0, rv, 0, json.Length);
@@ -76,35 +80,36 @@ public class GltfTuple {
             json = rv;
         }
 
-        using var writer = new NativeWriter(target, Encoding.UTF8, true) {IsBigEndian = false};
+        using var writer = new NativeWriter(target, Encoding.UTF8, true) { IsBigEndian = false };
         writer.Write(GlbMagic);
         writer.Write(2);
-        writer.Write(checked(12 + 8 + json.Length + 8 + (int) DataStream.Length));
+        writer.Write(checked(12 + 8 + json.Length + 8 + (int) this.DataStream.Length));
         writer.Write(json.Length);
         writer.Write(GlbJsonMagic);
         writer.Write(json);
 
-        writer.Write(checked((int) DataStream.Length));
+        writer.Write(checked((int) this.DataStream.Length));
         writer.Write(GlbDataMagic);
-        DataStream.Position = 0;
-        DataStream.CopyTo(target);
+        this.DataStream.Position = 0;
+        this.DataStream.CopyTo(target);
     }
 
     public unsafe int AddBufferView<T>(
         string? baseName,
         GltfBufferViewTarget? target,
         ReadOnlySpan<T> data)
-        where T : unmanaged {
+        where T : unmanaged
+    {
         var byteLength = sizeof(T) * data.Length;
-        var index = Root.BufferViews.AddAndGetIndex(new() {
-            Name = baseName is null ? null : $"{baseName}/bufferView",
-            ByteOffset = checked((int) (DataStream.Position = (DataStream.Length + 3) / 4 * 4)),
-            ByteLength = byteLength,
-            Target = target,
-        });
+        var index = this.Root.BufferViews.AddAndGetIndex(
+            new() {
+                Name = baseName is null ? null : $"{baseName}/bufferView",
+                ByteOffset = checked((int) (this.DataStream.Position = (this.DataStream.Length + 3) / 4 * 4)),
+                ByteLength = byteLength,
+                Target = target,
+            });
 
-        fixed (void* src = data)
-            DataStream.Write(new((byte*) src, byteLength));
+        fixed (void* src = data) this.DataStream.Write(new((byte*) src, byteLength));
 
         return index;
     }
@@ -116,7 +121,8 @@ public class GltfTuple {
         int count = int.MaxValue,
         int? bufferView = null,
         GltfBufferViewTarget? target = null)
-        where T : unmanaged => AddAccessor(baseName, (ReadOnlySpan<T>) data, start, count, bufferView, target);
+        where T : unmanaged =>
+        this.AddAccessor(baseName, (ReadOnlySpan<T>) data, start, count, bufferView, target);
 
     public unsafe int AddAccessor<T>(
         string? baseName,
@@ -125,8 +131,9 @@ public class GltfTuple {
         int count = int.MaxValue,
         int? bufferView = null,
         GltfBufferViewTarget? target = null)
-        where T : unmanaged {
-        bufferView ??= AddBufferView(baseName, target, data);
+        where T : unmanaged
+    {
+        bufferView ??= this.AddBufferView(baseName, target, data);
 
         {
             var (componentType, type) = typeof(T) switch {
@@ -165,7 +172,8 @@ public class GltfTuple {
                 count = data.Length - start;
 
             Tuple<float[], float[]> MinMax<TComponent>(ReadOnlySpan<T> data2)
-                where TComponent : unmanaged, INumber<TComponent> {
+                where TComponent : unmanaged, INumber<TComponent>
+            {
                 var mins = new float[componentCount];
                 var maxs = new float[componentCount];
                 fixed (void* pData = data2) {
@@ -212,113 +220,129 @@ public class GltfTuple {
                 _ => throw new NotSupportedException(),
             };
 
-            return Root.Accessors.AddAndGetIndex(accessor);
+            return this.Root.Accessors.AddAndGetIndex(accessor);
         }
     }
 
     public void AddToScene(int meshIndex, int? skinIndex) =>
-        Root.Scenes[Root.Scene].Nodes.Add(Root.Nodes.AddAndGetIndex(new() {
-            Skin = skinIndex,
-            Mesh = meshIndex,
-            Children = skinIndex is null ? new() : new() {Root.Skins[skinIndex.Value].Joints[0]},
-        }));
+        this.Root.Scenes[this.Root.Scene].Nodes.Add(
+            this.Root.Nodes.AddAndGetIndex(
+                new() {
+                    Skin = skinIndex,
+                    Mesh = meshIndex,
+                    Children = skinIndex is null ? [] : [this.Root.Skins[skinIndex.Value].Joints[0]],
+                }));
 
-    public int? FindMaterial(string mtrlFilePath) {
+    public int? FindMaterial(string mtrlFilePath)
+    {
         var name = Path.GetFileNameWithoutExtension(mtrlFilePath);
-        for (var i = 0; i < Root.Materials.Count; i++)
-            if (Root.Materials[i].Name == name)
+        for (var i = 0; i < this.Root.Materials.Count; i++)
+            if (this.Root.Materials[i].Name == name)
                 return i;
         return null;
     }
 
-    public int AttachSkin(params SklbFile[] sklbFiles) {
+    public int AttachSkin(params SklbFile[] sklbFiles)
+    {
         var bones = new SklbFile.BoneList();
         foreach (var sklb in sklbFiles)
             bones.AddBones(sklb.Bones);
-        var firstGltfNodeIndex = Root.Nodes.AddRangeAndGetIndex(bones.Bones.Select(bone => new GltfNode {
-            Name = bone.Name,
-            Children = bone.Children.Select(x => x.Index).ToList(),
-            Translation = bone.Translation.ToFloatList(Vector3.Zero, 1e-6f),
-            Rotation = Quaternion.Normalize(bone.Rotation).ToFloatList(Quaternion.Identity, 1e-6f),
-            Scale = bone.Scale.ToFloatList(Vector3.One, 1e-6f),
-        }).ToArray());
+        var firstGltfNodeIndex = this.Root.Nodes.AddRangeAndGetIndex(
+            bones.Bones.Select(
+                bone => new GltfNode {
+                    Name = bone.Name,
+                    Children = bone.Children.Select(x => x.Index).ToList(),
+                    Translation = bone.Translation.ToFloatList(Vector3.Zero, 1e-6f),
+                    Rotation = Quaternion.Normalize(bone.Rotation).ToFloatList(Quaternion.Identity, 1e-6f),
+                    Scale = bone.Scale.ToFloatList(Vector3.One, 1e-6f),
+                }).ToArray());
 
-        return Root.Skins.AddAndGetIndex(new() {
-            InverseBindMatrices = AddAccessor(
-                null,
-                bones.Bones.Select(x => x.BindPoseAbsoluteInverse.Normalize())
-                    .ToArray()
-                    .AsSpan()),
-            Joints = Root.Nodes.Select((_, i) => firstGltfNodeIndex + i).ToList(),
-            Extras = new() {
-                Alph = sklbFiles.ToDictionary(
-                    x => x.FilePath.Path,
-                    x => x.AlphData.ToDictionary(y => y.Unk, y => y.Bones.Select(z => z.Name).ToList())),
-                Indices = sklbFiles.ToDictionary(
-                    x => x.FilePath.Path,
-                    x => x.Bones.Select(y => bones.GetRemappedBoneIndex(y)).ToList()),
-            },
-        });
+        return this.Root.Skins.AddAndGetIndex(
+            new() {
+                InverseBindMatrices = this.AddAccessor(
+                    null,
+                    bones.Bones.Select(x => x.BindPoseAbsoluteInverse.Normalize())
+                        .ToArray()
+                        .AsSpan()),
+                Joints = this.Root.Nodes.Select((_, i) => firstGltfNodeIndex + i).ToList(),
+                Extras = new() {
+                    Alph = sklbFiles.ToDictionary(
+                        x => x.FilePath.Path,
+                        x => x.AlphData.ToDictionary(y => y.Unk, y => y.Bones?.Select(z => z.Name).ToList() ?? [])),
+                    Indices = sklbFiles.ToDictionary(
+                        x => x.FilePath.Path,
+                        x => x.Bones.Select(y => bones.GetRemappedBoneIndex(y)).ToList()),
+                },
+            });
     }
 
-    public int AttachTexture(string name, WicBitmapSource wicBitmapSource) {
-        for (var i = 0; i < Root.Textures.Count; i++)
-            if (Root.Textures[i].Name == name)
+    public int AttachTexture<T>(string name, ComPtr<T> wicBitmapSource)
+        where T : unmanaged, IWICBitmapSource.Interface
+    {
+        for (var i = 0; i < this.Root.Textures.Count; i++)
+            if (this.Root.Textures[i].Name == name)
                 return i;
 
         using var png = new MemoryStream();
-        wicBitmapSource.Save(png, WicCodec.GUID_ContainerFormatPng);
+        wicBitmapSource.Save(png, GUID.GUID_ContainerFormatPng);
 
-        return Root.Textures.AddAndGetIndex(new() {
-            Name = name,
-            Source = Root.Images.AddAndGetIndex(new() {
-                Name = Path.ChangeExtension(name, ".png"),
-                MimeType = "image/png",
-                BufferView = AddBufferView(
-                    name + ".png",
-                    null,
-                    new ReadOnlySpan<byte>(png.GetBuffer(), 0, (int) png.Length)),
-            }),
-        });
+        return this.Root.Textures.AddAndGetIndex(
+            new() {
+                Name = name,
+                Source = this.Root.Images.AddAndGetIndex(
+                    new() {
+                        Name = Path.ChangeExtension(name, ".png"),
+                        MimeType = "image/png",
+                        BufferView = this.AddBufferView(
+                            name + ".png",
+                            null,
+                            new ReadOnlySpan<byte>(png.GetBuffer(), 0, (int) png.Length)),
+                    }),
+            });
     }
 
-    public int AttachTexture(string name, DdsFile ddsFile) {
-        for (var i = 0; i < Root.Textures.Count; i++)
-            if (Root.Textures[i].Name == name)
+    public int AttachTexture(string name, DdsFile ddsFile)
+    {
+        for (var i = 0; i < this.Root.Textures.Count; i++)
+            if (this.Root.Textures[i].Name == name)
                 return i;
 
         using var png = new MemoryStream();
         using (var wicBitmapSource = ddsFile.ToWicBitmapSource(0, 0, 0))
-            wicBitmapSource.Save(png, WicCodec.GUID_ContainerFormatPng);
+            wicBitmapSource.Save(png, GUID.GUID_ContainerFormatPng);
 
-        Root.ExtensionsUsed.Add("MSFT_texture_dds");
-        return Root.Textures.AddAndGetIndex(new() {
-            Name = name,
-            Source = Root.Images.AddAndGetIndex(new() {
-                Name = Path.ChangeExtension(name, ".png"),
-                MimeType = "image/png",
-                BufferView = AddBufferView(
-                    name + ".png",
-                    null,
-                    new ReadOnlySpan<byte>(png.GetBuffer(), 0, (int) png.Length)),
-            }),
-            Extensions = new() {
-                MsftTextureDds = new() {
-                    Source = Root.Images.AddAndGetIndex(new() {
-                        Name = Path.ChangeExtension(name, ".dds"),
-                        MimeType = "image/vnd-ms.dds",
-                        BufferView = AddBufferView(name + ".dds", null, ddsFile.Data),
+        this.Root.ExtensionsUsed.Add("MSFT_texture_dds");
+        return this.Root.Textures.AddAndGetIndex(
+            new() {
+                Name = name,
+                Source = this.Root.Images.AddAndGetIndex(
+                    new() {
+                        Name = Path.ChangeExtension(name, ".png"),
+                        MimeType = "image/png",
+                        BufferView = this.AddBufferView(
+                            name + ".png",
+                            null,
+                            new ReadOnlySpan<byte>(png.GetBuffer(), 0, (int) png.Length)),
                     }),
+                Extensions = new() {
+                    MsftTextureDds = new() {
+                        Source = this.Root.Images.AddAndGetIndex(
+                            new() {
+                                Name = Path.ChangeExtension(name, ".dds"),
+                                MimeType = "image/vnd-ms.dds",
+                                BufferView = this.AddBufferView(name + ".dds", null, ddsFile.Data),
+                            }),
+                    },
                 },
-            },
-        });
+            });
     }
 
-    public async Task<int> AttachMaterial(Material xivMaterial, Func<string, Task<TexFile?>> texFileGetter) {
+    public async Task<int> AttachMaterial(Material xivMaterial, Func<string, Task<TexFile?>> texFileGetter)
+    {
         var name = Path.GetFileNameWithoutExtension(xivMaterial.MaterialPath);
 
-        for (var i = 0; i < Root.Materials.Count; i++)
-            if (Root.Materials[i].Name == name)
+        for (var i = 0; i < this.Root.Materials.Count; i++)
+            if (this.Root.Materials[i].Name == name)
                 return i;
 
         var material = new GltfMaterial {
@@ -326,16 +350,18 @@ public class GltfTuple {
             Extras = new() {
                 ShaderPack = xivMaterial.ShaderPack,
                 VariantId = xivMaterial.VariantId,
-                UvColorSets = xivMaterial.File!.UvColorSets.Select(x => new GltfMaterialExtras.ColorSetWithString {
-                    Index = x.Index,
-                    Unknown1 = x.Unknown1,
-                    Name = xivMaterial.File.Strings.AsSpan(x.NameOffset).ExtractCString(),
-                }).ToList(),
-                ColorSets = xivMaterial.File.ColorSets.Select(x => new GltfMaterialExtras.ColorSetWithString {
-                    Index = x.Index,
-                    Unknown1 = x.Unknown1,
-                    Name = xivMaterial.File.Strings.AsSpan(x.NameOffset).ExtractCString(),
-                }).ToList(),
+                UvColorSets = xivMaterial.File!.UvColorSets.Select(
+                    x => new GltfMaterialExtras.ColorSetWithString {
+                        Index = x.Index,
+                        Unknown1 = x.Unknown1,
+                        Name = xivMaterial.File.Strings.AsSpan(x.NameOffset).ExtractCString(),
+                    }).ToList(),
+                ColorSets = xivMaterial.File.ColorSets.Select(
+                    x => new GltfMaterialExtras.ColorSetWithString {
+                        Index = x.Index,
+                        Unknown1 = x.Unknown1,
+                        Name = xivMaterial.File.Strings.AsSpan(x.NameOffset).ExtractCString(),
+                    }).ToList(),
                 ShaderKeys = xivMaterial.File.ShaderKeys.ToList(),
                 Constants = xivMaterial.File.Constants.ToList(),
                 ShaderValues = xivMaterial.File.ShaderValues.ToList(),
@@ -358,176 +384,109 @@ public class GltfTuple {
             }
         }
 
-        var texDict = new Dictionary<TextureUsage, Tuple<WicBitmapSource, int?>>();
+        var texDict = new Dictionary<TextureUsage, (ComPtr<IWICBitmap> Bitmap, int? TextureIndex)>();
         try {
             foreach (var (t, s) in xivMaterial.Textures.Zip(xivMaterial.File!.Samplers)) {
                 var texFile = t.TexturePath == "dummy.tex" ? null : await texFileGetter(t.TexturePath);
                 var ddsFile = texFile?.ToDdsFile();
-                int? textureIndexNullable = ddsFile is null ? null : AttachTexture(t.TexturePath, ddsFile);
+                int? textureIndexNullable = ddsFile is null ? null : this.AttachTexture(t.TexturePath, ddsFile);
 
-                if (ddsFile is not null)
-                    texDict[t.TextureUsageRaw] = Tuple.Create(ddsFile.ToWicBitmapSource(0, 0, 0), textureIndexNullable);
+                if (ddsFile is not null) {
+                    texDict[t.TextureUsageRaw] = (
+                        ddsFile.ToWicBitmapSource(0, 0, 0).AsBitmap(GUID.GUID_WICPixelFormat32bppBGRA),
+                        textureIndexNullable);
+                }
 
-                material.Extras.Samplers ??= new();
-                material.Extras.Samplers.Add(new() {
-                    Flags = s.Flags,
-                    TextureUsage = t.TextureUsageRaw,
-                    TexturePath = t.TexturePath,
-                    TextureIndex = textureIndexNullable,
-                });
+                material.Extras.Samplers ??= [];
+                material.Extras.Samplers.Add(
+                    new() {
+                        Flags = s.Flags,
+                        TextureUsage = t.TextureUsageRaw,
+                        TexturePath = t.TexturePath,
+                        TextureIndex = textureIndexNullable,
+                    });
             }
 
             // Build textures for display purposes.
             if (xivMaterial.ShaderPack == "character.shpk") {
-                if (texDict.TryGetValue(TextureUsage.SamplerNormal, out var normalBitmapSourceAndIndex)) {
-                    var normalBitmapSource = normalBitmapSourceAndIndex.Item1;
-                    normalBitmapSource.ConvertTo(WicPixelFormat.GUID_WICPixelFormat32bppBGRA);
+                if (texDict.TryGetValue(TextureUsage.SamplerNormal, out var normalBitmapAndIndex)) {
+                    var normalBitmap = normalBitmapAndIndex.Bitmap;
+                    normalBitmap.GetMetrics(out var width, out var height, out var pixelFormat);
+                    using var diffuseBitmap = ImagingExtensions.CreateBitmap(width, height, pixelFormat);
+                    using var specularBitmap = ImagingExtensions.CreateBitmap(width, height, pixelFormat);
+                    using var emissionBitmap = ImagingExtensions.CreateBitmap(width, height, pixelFormat);
+                    using var normalLock = normalBitmap.Lock(read: true, write: true);
+                    using var diffuseLock = diffuseBitmap.Lock(write: true);
+                    using var specularLock = specularBitmap.Lock(write: true);
+                    using var emissionLock = emissionBitmap.Lock(write: true);
+                    var setInfo = xivMaterial.File!.ColorSetInfo;
 
-                    WicBitmapSource? diffuseBitmapSource = null;
-                    WicBitmapSource? specularBitmapSource = null;
-                    WicBitmapSource? emissionBitmapSource = null;
-                    try {
-                        diffuseBitmapSource = new(
-                            normalBitmapSource.Width,
-                            normalBitmapSource.Height,
-                            normalBitmapSource.PixelFormat);
-                        specularBitmapSource = new(
-                            normalBitmapSource.Width,
-                            normalBitmapSource.Height,
-                            normalBitmapSource.PixelFormat);
-                        emissionBitmapSource = new(
-                            normalBitmapSource.Width,
-                            normalBitmapSource.Height,
-                            normalBitmapSource.PixelFormat);
+                    void Blend()
+                    {
+                        var normal = MemoryMarshal.Cast<byte, ColorSetBlender.Bgra8888>(normalLock.Buffer);
+                        var diffuse = MemoryMarshal.Cast<byte, ColorSetBlender.Bgra8888>(diffuseLock.Buffer);
+                        var specular = MemoryMarshal.Cast<byte, ColorSetBlender.Bgra8888>(specularLock.Buffer);
+                        var emission = MemoryMarshal.Cast<byte, ColorSetBlender.Bgra8888>(emissionLock.Buffer);
 
-                        using (var normalBitmap = normalBitmapSource.AsBitmap())
-                        using (var diffuseBitmap = diffuseBitmapSource.AsBitmap())
-                        using (var specularBitmap = specularBitmapSource.AsBitmap())
-                        using (var emissionBitmap = emissionBitmapSource.AsBitmap())
-                        using (var normalLock = normalBitmap.Lock(
-                                   WICBitmapLockFlags.WICBitmapLockRead | WICBitmapLockFlags.WICBitmapLockWrite))
-                        using (var diffuseLock = diffuseBitmap.Lock(WICBitmapLockFlags.WICBitmapLockWrite))
-                        using (var specularLock = specularBitmap.Lock(WICBitmapLockFlags.WICBitmapLockWrite))
-                        using (var emissionLock = emissionBitmap.Lock(WICBitmapLockFlags.WICBitmapLockWrite)) {
-                            var setInfo = xivMaterial.File!.ColorSetInfo;
+                        for (var i = 0; i < normal.Length; i++) {
+                            var setIndex1 = (normal[i].a / 17) * 16;
+                            var blendRatio = (normal[i].a % 17) / 17f;
+                            var colorSetIndexT2 = (normal[i].a / 17);
+                            var setIndex2 = (colorSetIndexT2 >= 15 ? 15 : colorSetIndexT2 + 1) * 16;
 
-                            unsafe void Blend() {
-                                normalLock.Object.GetDataPointer(out var bufferSize, out var pbData).ThrowOnError();
-                                var normal = new Span<ColorSetBlender.Bgra8888>(
-                                    (ColorSetBlender.Bgra8888*) pbData,
-                                    (int) bufferSize / 4);
-
-                                diffuseLock.Object.GetDataPointer(out bufferSize, out pbData).ThrowOnError();
-                                var diffuse = new Span<ColorSetBlender.Bgra8888>(
-                                    (ColorSetBlender.Bgra8888*) pbData,
-                                    (int) bufferSize / 4);
-
-                                specularLock.Object.GetDataPointer(out bufferSize, out pbData).ThrowOnError();
-                                var specular = new Span<ColorSetBlender.Bgra8888>(
-                                    (ColorSetBlender.Bgra8888*) pbData,
-                                    (int) bufferSize / 4);
-
-                                emissionLock.Object.GetDataPointer(out bufferSize, out pbData).ThrowOnError();
-                                var emission = new Span<ColorSetBlender.Bgra8888>(
-                                    (ColorSetBlender.Bgra8888*) pbData,
-                                    (int) bufferSize / 4);
-
-                                for (var i = 0; i < normal.Length; i++) {
-                                    var setIndex1 = (normal[i].a / 17) * 16;
-                                    var blendRatio = (normal[i].a % 17) / 17f;
-                                    var colorSetIndexT2 = (normal[i].a / 17);
-                                    var setIndex2 = (colorSetIndexT2 >= 15 ? 15 : colorSetIndexT2 + 1) * 16;
-
-                                    diffuse[i] = ColorSetBlender.Blend(setInfo, setIndex1, setIndex2, normal[i].b,
-                                        blendRatio);
-                                    specular[i] = ColorSetBlender.Blend(setInfo, setIndex1, setIndex2, 255, blendRatio);
-                                    emission[i] = ColorSetBlender.Blend(setInfo, setIndex1, setIndex2, 255, blendRatio);
-                                    normal[i].b = normal[i].a = 255;
-                                }
-                            }
-
-                            Blend();
+                            diffuse[i] = ColorSetBlender.Blend(
+                                setInfo,
+                                setIndex1,
+                                setIndex2,
+                                normal[i].b,
+                                blendRatio);
+                            specular[i] = ColorSetBlender.Blend(setInfo, setIndex1, setIndex2, 255, blendRatio);
+                            emission[i] = ColorSetBlender.Blend(setInfo, setIndex1, setIndex2, 255, blendRatio);
+                            normal[i].b = normal[i].a = 255;
                         }
-
-                        if (texDict.TryAdd(
-                                TextureUsage.SamplerDiffuse,
-                                Tuple.Create(diffuseBitmapSource, (int?) null)))
-                            diffuseBitmapSource = null;
-                        if (texDict.TryAdd(
-                                TextureUsage.SamplerSpecular,
-                                Tuple.Create(specularBitmapSource, (int?) null)))
-                            specularBitmapSource = null;
-                        if (texDict.TryAdd(
-                                TextureUsage.SamplerReflection,
-                                Tuple.Create(emissionBitmapSource, (int?) null)))
-                            emissionBitmapSource = null;
-                    } finally {
-                        _ = SafeDispose.OneAsync(ref diffuseBitmapSource);
-                        _ = SafeDispose.OneAsync(ref specularBitmapSource);
-                        _ = SafeDispose.OneAsync(ref emissionBitmapSource);
                     }
+
+                    Blend();
+                    texDict.TryAdd(TextureUsage.SamplerDiffuse, (new(diffuseBitmap), null));
+                    texDict.TryAdd(TextureUsage.SamplerSpecular, (new(specularBitmap), null));
+                    texDict.TryAdd(TextureUsage.SamplerReflection, (new(emissionBitmap), null));
                 }
 
-                if (texDict.TryGetValue(TextureUsage.SamplerMask, out var maskBitmapSourceAndIndex) &&
-                    texDict.TryGetValue(TextureUsage.SamplerSpecular, out var specularBitmapSourceAndIndex)) {
-                    var maskBitmapSource = maskBitmapSourceAndIndex.Item1;
-                    var specularBitmapSource = specularBitmapSourceAndIndex.Item1;
+                if (texDict.TryGetValue(TextureUsage.SamplerMask, out var maskBitmapAndIndex) &&
+                    texDict.TryGetValue(TextureUsage.SamplerSpecular, out var specularBitmapAndIndex)) {
+                    var maskBitmap = maskBitmapAndIndex.Bitmap;
+                    var specularBitmap = specularBitmapAndIndex.Bitmap;
 
-                    WicBitmapSource? occlusionBitmapSource = null;
-                    try {
-                        occlusionBitmapSource = new(
-                            maskBitmapSource.Width,
-                            maskBitmapSource.Height,
-                            maskBitmapSource.PixelFormat);
-                        using (var maskBitmap = maskBitmapSource.AsBitmap())
-                        using (var specularBitmap = specularBitmapSource.AsBitmap())
-                        using (var occlusionBitmap = occlusionBitmapSource.AsBitmap())
-                        using (var maskLock = maskBitmap.Lock(WICBitmapLockFlags.WICBitmapLockRead))
-                        using (var specularLock = specularBitmap.Lock(
-                                   WICBitmapLockFlags.WICBitmapLockRead | WICBitmapLockFlags.WICBitmapLockWrite))
-                        using (var occlusionLock = occlusionBitmap.Lock(WICBitmapLockFlags.WICBitmapLockWrite)) {
-                            unsafe void Blend() {
-                                maskLock.Object.GetDataPointer(out var bufferSize, out var pbData).ThrowOnError();
-                                var mask = new Span<ColorSetBlender.Bgra8888>(
-                                    (ColorSetBlender.Bgra8888*) pbData,
-                                    (int) bufferSize / 4);
+                    maskBitmap.GetMetrics(out var width, out var height, out var pixelFormat);
+                    using var occlusionBitmap = ImagingExtensions.CreateBitmap(width, height, pixelFormat);
+                    using var maskLock = maskBitmap.Lock(read: true);
+                    using var specularLock = specularBitmap.Lock(read: true, write: true);
+                    using var occlusionLock = occlusionBitmap.Lock(write: true);
 
-                                specularLock.Object.GetDataPointer(out bufferSize, out pbData).ThrowOnError();
-                                var specular = new Span<ColorSetBlender.Bgra8888>(
-                                    (ColorSetBlender.Bgra8888*) pbData,
-                                    (int) bufferSize / 4);
+                    void Blend()
+                    {
+                        var mask = MemoryMarshal.Cast<byte, ColorSetBlender.Bgra8888>(maskLock.Buffer);
+                        var specular = MemoryMarshal.Cast<byte, ColorSetBlender.Bgra8888>(specularLock.Buffer);
+                        var occlusion = MemoryMarshal.Cast<byte, ColorSetBlender.Bgra8888>(occlusionLock.Buffer);
 
-                                occlusionLock.Object.GetDataPointer(out bufferSize, out pbData).ThrowOnError();
-                                var occlusion = new Span<ColorSetBlender.Bgra8888>(
-                                    (ColorSetBlender.Bgra8888*) pbData,
-                                    (int) bufferSize / 4);
+                        for (var i = 0; i < mask.Length; i++) {
+                            var maskPixel = mask[i];
+                            var specularPixel = specular[i];
 
-                                for (var i = 0; i < mask.Length; i++) {
-                                    var maskPixel = mask[i];
-                                    var specularPixel = specular[i];
-
-                                    specular[i].r = (byte) (specularPixel.r * Math.Pow(maskPixel.g / 255f, 2));
-                                    specular[i].g = (byte) (specularPixel.g * Math.Pow(maskPixel.g / 255f, 2));
-                                    specular[i].b = (byte) (specularPixel.b * Math.Pow(maskPixel.g / 255f, 2));
-                                    occlusion[i] = new(maskPixel.r, maskPixel.r, maskPixel.r, 255);
-                                }
-                            }
-
-                            Blend();
+                            specular[i].r = (byte) (specularPixel.r * Math.Pow(maskPixel.g / 255f, 2));
+                            specular[i].g = (byte) (specularPixel.g * Math.Pow(maskPixel.g / 255f, 2));
+                            specular[i].b = (byte) (specularPixel.b * Math.Pow(maskPixel.g / 255f, 2));
+                            occlusion[i] = new(maskPixel.r, maskPixel.r, maskPixel.r, 255);
                         }
-
-                        if (texDict.TryAdd(
-                                TextureUsage.SamplerWaveMap,
-                                Tuple.Create(occlusionBitmapSource, (int?) null)))
-                            occlusionBitmapSource = null;
-                    } finally {
-                        _ = SafeDispose.OneAsync(ref occlusionBitmapSource);
                     }
+
+                    Blend();
+                    texDict.TryAdd(TextureUsage.SamplerWaveMap, (occlusionBitmap, null));
                 }
             }
 
             foreach (var (usage, (wic, textureIndexNullable)) in texDict) {
-                var textureIndex = textureIndexNullable ?? AttachTexture(
+                var textureIndex = textureIndexNullable ?? this.AttachTexture(
                     $"{Path.GetFileNameWithoutExtension(material.Name)}_{usage}.png",
                     wic);
                 switch (usage) {
@@ -548,7 +507,7 @@ public class GltfTuple {
                     case TextureUsage.SamplerSpecular:
                     case TextureUsage.SamplerSpecularMap0:
                     case TextureUsage.SamplerSpecularMap1:
-                        Root.ExtensionsUsed.Add("KHR_materials_specular");
+                        this.Root.ExtensionsUsed.Add("KHR_materials_specular");
                         ((material.Extensions ??= new()).KhrMaterialsSpecular ??= new()).SpecularColorTexture ??= new() {
                             Index = textureIndex,
                         };
@@ -570,12 +529,13 @@ public class GltfTuple {
                 wbs.Dispose();
         }
 
-        return Root.Materials.AddAndGetIndex(material);
+        return this.Root.Materials.AddAndGetIndex(material);
     }
 
-    public unsafe int AttachMesh(Model xivModel, int? skinIndex = null) {
+    public unsafe int AttachMesh(Model xivModel, int? skinIndex = null)
+    {
         var mdlFile = xivModel.File!;
-        var indexBufferView = AddBufferView(
+        var indexBufferView = this.AddBufferView(
             null,
             GltfBufferViewTarget.ElementArrayBuffer,
             new ReadOnlySpan<byte>(
@@ -585,10 +545,10 @@ public class GltfTuple {
 
         var boneNameToIndex = skinIndex is null
             ? null
-            : Root
+            : this.Root
                 .Skins[skinIndex.Value]
                 .Joints
-                .Select((x, i) => Tuple.Create(i, Root.Nodes[x].Name))
+                .Select((x, i) => Tuple.Create(i, this.Root.Nodes[x].Name))
                 .Where(x => x.Item2 is not null)
                 .ToDictionary(x => x.Item2!, x => x.Item1);
 
@@ -597,37 +557,37 @@ public class GltfTuple {
             var attributes = new GltfMeshPrimitiveAttributes();
 
             if (xivMesh.Vertices[0].Position is not null)
-                attributes.Position = AddAccessor(
+                attributes.Position = this.AddAccessor(
                     null,
                     xivMesh.Vertices.Select(x => x.Position!.Value.NormalizePosition()).ToArray().AsSpan(),
                     target: GltfBufferViewTarget.ArrayBuffer);
 
             if (xivMesh.Vertices[0].Normal is not null)
-                attributes.Normal = AddAccessor(
+                attributes.Normal = this.AddAccessor(
                     null,
                     xivMesh.Vertices.Select(x => x.Normal!.Value.NormalizeNormal()).ToArray().AsSpan(),
                     target: GltfBufferViewTarget.ArrayBuffer);
 
             if (xivMesh.Vertices[0].Tangent1 is not null)
-                attributes.Tangent = AddAccessor(
+                attributes.Tangent = this.AddAccessor(
                     null,
                     xivMesh.Vertices.Select(x => x.Tangent1!.Value.NormalizeTangent()).ToArray().AsSpan(),
                     target: GltfBufferViewTarget.ArrayBuffer);
 
             if (xivMesh.Vertices[0].Color is not null)
-                attributes.Color0 = AddAccessor(
+                attributes.Color0 = this.AddAccessor(
                     null,
                     xivMesh.Vertices.Select(x => x.Color!.Value).ToArray().AsSpan(),
                     target: GltfBufferViewTarget.ArrayBuffer);
 
             if (xivMesh.Vertices[0].UV is not null)
-                attributes.TexCoord0 = AddAccessor(
+                attributes.TexCoord0 = this.AddAccessor(
                     null,
                     xivMesh.Vertices.Select(x => x.UV!.Value.NormalizeUv()).ToArray().AsSpan(),
                     target: GltfBufferViewTarget.ArrayBuffer);
 
             if (xivMesh.Vertices[0].BlendWeights is not null && boneNameToIndex is not null) {
-                attributes.Weights0 = AddAccessor(
+                attributes.Weights0 = this.AddAccessor(
                     null,
                     xivMesh.Vertices.Select(x => x.BlendWeights!.Value).ToArray().AsSpan(),
                     target: GltfBufferViewTarget.ArrayBuffer);
@@ -637,13 +597,16 @@ public class GltfTuple {
                     .ToArray();
 
                 var indices = xivMesh.Vertices
-                    .Select(x => new TypedVec4<ushort>(
-                        (ushort) (x.BlendWeights!.Value.X == 0 ? 0 : boneNameToIndex[boneNames[x.BlendIndices[0]]]),
-                        (ushort) (x.BlendWeights!.Value.Y == 0 ? 0 : boneNameToIndex[boneNames[x.BlendIndices[1]]]),
-                        (ushort) (x.BlendWeights!.Value.Z == 0 ? 0 : boneNameToIndex[boneNames[x.BlendIndices[2]]]),
-                        (ushort) (x.BlendWeights!.Value.W == 0 ? 0 : boneNameToIndex[boneNames[x.BlendIndices[3]]])))
+                    .Select(
+                        x => new TypedVec4<ushort>(
+                            (ushort) (x.BlendWeights!.Value.X == 0 ? 0 : boneNameToIndex[boneNames[x.BlendIndices[0]]]),
+                            (ushort) (x.BlendWeights!.Value.Y == 0 ? 0 : boneNameToIndex[boneNames[x.BlendIndices[1]]]),
+                            (ushort) (x.BlendWeights!.Value.Z == 0 ? 0 : boneNameToIndex[boneNames[x.BlendIndices[2]]]),
+                            (ushort) (x.BlendWeights!.Value.W == 0
+                                ? 0
+                                : boneNameToIndex[boneNames[x.BlendIndices[3]]])))
                     .ToArray();
-                attributes.Joints0 = AddAccessor(
+                attributes.Joints0 = this.AddAccessor(
                     null,
                     indices.AsSpan(),
                     target: GltfBufferViewTarget.ArrayBuffer);
@@ -651,7 +614,7 @@ public class GltfTuple {
 
             var xivMeshIndex = xivMesh.MeshIndex;
             var xivMaterialIndex = mdlFile.Meshes[xivMeshIndex].MaterialIndex;
-            var materialIndex = FindMaterial(xivModel.Materials[xivMaterialIndex].MaterialPath);
+            var materialIndex = this.FindMaterial(xivModel.Materials[xivMaterialIndex].MaterialPath);
             fixed (byte* pData = mdlFile.Data) {
                 var indexSpan = new ReadOnlySpan<ushort>(
                     (ushort*) (pData + mdlFile.FileHeader.IndexOffset[(int) xivModel.Lod]),
@@ -659,38 +622,41 @@ public class GltfTuple {
 
                 if (xivMesh.Submeshes.Any()) {
                     foreach (var submesh in xivMesh.Submeshes) {
-                        mesh.Primitives.Add(new() {
+                        mesh.Primitives.Add(
+                            new() {
+                                Attributes = attributes,
+                                Indices = this.AddAccessor(
+                                    null,
+                                    indexSpan,
+                                    (int) submesh.IndexOffset,
+                                    (int) submesh.IndexNum,
+                                    indexBufferView,
+                                    GltfBufferViewTarget.ElementArrayBuffer),
+                                Material = materialIndex,
+                            });
+                    }
+                } else {
+                    mesh.Primitives.Add(
+                        new() {
                             Attributes = attributes,
-                            Indices = AddAccessor(
+                            Indices = this.AddAccessor(
                                 null,
                                 indexSpan,
-                                (int) submesh.IndexOffset,
-                                (int) submesh.IndexNum,
+                                (int) mdlFile.Meshes[xivMesh.MeshIndex].StartIndex,
+                                (int) mdlFile.Meshes[xivMesh.MeshIndex].IndexCount,
                                 indexBufferView,
                                 GltfBufferViewTarget.ElementArrayBuffer),
                             Material = materialIndex,
                         });
-                    }
-                } else {
-                    mesh.Primitives.Add(new() {
-                        Attributes = attributes,
-                        Indices = AddAccessor(
-                            null,
-                            indexSpan,
-                            (int) mdlFile.Meshes[xivMesh.MeshIndex].StartIndex,
-                            (int) mdlFile.Meshes[xivMesh.MeshIndex].IndexCount,
-                            indexBufferView,
-                            GltfBufferViewTarget.ElementArrayBuffer),
-                        Material = materialIndex,
-                    });
                 }
             }
         }
 
-        return Root.Meshes.AddAndGetIndex(mesh);
+        return this.Root.Meshes.AddAndGetIndex(mesh);
     }
 
-    public int AttachAnimation(string name, IAnimation animation, int skinIndex) {
+    public int AttachAnimation(string name, IAnimation animation, int skinIndex)
+    {
         var target = new GltfAnimation {
             Name = $"{name}",
         };
@@ -699,27 +665,30 @@ public class GltfTuple {
             GltfAnimationChannelTargetPath purpose,
             int boneNodeIndex,
             IEnumerable<T> values,
-            IEnumerable<float> times) where T : unmanaged {
+            IEnumerable<float> times) where T : unmanaged
+        {
             var valueArray = values.ToArray();
             if (!valueArray.Any())
                 return;
 
             var timesArray = times.ToArray();
-            target.Channels.Add(new() {
-                Sampler = target.Samplers.AddAndGetIndex(new() {
-                    Input = AddAccessor(null, timesArray.AsSpan()),
-                    Output = AddAccessor(null, valueArray.AsSpan()),
-                    Interpolation = GltfAnimationSamplerInterpolation.Linear,
-                }),
-                Target = new() {
-                    Node = boneNodeIndex,
-                    Path = purpose,
-                },
-            });
+            target.Channels.Add(
+                new() {
+                    Sampler = target.Samplers.AddAndGetIndex(
+                        new() {
+                            Input = this.AddAccessor(null, timesArray.AsSpan()),
+                            Output = this.AddAccessor(null, valueArray.AsSpan()),
+                            Interpolation = GltfAnimationSamplerInterpolation.Linear,
+                        }),
+                    Target = new() {
+                        Node = boneNodeIndex,
+                        Path = purpose,
+                    },
+                });
         }
 
         foreach (var bone in animation.AffectedBoneIndices) {
-            var node = Root.Skins[skinIndex].Joints[bone];
+            var node = this.Root.Skins[skinIndex].Joints[bone];
 
             var translation = animation.Translation(bone);
             if (!translation.IsEmpty) {
@@ -749,6 +718,6 @@ public class GltfTuple {
         if (!target.Channels.Any() || !target.Samplers.Any())
             return -1;
 
-        return Root.Animations.AddAndGetIndex(target);
+        return this.Root.Animations.AddAndGetIndex(target);
     }
 }

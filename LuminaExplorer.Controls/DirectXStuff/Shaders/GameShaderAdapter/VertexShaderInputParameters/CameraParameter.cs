@@ -19,7 +19,8 @@ public struct CameraParameter {
     [FieldOffset(0x1A0)] public Vector3D<float> EyePosition;
     [FieldOffset(0x1B0)] public Vector3D<float> LookAtVector;
 
-    public static CameraParameter FromViewProjection(Matrix4x4 view, Matrix4x4 projection) {
+    public static CameraParameter FromViewProjection(Matrix4x4 view, Matrix4x4 projection)
+    {
         var viewProjectionMatrix = Matrix4x4.Multiply(view, projection);
         return new() {
             ViewMatrix = view.TruncateAs3X4ToSilkValue(),
@@ -36,7 +37,7 @@ public struct CameraParameter {
                 : Matrix4x4.Identity).ToSilkValue(),
             MainViewToProjectionMatrix = Matrix4X4<float>.Identity, // idk
             EyePosition = inverseView.Translation.ToSilkValue(),
-            LookAtVector = Vector3D<float>.One // idk
+            LookAtVector = Vector3D<float>.One, // idk
         };
     }
 }

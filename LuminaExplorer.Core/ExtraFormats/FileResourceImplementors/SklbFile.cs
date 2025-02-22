@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
@@ -32,30 +31,33 @@ public class SklbFile : FileResource {
 
     public Exception? LoadException { get; private set; }
 
-    public override void LoadFile() {
+    public override void LoadFile()
+    {
         try {
-            Reader.ReadInto(out Magic);
-            Reader.ReadInto(out Version);
+            this.Reader.ReadInto(out this.Magic);
+            this.Reader.ReadInto(out this.Version);
 
-            VersionedHeader = Version switch {
-                SklbFormat.K0021 => Reader.ReadStructure<Sklb0021>(),
-                SklbFormat.K0031 => Reader.ReadStructure<Sklb0031>(),
-                SklbFormat.K1031 => Reader.ReadStructure<Sklb0031>(),  // ?
-                _ => throw new NotSupportedException()
+            this.VersionedHeader = this.Version switch {
+                SklbFormat.K0021 => this.Reader.ReadStructure<Sklb0021>(),
+                SklbFormat.K0031 => this.Reader.ReadStructure<Sklb0031>(),
+                SklbFormat.K1031 => this.Reader.ReadStructure<Sklb0031>(), // ?
+                _ => throw new NotSupportedException(),
             };
 
-            AlphMagic = Reader.WithSeek(VersionedHeader.AlphOffset).ReadUInt32();
-            if (AlphMagic == AlphMagicValue) {
-                var numOffsets = Reader.ReadUInt16();
-                var offsets = Reader.ReadUInt16Array(numOffsets);
-                AlphData = offsets
-                    .Select(x => new AlphEntry(Reader.WithSeek(VersionedHeader.AlphOffset + x)))
+            this.AlphMagic = this.Reader.WithSeek(this.VersionedHeader.AlphOffset).ReadUInt32();
+            if (this.AlphMagic == AlphMagicValue) {
+                var numOffsets = this.Reader.ReadUInt16();
+                var offsets = this.Reader.ReadUInt16Array(numOffsets);
+                this.AlphData = offsets
+                    .Select(x => new AlphEntry(this.Reader.WithSeek(this.VersionedHeader.AlphOffset + x)))
                     .ToArray();
             }
 
-            HavokData = Data[VersionedHeader.HavokOffset..];
+            this.HavokData = this.Data[this.VersionedHeader.HavokOffset..];
 
-            HavokRootNode = Parser.Parse(Reader.WithSeek(VersionedHeader.HavokOffset), HavokDefinitions);
+            this.HavokRootNode = Parser.Parse(
+                this.Reader.WithSeek(this.VersionedHeader.HavokOffset),
+                this.HavokDefinitions);
 
             /*
              * root.namedVariants[0].variant.skeletons[0]
@@ -65,11 +67,12 @@ public class SklbFile : FileResource {
              *     .referencePose[n] => float4x3 (TRS)
              */
             var resultBones = new List<Bone>();
-            if (HavokRootNode.AsMap.GetValueOrDefault("namedVariants") is not ValueArray namedVariants)
+            if (this.HavokRootNode.AsMap.GetValueOrDefault("namedVariants") is not ValueArray namedVariants)
                 throw new(); // care later about errmsg
             if (namedVariants.Values
-                    .FirstOrDefault(x => x is ValueNode y &&
-                        y.Node.AsMap.GetValueOrDefault("name") is ValueString {Value: "hkaAnimationContainer"})
+                    .FirstOrDefault(
+                        x => x is ValueNode y &&
+                            y.Node.AsMap.GetValueOrDefault("name") is ValueString { Value: "hkaAnimationContainer" })
                 is not ValueNode namedVariant0)
                 throw new();
             if (namedVariant0.Node.AsMap.GetValueOrDefault("variant") is not ValueNode variant)
@@ -85,7 +88,8 @@ public class SklbFile : FileResource {
             if (skeleton.Node.AsMap.GetValueOrDefault("referencePose") is not ValueArray referencePoses)
                 throw new();
             foreach (var (boneValue, parentIndexValue, referencePoseValue) in bones.Values.Zip(
-                         parentIndices.Values, referencePoses.Values)) {
+                         parentIndices.Values,
+                         referencePoses.Values)) {
                 if (boneValue is not ValueNode boneNode)
                     throw new();
                 if (boneNode.Node.AsMap.GetValueOrDefault("name") is not ValueString name)
@@ -95,89 +99,96 @@ public class SklbFile : FileResource {
                 if (referencePoseValue is not ValueArray poseFloats)
                     throw new();
 
-                resultBones.Add(new(
-                    resultBones.Count,
-                    parentIndex.Value == -1 ? null : resultBones[parentIndex.Value],
-                    name.Value,
-                    new(poseFloats.Values[0] is ValueFloat tx ? tx.Value : throw new(),
-                        poseFloats.Values[1] is ValueFloat ty ? ty.Value : throw new(),
-                        poseFloats.Values[2] is ValueFloat tz ? tz.Value : throw new()),
-                    /* Discard poseFloats.Values[3] */
-                    new(poseFloats.Values[4] is ValueFloat rx ? rx.Value : throw new(),
-                        poseFloats.Values[5] is ValueFloat ry ? ry.Value : throw new(),
-                        poseFloats.Values[6] is ValueFloat rz ? rz.Value : throw new(),
-                        poseFloats.Values[7] is ValueFloat rw ? rw.Value : throw new()),
-                    new(poseFloats.Values[8] is ValueFloat sx ? sx.Value : throw new(),
-                        poseFloats.Values[9] is ValueFloat sy ? sy.Value : throw new(),
-                        poseFloats.Values[10] is ValueFloat sz ? sz.Value : throw new())
-                    /* Discard poseFloats.Values[11] */));
+                resultBones.Add(
+                    new(
+                        resultBones.Count,
+                        parentIndex.Value == -1 ? null : resultBones[parentIndex.Value],
+                        name.Value,
+                        new(
+                            poseFloats.Values[0] is ValueFloat tx ? tx.Value : throw new(),
+                            poseFloats.Values[1] is ValueFloat ty ? ty.Value : throw new(),
+                            poseFloats.Values[2] is ValueFloat tz ? tz.Value : throw new()),
+                        /* Discard poseFloats.Values[3] */
+                        new(
+                            poseFloats.Values[4] is ValueFloat rx ? rx.Value : throw new(),
+                            poseFloats.Values[5] is ValueFloat ry ? ry.Value : throw new(),
+                            poseFloats.Values[6] is ValueFloat rz ? rz.Value : throw new(),
+                            poseFloats.Values[7] is ValueFloat rw ? rw.Value : throw new()),
+                        new(
+                            poseFloats.Values[8] is ValueFloat sx ? sx.Value : throw new(),
+                            poseFloats.Values[9] is ValueFloat sy ? sy.Value : throw new(),
+                            poseFloats.Values[10] is ValueFloat sz ? sz.Value : throw new())
+                        /* Discard poseFloats.Values[11] */));
             }
 
-            Bones = resultBones.ToArray();
-            foreach (var ae in AlphData) {
+            this.Bones = resultBones.ToArray();
+            foreach (var ae in this.AlphData) {
                 ae.Bones = new Bone[ae.BoneIndices.Length];
                 for (var i = 0; i < ae.BoneIndices.Length; i++)
-                    ae.Bones[i] = Bones[ae.BoneIndices[i]];
+                    ae.Bones[i] = this.Bones[ae.BoneIndices[i]];
             }
         } catch (Exception e) {
-            LoadException = e;
+            this.LoadException = e;
         }
     }
 
     public bool TryGetBoneByName(string name, [MaybeNullWhen(false)] out Bone bone) =>
-        (bone = Bones.FirstOrDefault(x => x.Name == name)) != null;
+        (bone = this.Bones.FirstOrDefault(x => x.Name == name)) != null;
 
     public class AlphEntry {
         public ushort[] BoneIndices;
         public Bone[]? Bones;
         public int Unk;
 
-        public AlphEntry() {
-            BoneIndices = Array.Empty<ushort>();
+        public AlphEntry()
+        {
+            this.BoneIndices = [];
         }
 
-        public AlphEntry(BinaryReader br) {
-            Unk = br.ReadInt32();
+        public AlphEntry(BinaryReader br)
+        {
+            this.Unk = br.ReadInt32();
             var dataCount = br.ReadUInt16();
-            BoneIndices = br.ReadStructuresAsArray<ushort>(dataCount);
+            this.BoneIndices = br.ReadStructuresAsArray<ushort>(dataCount);
         }
 
-        public override string ToString() => $"{Unk}; count={BoneIndices.Length}" +
-            (Bones is null ? "" : string.Join("", Bones.Select(x => $"; {x.Name}")));
+        public override string ToString() => $"{this.Unk}; count={this.BoneIndices.Length}" +
+            (this.Bones is null ? "" : string.Join("", this.Bones.Select(x => $"; {x.Name}")));
     }
 
     public class BoneList {
-        private readonly List<Bone> _bones = new();
+        private readonly List<Bone> _bones = [];
         private readonly Dictionary<string, int> _boneNameToIndex = new();
         private readonly Dictionary<Bone, int> _boneRemap = new();
 
-        public void AddBones(IEnumerable<Bone> bones) {
+        public void AddBones(IEnumerable<Bone> bones)
+        {
             foreach (var b in bones) {
-                if (_boneNameToIndex.TryGetValue(b.Name, out var boneIndex)) {
-                    _boneRemap[b] = boneIndex;
+                if (this._boneNameToIndex.TryGetValue(b.Name, out var boneIndex)) {
+                    this._boneRemap[b] = boneIndex;
                     continue;
                 }
 
                 if (b.Parent is not null)
-                    _bones.Add(new(_bones.Count, _bones[_boneNameToIndex[b.Parent.Name]], b));
+                    this._bones.Add(new(this._bones.Count, this._bones[this._boneNameToIndex[b.Parent.Name]], b));
                 else
-                    _bones.Add(new(_bones.Count, _bones.FirstOrDefault(), b));
+                    this._bones.Add(new(this._bones.Count, this._bones.FirstOrDefault(), b));
 
-                _boneNameToIndex[_bones.Last().Name] = _bones.Count - 1;
-                _boneRemap[b] = _bones.Count - 1;
+                this._boneNameToIndex[this._bones.Last().Name] = this._bones.Count - 1;
+                this._boneRemap[b] = this._bones.Count - 1;
             }
         }
 
-        public bool TryGetIndex(string name, out int i) => _boneNameToIndex.TryGetValue(name, out i);
+        public bool TryGetIndex(string name, out int i) => this._boneNameToIndex.TryGetValue(name, out i);
 
-        public int GetRemappedBoneIndex(Bone bone) => _boneRemap[bone];
+        public int GetRemappedBoneIndex(Bone bone) => this._boneRemap[bone];
 
-        public IReadOnlyList<Bone> Bones => _bones;
+        public IReadOnlyList<Bone> Bones => this._bones;
     }
 
     public class Bone {
-        private readonly List<Bone> _children = new();
-        
+        private readonly List<Bone> _children = [];
+
         public readonly int Index;
         public readonly Bone? Parent;
         public readonly string Name;
@@ -190,41 +201,45 @@ public class SklbFile : FileResource {
         public readonly Matrix4x4 BindPoseAbsoluteInverse;
 
         public Bone(Bone bone) :
-            this(bone.Index, bone.Parent, bone.Name, bone.Translation, bone.Rotation, bone.Scale) { }
+            this(bone.Index, bone.Parent, bone.Name, bone.Translation, bone.Rotation, bone.Scale)
+        { }
 
         public Bone(int index, Bone? parent, Bone bone) :
-            this(index, parent, bone.Name, bone.Translation, bone.Rotation, bone.Scale) { }
+            this(index, parent, bone.Name, bone.Translation, bone.Rotation, bone.Scale)
+        { }
 
-        public Bone(int index, Bone? parent, string name, Vector3 translation, Quaternion rotation, Vector3 scale) {
-            Index = index;
-            Parent = parent;
-            Name = name;
-            Translation = translation;
-            Rotation = rotation;
-            Scale = scale;
+        public Bone(int index, Bone? parent, string name, Vector3 translation, Quaternion rotation, Vector3 scale)
+        {
+            this.Index = index;
+            this.Parent = parent;
+            this.Name = name;
+            this.Translation = translation;
+            this.Rotation = rotation;
+            this.Scale = scale;
 
             parent?._children.Add(this);
 
-            BindPoseRelative =
-                Matrix4x4.CreateScale(Scale) *
-                Matrix4x4.CreateFromQuaternion(Rotation) *
-                Matrix4x4.CreateTranslation(Translation);
+            this.BindPoseRelative =
+                Matrix4x4.CreateScale(this.Scale) *
+                Matrix4x4.CreateFromQuaternion(this.Rotation) *
+                Matrix4x4.CreateTranslation(this.Translation);
             if (parent is null)
-                BindPoseAbsolute = BindPoseRelative;
+                this.BindPoseAbsolute = this.BindPoseRelative;
             else
-                BindPoseAbsolute = BindPoseRelative * parent.BindPoseAbsolute;
-            BindPoseAbsoluteInverse = Matrix4x4.Invert(BindPoseAbsolute, out var inverted)
+                this.BindPoseAbsolute = this.BindPoseRelative * parent.BindPoseAbsolute;
+            this.BindPoseAbsoluteInverse = Matrix4x4.Invert(this.BindPoseAbsolute, out var inverted)
                 ? inverted
                 : throw new InvalidDataException();
         }
 
-        public IReadOnlyList<Bone> Children => _children;
+        public IReadOnlyList<Bone> Children => this._children;
 
-        public override string ToString() => _children.Count switch {
-            0 => $"{Name}#{Index} (leaf)",
-            1 => $"{Name}#{Index} (1 child)",
-            var r => $"{Name}#{Index} ({r} children)",
-        };
+        public override string ToString() =>
+            this._children.Count switch {
+                0 => $"{this.Name}#{this.Index} (leaf)",
+                1 => $"{this.Name}#{this.Index} (1 child)",
+                var r => $"{this.Name}#{this.Index} ({r} children)",
+            };
     }
 
     public enum SklbFormat : uint {
@@ -253,23 +268,23 @@ public class SklbFile : FileResource {
 
     public struct Sklb0021 : ISklbVersionedHeader {
         public int AlphOffset {
-            get => AlphOffsetU16;
-            set => AlphOffsetU16 = checked((ushort) value);
+            get => this.AlphOffsetU16;
+            set => this.AlphOffsetU16 = checked((ushort) value);
         }
 
         public int HavokOffset {
-            get => HavokOffsetU16;
-            set => HavokOffsetU16 = checked((ushort) value);
+            get => this.HavokOffsetU16;
+            set => this.HavokOffsetU16 = checked((ushort) value);
         }
 
         public SkeletonTargetModelClassification ModelClassification {
-            get => Common00210031.ModelClassification;
-            set => Common00210031.ModelClassification = value;
+            get => this.Common00210031.ModelClassification;
+            set => this.Common00210031.ModelClassification = value;
         }
 
         public int ModelId {
-            get => Common00210031.ModelId;
-            set => Common00210031.ModelId = checked((ushort) value);
+            get => this.Common00210031.ModelId;
+            set => this.Common00210031.ModelId = checked((ushort) value);
         }
 
         public ushort AlphOffsetU16;
@@ -279,23 +294,23 @@ public class SklbFile : FileResource {
 
     public struct Sklb0031 : ISklbVersionedHeader {
         public int AlphOffset {
-            get => (int) AlphOffsetU32;
-            set => AlphOffsetU32 = unchecked((uint) value);
+            get => (int) this.AlphOffsetU32;
+            set => this.AlphOffsetU32 = unchecked((uint) value);
         }
 
         public int HavokOffset {
-            get => (int) HavokOffsetU32;
-            set => HavokOffsetU32 = unchecked((uint) value);
+            get => (int) this.HavokOffsetU32;
+            set => this.HavokOffsetU32 = unchecked((uint) value);
         }
 
         public SkeletonTargetModelClassification ModelClassification {
-            get => Common00210031.ModelClassification;
-            set => Common00210031.ModelClassification = value;
+            get => this.Common00210031.ModelClassification;
+            set => this.Common00210031.ModelClassification = value;
         }
 
         public int ModelId {
-            get => Common00210031.ModelId;
-            set => Common00210031.ModelId = checked((ushort) value);
+            get => this.Common00210031.ModelId;
+            set => this.Common00210031.ModelId = checked((ushort) value);
         }
 
         public uint AlphOffsetU32;

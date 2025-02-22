@@ -10,15 +10,17 @@ namespace LuminaExplorer.Core.ObjectRepresentationWrapper;
 
 [TypeConverter(typeof(WrapperTypeConverter))]
 public class ObjectWrapper : BaseWrapper<object> {
-    internal ObjectWrapper(object obj) : base(obj) { }
+    internal ObjectWrapper(object obj) : base(obj)
+    { }
 
-    public override PropertyDescriptorCollection GetProperties(Attribute[]? attributes) {
+    public override PropertyDescriptorCollection GetProperties(Attribute[]? attributes)
+    {
         var pds = new PropertyDescriptorCollection(null);
-        
-        var obj = TransformObject(Obj);
+
+        var obj = this.TransformObject(this.Obj);
         if (obj is null)
             return pds;
-        
+
         var type = obj.GetType();
 
         var skipFields = false;
@@ -42,7 +44,7 @@ public class ObjectWrapper : BaseWrapper<object> {
 
                 var category = info.DeclaringType?.ToString();
                 var description = $"{accessModifier} {info.FieldType.GetCSharpTypeName()} {info.Name};";
-                
+
                 Type fieldType;
                 Func<object?> valueResolver;
                 if (info.TryGetCopyOfFixedArray(obj, out var array)) {
@@ -55,8 +57,15 @@ public class ObjectWrapper : BaseWrapper<object> {
                     fieldType = info.FieldType;
                     valueResolver = () => info.GetValue(obj);
                 }
-                
-                pds.Add(new SimplePropertyDescriptor(type, info.Name, fieldType, new(valueResolver), category, description));
+
+                pds.Add(
+                    new SimplePropertyDescriptor(
+                        type,
+                        info.Name,
+                        fieldType,
+                        new(valueResolver),
+                        category,
+                        description));
             }
         }
 
@@ -86,12 +95,12 @@ public class ObjectWrapper : BaseWrapper<object> {
 
                 var accessModifiers = setAccessModifier is null && getAccessModifier is null ? ""
                     : getAccessModifier is null ? $"{setAccessModifier};"
-                    : setAccessModifier is null ? $"{getAccessModifier};" 
+                    : setAccessModifier is null ? $"{getAccessModifier};"
                     : $"{getAccessModifier}; {setAccessModifier};";
 
                 var category = info.DeclaringType?.ToString();
                 var description = $"{info.PropertyType.GetCSharpTypeName()} {info.Name} {{ {accessModifiers} }};";
-                
+
                 Type fieldType;
                 Func<object?> valueResolver;
                 if (Converter.CanConvertFrom(null, info.PropertyType)) {
@@ -101,8 +110,15 @@ public class ObjectWrapper : BaseWrapper<object> {
                     fieldType = info.PropertyType;
                     valueResolver = () => info.GetValue(obj);
                 }
-                
-                pds.Add(new SimplePropertyDescriptor(type, info.Name, fieldType, new(valueResolver), category, description));
+
+                pds.Add(
+                    new SimplePropertyDescriptor(
+                        type,
+                        info.Name,
+                        fieldType,
+                        new(valueResolver),
+                        category,
+                        description));
             }
         }
 

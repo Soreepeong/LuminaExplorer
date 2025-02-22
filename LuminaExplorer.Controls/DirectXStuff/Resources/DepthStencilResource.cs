@@ -1,7 +1,7 @@
 ﻿using System;
-using Silk.NET.Core.Native;
-using Silk.NET.Direct3D11;
-using Silk.NET.DXGI;
+using LuminaExplorer.Core.Util;
+using TerraFX.Interop.DirectX;
+using TerraFX.Interop.Windows;
 
 namespace LuminaExplorer.Controls.DirectXStuff.Resources;
 
@@ -9,52 +9,48 @@ public unsafe class DepthStencilResource : D3D11Resource {
     private ID3D11Texture2D* _pDepthStencil = null;
     private ID3D11DepthStencilView* _pDepthStencilView = null;
 
-    public DepthStencilResource(ID3D11Device* pDevice, IUnknown* pBackBuffer) {
+    public DepthStencilResource(ID3D11Device* pDevice, IUnknown* pBackBuffer)
+    {
         ID3D11Texture2D* pBackBufferTexture2D = null;
-        fixed (Guid* pGuid = &ID3D11Texture2D.Guid)
-            ThrowH(pBackBuffer->QueryInterface(pGuid, (void**) &pBackBufferTexture2D));
+        fixed (Guid* pGuid = &IID.IID_ID3D11Texture2D)
+            pBackBuffer->QueryInterface(pGuid, (void**) &pBackBufferTexture2D).Ensure();
 
         try {
-            var backBufferDesc = new Texture2DDesc();
+            var backBufferDesc = new D3D11_TEXTURE2D_DESC();
             pBackBufferTexture2D->GetDesc(&backBufferDesc);
 
-            var depthStencilDesc = new Texture2DDesc(
+            var depthStencilDesc = new D3D11_TEXTURE2D_DESC(
+                format: DXGI_FORMAT.DXGI_FORMAT_D24_UNORM_S8_UINT,
                 width: backBufferDesc.Width,
                 height: backBufferDesc.Height,
                 mipLevels: 1,
-                arraySize: 1,
-                format: Format.FormatD24UnormS8Uint,
-                sampleDesc: new(1, 0),
-                usage: Usage.Default,
-                bindFlags: (uint) BindFlag.DepthStencil,
-                cPUAccessFlags: 0,
-                miscFlags: 0);
+                bindFlags: (uint) D3D11_BIND_FLAG.D3D11_BIND_DEPTH_STENCIL);
 
-            fixed (ID3D11Texture2D** ppDepthStencil = &_pDepthStencil)
-                ThrowH(pDevice->CreateTexture2D(&depthStencilDesc, null, ppDepthStencil));
-            SetResource(_pDepthStencil);
+            fixed (ID3D11Texture2D** ppDepthStencil = &this._pDepthStencil)
+                pDevice->CreateTexture2D(&depthStencilDesc, null, ppDepthStencil).Ensure();
+            this.SetResource(this._pDepthStencil);
 
-            var depthStencilViewDesc = new DepthStencilViewDesc(
+            var depthStencilViewDesc = new D3D11_DEPTH_STENCIL_VIEW_DESC(
                 format: depthStencilDesc.Format,
-                viewDimension: DsvDimension.Texture2D,
-                flags: 0,
-                texture2D: new(0));
-            fixed (ID3D11DepthStencilView** ppDepthStencilView = &_pDepthStencilView)
-                ThrowH(pDevice->CreateDepthStencilView(Resource, &depthStencilViewDesc, ppDepthStencilView));
+                viewDimension: D3D11_DSV_DIMENSION.D3D11_DSV_DIMENSION_TEXTURE2D);
+            fixed (ID3D11DepthStencilView** ppDepthStencilView = &this._pDepthStencilView)
+                pDevice->CreateDepthStencilView(this.Resource, &depthStencilViewDesc, ppDepthStencilView).Ensure();
         } finally {
             pBackBufferTexture2D->Release();
         }
     }
 
-    public ID3D11DepthStencilView* View => _pDepthStencilView;
+    public ID3D11DepthStencilView* View => this._pDepthStencilView;
 
-    private void DisposeInner() {
-        SafeRelease(ref _pDepthStencil);
-        SafeRelease(ref _pDepthStencilView);
+    private void DisposeInner()
+    {
+        SafeRelease(ref this._pDepthStencil);
+        SafeRelease(ref this._pDepthStencilView);
     }
 
-    protected override void Dispose(bool disposing) {
-        DisposeInner();
+    protected override void Dispose(bool disposing)
+    {
+        this.DisposeInner();
         base.Dispose(disposing);
     }
 }

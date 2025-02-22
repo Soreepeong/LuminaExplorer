@@ -12,33 +12,40 @@ public class BcPixFmt : IPixFmt, IEquatable<BcPixFmt> {
     public BcPixFmt(
         ValueType type = ValueType.Typeless,
         AlphaType alpha = AlphaType.Straight,
-        byte version = 0) {
+        byte version = 0)
+    {
         if (version is < 1 or > 7)
             throw new ArgumentOutOfRangeException(nameof(version), version, null);
 
-        Type = type;
-        Alpha = alpha;
-        Version = version;
+        this.Type = type;
+        this.Alpha = alpha;
+        this.Version = version;
     }
 
     public AlphaType Alpha { get; }
-    
-    public int Bpp => Version is 1 or 4 ? 4 : 8;
 
-    public int BlockSize => Version is 1 or 4 ? 8 : 16;
+    public int Bpp => this.Version is 1 or 4 ? 4 : 8;
 
-    public void ToB8G8R8A8(Span<byte> target, int targetStride, ReadOnlySpan<byte> source, int sourceStride, int width,
-        int height) {
-        if (sourceStride * 2 != (width + 3) / 4 * 4 * Bpp)
+    public int BlockSize => this.Version is 1 or 4 ? 8 : 16;
+
+    public void ToB8G8R8A8(
+        Span<byte> target,
+        int targetStride,
+        ReadOnlySpan<byte> source,
+        int sourceStride,
+        int width,
+        int height)
+    {
+        if (sourceStride * 2 != (width + 3) / 4 * 4 * this.Bpp)
             throw new ArgumentException("No padding is allowed for stride.", nameof(sourceStride));
 
-        var blockSize = BlockSize;
+        var blockSize = this.BlockSize;
         var decoder = new BCnEncoder.Decoder.BcDecoder();
-        if (Version == 6) {
+        if (this.Version == 6) {
             var block = new ColorRgbFloat[4, 4];
 
             var isrc = 0;
-            switch (Type) {
+            switch (this.Type) {
                 case ValueType.Sf16:
                     for (var y = 0; y < height; y += 4) {
                         for (var x = 0; x < width; x += 4) {
@@ -84,7 +91,7 @@ public class BcPixFmt : IPixFmt, IEquatable<BcPixFmt> {
             }
         } else {
             var block = new ColorRgba32[4, 4];
-            var fmt = Version switch {
+            var fmt = this.Version switch {
                 1 => CompressionFormat.Bc1,
                 2 => CompressionFormat.Bc2,
                 3 => CompressionFormat.Bc3,
@@ -114,13 +121,14 @@ public class BcPixFmt : IPixFmt, IEquatable<BcPixFmt> {
         }
     }
 
-    public bool Equals(BcPixFmt? other) {
+    public bool Equals(BcPixFmt? other)
+    {
         if (ReferenceEquals(null, other)) return false;
         if (ReferenceEquals(this, other)) return true;
-        return Type == other.Type && Version == other.Version && Alpha == other.Alpha;
+        return this.Type == other.Type && this.Version == other.Version && this.Alpha == other.Alpha;
     }
 
-    public override bool Equals(object? obj) => Equals(obj as BcPixFmt);
+    public override bool Equals(object? obj) => this.Equals(obj as BcPixFmt);
 
-    public override int GetHashCode() => HashCode.Combine((int) Type, Version, (int) Alpha);
+    public override int GetHashCode() => HashCode.Combine((int) this.Type, this.Version, (int) this.Alpha);
 }

@@ -16,11 +16,12 @@ ij_visual_guides = none
 ij_wrap_on_typing = false
 
 # Microsoft .NET properties
+csharp_indent_braces = false
 csharp_new_line_before_catch = false
 csharp_new_line_before_else = false
 csharp_new_line_before_finally = false
 csharp_new_line_before_members_in_object_initializers = false
-csharp_new_line_before_open_brace = none
+csharp_new_line_before_open_brace = local_functions,methods
 csharp_preferred_modifier_order = public, private, protected, internal, file, new, static, abstract, virtual, sealed, readonly, override, extern, unsafe, volatile, async, required:suggestion
 csharp_space_after_cast = true
 csharp_style_prefer_utf8_string_literals = true:suggestion
@@ -53,10 +54,10 @@ dotnet_style_parentheses_in_other_binary_operators = always_for_clarity:none
 dotnet_style_parentheses_in_relational_binary_operators = never_if_unnecessary:none
 dotnet_style_predefined_type_for_locals_parameters_members = true:suggestion
 dotnet_style_predefined_type_for_member_access = true:suggestion
-dotnet_style_qualification_for_event = false:suggestion
-dotnet_style_qualification_for_field = false:suggestion
-dotnet_style_qualification_for_method = false:suggestion
-dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_event = true:suggestion
+dotnet_style_qualification_for_field = true:suggestion
+dotnet_style_qualification_for_method = true:suggestion
+dotnet_style_qualification_for_property = true:suggestion
 dotnet_style_require_accessibility_modifiers = for_non_interface_members:suggestion
 
 # ReSharper properties
@@ -74,6 +75,10 @@ resharper_cpp_type_declaration_braces = end_of_line
 resharper_cpp_wrap_lines = false
 resharper_csharp_empty_block_style = together
 resharper_csharp_insert_final_newline = true
+resharper_csharp_wrap_after_declaration_lpar = true
+resharper_csharp_wrap_after_invocation_lpar = true
+resharper_csharp_wrap_arguments_style = chop_if_long
+resharper_csharp_wrap_parameters_style = chop_if_long
 resharper_enforce_line_ending_style = true
 resharper_formatter_off_tag = @formatter:off
 resharper_formatter_on_tag = @formatter:on
@@ -89,7 +94,8 @@ resharper_object_creation_when_type_not_evident = target_typed
 resharper_requires_expression_braces = end_of_line
 resharper_resx_max_line_length = 2147483647
 resharper_space_before_template_params = false
-resharper_space_within_single_line_array_initializer_braces = false
+resharper_space_within_single_line_array_initializer_braces = true
+resharper_trailing_comma_in_multiline_lists = true
 resharper_use_indent_from_vs = false
 resharper_wrap_ctor_initializer_style = chop_if_long
 

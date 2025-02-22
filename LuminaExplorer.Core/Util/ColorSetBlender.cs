@@ -1,8 +1,7 @@
 ﻿using System;
-using BCnEncoder.Shared;
 using Lumina.Data.Parsing;
 
-namespace LuminaExplorer.Core.Util; 
+namespace LuminaExplorer.Core.Util;
 
 public static class ColorSetBlender {
     public static byte UInt16To8BitColour(ushort s) =>
@@ -15,10 +14,18 @@ public static class ColorSetBlender {
         new(Blend(x.r, y.r, scaler), Blend(x.g, y.g, scaler), Blend(x.b, y.b, scaler), a);
 
     public static unsafe Bgra8888 ColorFromSet(ColorSetInfo colorSetInfo, int colorSetIndex) =>
-        new(UInt16To8BitColour(colorSetInfo.Data[colorSetIndex + 0]), UInt16To8BitColour(colorSetInfo.Data[colorSetIndex + 1]), UInt16To8BitColour(colorSetInfo.Data[colorSetIndex + 2]), 255);
+        new(
+            UInt16To8BitColour(colorSetInfo.Data[colorSetIndex + 0]),
+            UInt16To8BitColour(colorSetInfo.Data[colorSetIndex + 1]),
+            UInt16To8BitColour(colorSetInfo.Data[colorSetIndex + 2]),
+            255);
 
-    public static Bgra8888 Blend(ColorSetInfo colorSetInfo, int colorSetIndex1, int colorSetIndex2,
-        byte alpha, double scaler) => Blend(
+    public static Bgra8888 Blend(
+        ColorSetInfo colorSetInfo,
+        int colorSetIndex1,
+        int colorSetIndex2,
+        byte alpha,
+        double scaler) => Blend(
         ColorFromSet(colorSetInfo, colorSetIndex1),
         ColorFromSet(colorSetInfo, colorSetIndex2),
         alpha,
@@ -31,9 +38,11 @@ public static class ColorSetBlender {
         public byte r;
         public byte a;
 
-        public Bgra8888() { }
+        public Bgra8888()
+        { }
 
-        public Bgra8888(byte r, byte g, byte b, byte a) {
+        public Bgra8888(byte r, byte g, byte b, byte a)
+        {
             this.b = b;
             this.g = g;
             this.r = r;

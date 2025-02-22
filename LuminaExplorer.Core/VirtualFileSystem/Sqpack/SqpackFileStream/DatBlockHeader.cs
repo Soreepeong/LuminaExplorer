@@ -13,5 +13,5 @@ public struct DatBlockHeader {
     public uint CompressedSize;
     public uint DecompressedSize;
 
-    public bool IsCompressed => CompressedSize != 32000;
+    public bool IsCompressed => this.CompressedSize != 32000;
 }

@@ -28,5 +28,5 @@ public class GltfNode : BaseGltfObject {
     public List<float>? Translation;
 
     [UsedImplicitly]
-    public bool ShouldSerializeChildren() => Children.Any();
+    public bool ShouldSerializeChildren() => this.Children.Any();
 }

@@ -19,27 +19,27 @@ public partial class MultiBitmapViewerControl {
     public TimeSpan OverlayLongDuration = TimeSpan.FromSeconds(1);
 
     public string? LoadingFileNameWhenEmpty {
-        get => _loadingFileNameWhenEmpty;
+        get => this._loadingFileNameWhenEmpty;
         set {
-            if (_loadingFileNameWhenEmpty == value)
+            if (this._loadingFileNameWhenEmpty == value)
                 return;
-            _loadingFileNameWhenEmpty = value;
-            Invalidate();
+            this._loadingFileNameWhenEmpty = value;
+            this.Invalidate();
         }
     }
 
     public string AutoDescription {
         get {
-            if (BitmapSource is not { } source)
+            if (this.BitmapSource is not { } source)
                 return "";
 
-            if (_autoDescriptionCached is not null)
-                return _autoDescriptionCached;
+            if (this._autoDescriptionCached is not null)
+                return this._autoDescriptionCached;
 
             var sb = new StringBuilder();
             sb.Append(source.FileName);
-            sb.Append($" ({Viewport.EffectiveZoom * 100:0.00}%");
-            switch (ChannelFilter) {
+            sb.Append($" ({this.Viewport.EffectiveZoom * 100:0.00}%");
+            switch (this.ChannelFilter) {
                 case DirectXTexRendererShader.VisibleColorChannelTypes.Red:
                     sb.Append("; red");
                     goto case DirectXTexRendererShader.VisibleColorChannelTypes.All;
@@ -53,19 +53,19 @@ public partial class MultiBitmapViewerControl {
                     sb.Append("; alpha");
                     break;
                 case DirectXTexRendererShader.VisibleColorChannelTypes.All:
-                    if (!UseAlphaChannel)
+                    if (!this.UseAlphaChannel)
                         sb.Append("; alpha channel hidden");
                     break;
             }
 
-            if (Rotation != 0)
-                sb.Append($"; cw {MathF.Round((360 + 180 * Rotation / MathF.PI) % 360)} degrees");
+            if (this.Rotation != 0)
+                sb.Append($"; cw {MathF.Round((360 + 180 * this.Rotation / MathF.PI) % 360)} degrees");
 
             sb.AppendLine(")");
 
             source.DescribeImage(sb);
 
-            return _autoDescriptionCached = sb.ToString();
+            return this._autoDescriptionCached = sb.ToString();
         }
     }
 
@@ -73,31 +73,31 @@ public partial class MultiBitmapViewerControl {
         out string s,
         out float foreOpacity,
         out float backOpacity,
-        out bool hideIfNotLoading) {
+        out bool hideIfNotLoading)
+    {
         hideIfNotLoading = false;
         var now = Environment.TickCount64;
         var customOverlayVisible =
-            !string.IsNullOrWhiteSpace(_overlayCustomString) &&
-            _overlayShowUntilTicks > Environment.TickCount64;
-        var hasLoadingText =
-            BitmapSource?.FileName is not null || _loadingFileNameWhenEmpty is not null;
+            !string.IsNullOrWhiteSpace(this._overlayCustomString) &&
+            this._overlayShowUntilTicks > Environment.TickCount64;
+        var hasLoadingText = this.BitmapSource?.FileName is not null || this._loadingFileNameWhenEmpty is not null;
 
         if (customOverlayVisible) {
-            var remaining = _overlayShowUntilTicks - now;
+            var remaining = this._overlayShowUntilTicks - now;
             if (remaining >= FadeOutDurationMs / 2 || !hasLoadingText) {
-                s = _overlayCustomString!;
+                s = this._overlayCustomString!;
                 foreOpacity = remaining >= FadeOutDurationMs ? 1f : 1f * remaining / FadeOutDurationMs;
-                backOpacity = _overlayBackgroundOpacity * foreOpacity;
+                backOpacity = this._overlayBackgroundOpacity * foreOpacity;
                 return true;
             }
         }
 
         if (hasLoadingText) {
-            s = string.IsNullOrWhiteSpace(BitmapSource?.FileName ?? _loadingFileNameWhenEmpty)
+            s = string.IsNullOrWhiteSpace(this.BitmapSource?.FileName ?? this._loadingFileNameWhenEmpty)
                 ? "Loading..."
-                : $"Loading {BitmapSource?.FileName ?? _loadingFileNameWhenEmpty}...";
+                : $"Loading {this.BitmapSource?.FileName ?? this._loadingFileNameWhenEmpty}...";
             foreOpacity = 1f;
-            backOpacity = _overlayBackgroundOpacity * foreOpacity;
+            backOpacity = this._overlayBackgroundOpacity * foreOpacity;
             hideIfNotLoading = true;
             return true;
         }
@@ -107,40 +107,45 @@ public partial class MultiBitmapViewerControl {
         return false;
     }
 
-    public void ExtendDescriptionMandatoryDisplay(TimeSpan duration) {
+    public void ExtendDescriptionMandatoryDisplay(TimeSpan duration)
+    {
         var now = Environment.TickCount64;
-        _autoDescriptionShowUntilTicks = Math.Max(
-            _autoDescriptionShowUntilTicks,
+        this._autoDescriptionShowUntilTicks = Math.Max(
+            this._autoDescriptionShowUntilTicks,
             now + (long) duration.TotalMilliseconds);
 
-        if (_autoDescriptionShowUntilTicks <= now)
+        if (this._autoDescriptionShowUntilTicks <= now)
             return;
 
-        _timer.Enabled = true;
-        _timer.Interval = 1;
-        Invalidate(AutoDescriptionRectangle);
+        this._timer.Enabled = true;
+        this._timer.Interval = 1;
+        this.Invalidate(this.AutoDescriptionRectangle);
     }
 
-    public void ClearOverlayString() {
-        _overlayCustomString = null;
-        _overlayShowUntilTicks = 0;
-        Invalidate();
+    public void ClearOverlayString()
+    {
+        this._overlayCustomString = null;
+        this._overlayShowUntilTicks = 0;
+        this.Invalidate();
     }
 
-    public void ShowOverlayString(string? overlayString, TimeSpan overlayTextMessageDuration) {
+    public void ShowOverlayString(string? overlayString, TimeSpan overlayTextMessageDuration)
+    {
         var now = Environment.TickCount64;
-        _overlayCustomString = overlayString;
-        _overlayShowUntilTicks = now + (int) overlayTextMessageDuration.TotalMilliseconds;
+        this._overlayCustomString = overlayString;
+        this._overlayShowUntilTicks = now + (int) overlayTextMessageDuration.TotalMilliseconds;
 
-        if (_overlayShowUntilTicks > now) {
-            _timer.Enabled = true;
-            _timer.Interval = 1;
+        if (this._overlayShowUntilTicks > now) {
+            this._timer.Enabled = true;
+            this._timer.Interval = 1;
         }
 
-        Invalidate();
+        this.Invalidate();
     }
 
-    public void ShowOverlayStringShort(string? overlayString) => ShowOverlayString(overlayString, OverlayShortDuration);
+    public void ShowOverlayStringShort(string? overlayString) =>
+        this.ShowOverlayString(overlayString, this.OverlayShortDuration);
 
-    public void ShowOverlayStringLong(string? overlayString) => ShowOverlayString(overlayString, OverlayLongDuration);
+    public void ShowOverlayStringLong(string? overlayString) =>
+        this.ShowOverlayString(overlayString, this.OverlayLongDuration);
 }

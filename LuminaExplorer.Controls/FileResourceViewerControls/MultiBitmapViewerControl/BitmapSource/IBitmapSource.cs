@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
-using WicNet;
+using TerraFX.Interop.Windows;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 
@@ -30,12 +30,12 @@ public interface IBitmapSource : IDisposable, IAsyncDisposable {
     /// Layout of the current mipmap.
     /// </summary>
     public IGridLayout Layout { get; }
-    
+
     public bool IsCubeMap { get; }
 
     public void UpdateSelection(int imageIndex, int mipmap);
 
-    public Task<WicBitmapSource> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice);
+    public Task<ComPtr<IWICBitmapSource>> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice);
 
     public bool HasWicBitmapSource(int imageIndex, int mipmap, int slice);
 

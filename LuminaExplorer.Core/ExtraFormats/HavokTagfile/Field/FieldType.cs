@@ -15,33 +15,37 @@ public class FieldType {
         FieldType? innerType = null,
         string? referencedName = null,
         int length = 0
-    ) {
-        ElementType = elementType;
-        ArrayType = arrayType;
-        InnerType = innerType;
-        ReferencedName = referencedName;
-        Length = length;
+    )
+    {
+        this.ElementType = elementType;
+        this.ArrayType = arrayType;
+        this.InnerType = innerType;
+        this.ReferencedName = referencedName;
+        this.Length = length;
     }
 
     public Definition? ReferenceDefinition { get; internal set; }
 
-    public override string ToString() => ReferencedName == null
-        ? ArrayType switch {
-            FieldArrayType.NotAnArray => $"{ElementType}",
-            FieldArrayType.VariableLength when ElementType == FieldElementType.Array => $"{InnerType}[?]",
-            FieldArrayType.FixedLength when ElementType == FieldElementType.Array => $"{InnerType}[{Length}]",
-            _ => $"{ElementType}[INVALID]"
-        }
-        : ArrayType switch {
-            FieldArrayType.NotAnArray => $"{ElementType}<{ReferencedName}>",
-            FieldArrayType.VariableLength when ElementType == FieldElementType.Array =>
-                $"{InnerType}<{ReferencedName}>[?]",
-            FieldArrayType.FixedLength when ElementType == FieldElementType.Array =>
-                $"{InnerType}<{ReferencedName}>[{Length}]",
-            _ => $"{ElementType}<{ReferencedName}>[INVALID]"
-        };
+    public override string ToString() =>
+        this.ReferencedName == null
+            ? this.ArrayType switch {
+                FieldArrayType.NotAnArray => $"{this.ElementType}",
+                FieldArrayType.VariableLength when this.ElementType == FieldElementType.Array => $"{this.InnerType}[?]",
+                FieldArrayType.FixedLength when this.ElementType == FieldElementType.Array =>
+                    $"{this.InnerType}[{this.Length}]",
+                _ => $"{this.ElementType}[INVALID]",
+            }
+            : this.ArrayType switch {
+                FieldArrayType.NotAnArray => $"{this.ElementType}<{this.ReferencedName}>",
+                FieldArrayType.VariableLength when this.ElementType == FieldElementType.Array =>
+                    $"{this.InnerType}<{this.ReferencedName}>[?]",
+                FieldArrayType.FixedLength when this.ElementType == FieldElementType.Array =>
+                    $"{this.InnerType}<{this.ReferencedName}>[{this.Length}]",
+                _ => $"{this.ElementType}<{this.ReferencedName}>[INVALID]",
+            };
 
-    internal static FieldType Read(Parser parser) {
+    internal static FieldType Read(Parser parser)
+    {
         var rawType = parser.ReadInt();
         var storedType = (FieldStoredType) (rawType & 0xF);
         var sequenceType = (FieldArrayType) (rawType >> 4);
@@ -60,13 +64,13 @@ public class FieldType {
             FieldStoredType.Reference => Reference(parser.ReadString()),
             FieldStoredType.Struct => Struct(parser.ReadString()),
             FieldStoredType.String => SingleString,
-            _ => throw new ArgumentOutOfRangeException(nameof(storedType), storedType, null)
+            _ => throw new ArgumentOutOfRangeException(nameof(storedType), storedType, null),
         };
 
         return sequenceType switch {
             FieldArrayType.FixedLength => WrapFixedArray(fieldType, fixedLength),
             FieldArrayType.VariableLength => WrapVariableArray(fieldType),
-            _ => fieldType
+            _ => fieldType,
         };
     }
 

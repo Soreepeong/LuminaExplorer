@@ -14,65 +14,73 @@ public class ArrayWrapper : BaseWrapper<Array> {
     public readonly int RangeTo;
     public readonly int RangeJumpUnit;
 
-    internal ArrayWrapper(Array obj) : this(obj, Array.Empty<int>()) { }
+    internal ArrayWrapper(Array obj) : this(obj, [])
+    { }
 
     internal ArrayWrapper(Array obj, int[] baseIndices)
-        : this(obj, 0, obj.GetLength(baseIndices.Length), baseIndices) { }
+        : this(obj, 0, obj.GetLength(baseIndices.Length), baseIndices)
+    { }
 
-    protected ArrayWrapper(Array obj, int rangeFrom, int rangeTo, int[] baseIndices) : base(obj) {
-        BaseIndices = baseIndices;
-        RangeFrom = rangeFrom;
-        RangeTo = rangeTo;
+    protected ArrayWrapper(Array obj, int rangeFrom, int rangeTo, int[] baseIndices) : base(obj)
+    {
+        this.BaseIndices = baseIndices;
+        this.RangeFrom = rangeFrom;
+        this.RangeTo = rangeTo;
 
-        RangeJumpUnit = 1;
-        while (RangeTo - RangeFrom > 100 * RangeJumpUnit) {
-            RangeJumpUnit *= 100;
+        this.RangeJumpUnit = 1;
+        while (this.RangeTo - this.RangeFrom > 100 * this.RangeJumpUnit) {
+            this.RangeJumpUnit *= 100;
         }
     }
 
-    public int Length => (RangeTo - RangeFrom + RangeJumpUnit - 1) / RangeJumpUnit;
+    public int Length => (this.RangeTo - this.RangeFrom + this.RangeJumpUnit - 1) / this.RangeJumpUnit;
 
-    public bool IsFlat => BaseIndices.Length + 1 == Obj.Rank;
+    public bool IsFlat => this.BaseIndices.Length + 1 == this.Obj.Rank;
 
-    public bool IsTopLevel => !BaseIndices.Any() && RangeFrom == 0 && RangeTo == Obj.GetLength(0);
+    public bool IsTopLevel => !this.BaseIndices.Any() && this.RangeFrom == 0 && this.RangeTo == this.Obj.GetLength(0);
 
-    public override string ToString() {
-        if (IsTopLevel)
-            return $"{Obj.GetType().GetElementType()!.GetCSharpTypeName()}" +
-                   $"[{string.Join(", ", Enumerable.Range(0, Obj.Rank).Select(x => Obj.GetLength(x)))}]";
-        
-        return BaseIndices.Any()
-            ? $"[{string.Join(", ", BaseIndices)}, {RangeFrom}..{RangeTo}]"
-            : $"[{RangeFrom}..{RangeTo}]";
+    public override string ToString()
+    {
+        if (this.IsTopLevel)
+            return $"{this.Obj.GetType().GetElementType()!.GetCSharpTypeName()}" +
+                $"[{string.Join(", ", Enumerable.Range(0, this.Obj.Rank).Select(x => this.Obj.GetLength(x)))}]";
+
+        return this.BaseIndices.Any()
+            ? $"[{string.Join(", ", this.BaseIndices)}, {this.RangeFrom}..{this.RangeTo}]"
+            : $"[{this.RangeFrom}..{this.RangeTo}]";
     }
 
-    public override PropertyDescriptorCollection GetProperties(Attribute[]? attributes) {
+    public override PropertyDescriptorCollection GetProperties(Attribute[]? attributes)
+    {
         var pds = new PropertyDescriptorCollection(null);
 
-        foreach (var i in Enumerable.Range(0, Length)) {
-            pds.Add(new SimplePropertyDescriptor(
-                typeof(ArrayWrapper),
-                GetValueName(i),
-                GetValueType(i),
-                new(() => this[i]),
-                null,
-                null));
+        foreach (var i in Enumerable.Range(0, this.Length)) {
+            pds.Add(
+                new SimplePropertyDescriptor(
+                    typeof(ArrayWrapper),
+                    this.GetValueName(i),
+                    this.GetValueType(i),
+                    new(() => this[i]),
+                    null,
+                    null));
         }
 
         return pds;
     }
 
-    public string GetValueName(int i) {
-        if (i < 0 || i >= Length)
+    public string GetValueName(int i)
+    {
+        if (i < 0 || i >= this.Length)
             throw new IndexOutOfRangeException();
 
-        if (RangeJumpUnit != 1)
-            return $"[{RangeFrom + i * RangeJumpUnit}..{Math.Min(RangeTo, (i + 1) * RangeJumpUnit)}]";
+        if (this.RangeJumpUnit != 1)
+            return
+                $"[{this.RangeFrom + i * this.RangeJumpUnit}..{Math.Min(this.RangeTo, (i + 1) * this.RangeJumpUnit)}]";
 
-        var obj = Obj.GetValue(BaseIndices.Append(RangeFrom + i * RangeJumpUnit).ToArray());
-        obj = TransformObject(obj);
+        var obj = this.Obj.GetValue(this.BaseIndices.Append(this.RangeFrom + i * this.RangeJumpUnit).ToArray());
+        obj = this.TransformObject(obj);
         if (obj is null)
-            return $"[{RangeFrom + i}]";
+            return $"[{this.RangeFrom + i}]";
 
         var objType = obj.GetType();
         if (objType.TryFindTypedGenericParent(typeof(BaseWrapper<>), out _)) {
@@ -94,44 +102,45 @@ public class ArrayWrapper : BaseWrapper<Array> {
                     } else if (objType.GetGenericTypeDefinition() == typeof(KeyValuePair<,>)) {
                         obj = objType.GetProperty("Key")!.GetValue(obj);
                     } else
-                        return $"[{RangeFrom + i}]";
+                        return $"[{this.RangeFrom + i}]";
                 } else
-                    return $"[{RangeFrom + i}]";
+                    return $"[{this.RangeFrom + i}]";
 
                 break;
             }
         }
 
-        return $"[{RangeFrom + i}] {obj}";
+        return $"[{this.RangeFrom + i}] {obj}";
     }
 
-    public Type GetValueType(int i) {
-        if (i < 0 || i >= Length)
+    public Type GetValueType(int i)
+    {
+        if (i < 0 || i >= this.Length)
             throw new IndexOutOfRangeException();
-        if (RangeJumpUnit == 1 && IsFlat) {
-            var et = TransformValueType(Obj.GetType().GetElementType()!);
+        if (this.RangeJumpUnit == 1 && this.IsFlat) {
+            var et = this.TransformValueType(this.Obj.GetType().GetElementType()!);
             return Converter.CanConvertFrom(null, et) ? Converter.GetWrapperType(et) : et;
         }
 
-        return GetType();
+        return this.GetType();
     }
 
     public object? this[int i] {
         get {
-            if (i < 0 || i >= Length)
+            if (i < 0 || i >= this.Length)
                 throw new IndexOutOfRangeException();
-            if (RangeJumpUnit != 1) {
-                return CreateSubView(
-                    RangeFrom + i * RangeJumpUnit,
-                    Math.Min(RangeTo, RangeFrom + (i + 1) * RangeJumpUnit),
-                    BaseIndices);
+            if (this.RangeJumpUnit != 1) {
+                return this.CreateSubView(
+                    this.RangeFrom + i * this.RangeJumpUnit,
+                    Math.Min(this.RangeTo, this.RangeFrom + (i + 1) * this.RangeJumpUnit),
+                    this.BaseIndices);
             }
 
-            if (!IsFlat)
-                return CreateSubView(BaseIndices.Append(RangeFrom + i).ToArray());
+            if (!this.IsFlat)
+                return this.CreateSubView(this.BaseIndices.Append(this.RangeFrom + i).ToArray());
 
-            var obj = Obj.GetValue(BaseIndices.Append(RangeFrom + i * RangeJumpUnit).ToArray());
-            obj = TransformObject(obj);
+            var obj = this.Obj.GetValue(this.BaseIndices.Append(this.RangeFrom + i * this.RangeJumpUnit).ToArray());
+            obj = this.TransformObject(obj);
             if (obj is null)
                 return null;
 
@@ -141,8 +150,8 @@ public class ArrayWrapper : BaseWrapper<Array> {
 
     protected virtual Type TransformValueType(Type type) => type;
 
-    protected virtual ArrayWrapper CreateSubView(int[] baseIndices) => new(Obj, baseIndices);
+    protected virtual ArrayWrapper CreateSubView(int[] baseIndices) => new(this.Obj, baseIndices);
 
     protected virtual ArrayWrapper CreateSubView(int rangeFrom, int rangeTo, int[] baseIndices) =>
-        new(Obj, rangeFrom, rangeTo, baseIndices);
+        new(this.Obj, rangeFrom, rangeTo, baseIndices);
 }

@@ -7,7 +7,8 @@ using System.Threading.Tasks;
 namespace LuminaExplorer.Core.VirtualFileSystem.Physical;
 
 public class PhysicalFileSystem : IVirtualFileSystem {
-    public void Dispose() { }
+    public void Dispose()
+    { }
 
     public event IVirtualFileSystem.FolderChangedDelegate? FolderChanged;
 
@@ -19,9 +20,10 @@ public class PhysicalFileSystem : IVirtualFileSystem {
         ? new PhysicalFileLookup(pf)
         : throw new ArgumentException("Only PhysicalFile is accepted", nameof(file));
 
-    public Task<IVirtualFolder> AsFoldersResolved(params string[] pathComponents) {
-        var folder = (BasePhysicalFolder) RootFolder;
-        foreach (var part in NormalizePath(pathComponents).Split('/')) {
+    public Task<IVirtualFolder> AsFoldersResolved(params string[] pathComponents)
+    {
+        var folder = (BasePhysicalFolder) this.RootFolder;
+        foreach (var part in this.NormalizePath(pathComponents).Split('/')) {
             var name = part + "/";
             if (name == "./")
                 continue;
@@ -39,47 +41,53 @@ public class PhysicalFileSystem : IVirtualFileSystem {
             folder = subfolder;
         }
 
-        return AsFoldersResolved(folder);
+        return this.AsFoldersResolved(folder);
     }
 
-    public Task<IVirtualFolder> AsFoldersResolved(IVirtualFolder folder) {
+    public Task<IVirtualFolder> AsFoldersResolved(IVirtualFolder folder)
+    {
         var f = (BasePhysicalFolder) folder;
         if (f.Folders.IsValueCreated)
             return Task.FromResult(folder);
 
-        return Task.Run(() => {
-            _ = f.Folders.Value;
-            return folder;
-        });
+        return Task.Run(
+            () => {
+                _ = f.Folders.Value;
+                return folder;
+            });
     }
 
-    public Task<IVirtualFolder> AsFileNamesResolved(IVirtualFolder folder) {
+    public Task<IVirtualFolder> AsFileNamesResolved(IVirtualFolder folder)
+    {
         var f = (BasePhysicalFolder) folder;
         if (f.Files.IsValueCreated)
             return Task.FromResult(folder);
 
-        return Task.Run(() => {
-            _ = f.Files.Value;
-            return folder;
-        });
+        return Task.Run(
+            () => {
+                _ = f.Files.Value;
+                return folder;
+            });
     }
 
     public bool AreFileNamesResolved(IVirtualFolder folder) => true;
 
-    public void SuggestFullPath(string name) { }
+    public void SuggestFullPath(string name)
+    { }
 
     public string NormalizePath(params string[] pathComponents) =>
         Path.Join(pathComponents).Replace('\\', '/').Trim('/');
 
     public string GetFullPath(IVirtualFolder folder) =>
-        folder.Parent is { } parent ? GetFullPath(parent) + folder.Name : folder.Name;
+        folder.Parent is { } parent ? this.GetFullPath(parent) + folder.Name : folder.Name;
 
-    public string GetFullPath(IVirtualFile file) => GetFullPath(file.Parent) + file.Name;
+    public string GetFullPath(IVirtualFile file) => this.GetFullPath(file.Parent) + file.Name;
 
     public uint? GetFullPathHash(IVirtualFile file) => null;
 
-    public IVirtualFolder[] GetTreeFromRoot(IVirtualFolder folder) {
-        var res = new List<IVirtualFolder> {folder};
+    public IVirtualFolder[] GetTreeFromRoot(IVirtualFolder folder)
+    {
+        var res = new List<IVirtualFolder> { folder };
         while (res[^1].Parent is { } parent)
             res.Add(parent);
         return Enumerable.Reverse(res).ToArray();
@@ -89,39 +97,49 @@ public class PhysicalFileSystem : IVirtualFileSystem {
 
     public int GetKnownFolderCount(IVirtualFolder folder) => (folder as BasePhysicalFolder)!.Folders.Value.Count;
 
-    public Task<IVirtualFolder?> LocateFolder(IVirtualFolder root, params string[] pathComponents) {
-        return Task.Run(async () => {
-            var path = NormalizePath(pathComponents).Split('/');
-            var folder = root;
+    public Task<IVirtualFolder?> LocateFolder(IVirtualFolder root, params string[] pathComponents)
+    {
+        return Task.Run(
+            async () => {
+                var path = this.NormalizePath(pathComponents).Split('/');
+                var folder = root;
 
-            foreach (var pathComponent in path.SkipLast(1)) {
-                if (pathComponent == ".")
-                    continue;
-                if (pathComponent == "..") {
-                    folder = folder.Equals(root) ? root : (folder.Parent ?? root);
-                    continue;
+                foreach (var pathComponent in path.SkipLast(1)) {
+                    if (pathComponent == ".")
+                        continue;
+                    if (pathComponent == "..") {
+                        folder = folder.Equals(root) ? root : (folder.Parent ?? root);
+                        continue;
+                    }
+
+                    var folders = this.GetFolders(await this.AsFoldersResolved(folder));
+                    folder = folders.FirstOrDefault(
+                        x =>
+                            string.Compare(x.Name, pathComponent + "/", StringComparison.InvariantCultureIgnoreCase) ==
+                            0);
+                    if (folder is null)
+                        return null;
                 }
 
-                var folders = GetFolders(await AsFoldersResolved(folder));
-                folder = folders.FirstOrDefault(x =>
-                    string.Compare(x.Name, pathComponent + "/", StringComparison.InvariantCultureIgnoreCase) == 0);
-                if (folder is null)
-                    return null;
-            }
-
-            return folder;
-        });
+                return folder;
+            });
     }
 
-    public Task<IVirtualFile?> LocateFile(IVirtualFolder root, params string[] pathComponents) {
-        return Task.Run(async () => {
-            var path = NormalizePath(pathComponents).Split('/');
-            var folder = await LocateFolder(root, path.SkipLast(1).ToArray());
+    public Task<IVirtualFile?> LocateFile(IVirtualFolder root, params string[] pathComponents)
+    {
+        return Task.Run(
+            async () => {
+                var path = this.NormalizePath(pathComponents).Split('/');
+                var folder = await this.LocateFolder(root, path.SkipLast(1).ToArray());
 
-            return (IVirtualFile?) (folder as BasePhysicalFolder)?.Files.Value
-                .FirstOrDefault(x =>
-                    string.Compare(x.Name, pathComponents.Last(), StringComparison.InvariantCultureIgnoreCase) == 0);
-        });
+                return (IVirtualFile?) (folder as BasePhysicalFolder)?.Files.Value
+                    .FirstOrDefault(
+                        x =>
+                            string.Compare(
+                                x.Name,
+                                pathComponents.Last(),
+                                StringComparison.InvariantCultureIgnoreCase) == 0);
+            });
     }
 
     public List<IVirtualFile> GetFiles(IVirtualFolder folder) =>

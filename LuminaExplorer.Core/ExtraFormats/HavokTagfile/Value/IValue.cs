@@ -18,11 +18,11 @@ public interface IValue {
                 FieldElementType.Struct => ValueNode.ReadStruct(parser, fieldType.ReferencedName),
                 FieldElementType.String => ValueString.Read(parser),
                 FieldElementType.Array => throw new InvalidDataException("Inconsistent state detected"),
-                _ => throw new ArgumentOutOfRangeException(nameof(fieldType), fieldType, @"Single/ElementType")
+                _ => throw new ArgumentOutOfRangeException(nameof(fieldType), fieldType, @"Single/ElementType"),
             },
             FieldArrayType.VariableLength => ValueArray.Read(parser, fieldType.InnerType!),
             FieldArrayType.FixedLength => ValueArray.Read(parser, fieldType.InnerType!, fieldType.Length),
-            _ => throw new ArgumentOutOfRangeException(nameof(fieldType), fieldType, @"SequenceType")
+            _ => throw new ArgumentOutOfRangeException(nameof(fieldType), fieldType, @"SequenceType"),
         };
 
     public static ValueArray ReadVector(Parser parser, FieldType fieldType, int count) =>
@@ -30,7 +30,8 @@ public interface IValue {
             FieldArrayType.NotAnArray => fieldType.ElementType switch {
                 FieldElementType.Void => new(
                     Enumerable.Range(0, count).Select(_ => (IValue?) null)
-                    .ToImmutableList(), fieldType),
+                        .ToImmutableList(),
+                    fieldType),
                 FieldElementType.Byte => ValueByte.ReadVector(parser, count),
                 FieldElementType.Integer => ValueInt.ReadVector(parser, count),
                 FieldElementType.Float => ValueFloat.ReadVector(parser, count),
@@ -38,11 +39,15 @@ public interface IValue {
                 FieldElementType.Struct => ValueNode.ReadStructVector(parser, fieldType.ReferencedName!, count),
                 FieldElementType.String => ValueString.ReadVector(parser, count),
                 FieldElementType.Array => throw new InvalidDataException("Inconsistent state detected"),
-                _ => throw new ArgumentOutOfRangeException(nameof(fieldType), fieldType, @"Single/ElementType")
+                _ => throw new ArgumentOutOfRangeException(nameof(fieldType), fieldType, @"Single/ElementType"),
             },
             FieldArrayType.VariableLength => throw new NotSupportedException(),
-            FieldArrayType.FixedLength => ValueArray.ReadVector(parser, fieldType.InnerType!, fieldType.Length,
-                fieldType, count),
-            _ => throw new ArgumentOutOfRangeException(nameof(fieldType), fieldType, @"SequenceType")
+            FieldArrayType.FixedLength => ValueArray.ReadVector(
+                parser,
+                fieldType.InnerType!,
+                fieldType.Length,
+                fieldType,
+                count),
+            _ => throw new ArgumentOutOfRangeException(nameof(fieldType), fieldType, @"SequenceType"),
         };
 }

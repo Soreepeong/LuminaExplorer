@@ -10,29 +10,33 @@ public abstract class BaseSqpackFileStream : Stream, ICloneable {
 
     public readonly PlatformId PlatformId;
 
-    protected BaseSqpackFileStream(PlatformId platformId, uint length) {
-        PlatformId = platformId;
-        Length = length;
+    protected BaseSqpackFileStream(PlatformId platformId, uint length)
+    {
+        this.PlatformId = platformId;
+        this.Length = length;
     }
 
-    public override void Flush() { }
+    public override void Flush()
+    { }
 
-    public override long Seek(long offset, SeekOrigin origin) {
+    public override long Seek(long offset, SeekOrigin origin)
+    {
         var newPosition = origin switch {
             SeekOrigin.Begin => offset,
-            SeekOrigin.Current => Position + offset,
-            SeekOrigin.End => Length + offset,
+            SeekOrigin.Current => this.Position + offset,
+            SeekOrigin.End => this.Length + offset,
             _ => throw new ArgumentOutOfRangeException(nameof(origin), origin, null),
         };
-        if (newPosition < 0 || newPosition > Length)
+        if (newPosition < 0 || newPosition > this.Length)
             throw new IOException();
-        return PositionUint = (uint) newPosition;
+        return this.PositionUint = (uint) newPosition;
     }
 
     public override void SetLength(long value) => throw new NotSupportedException();
 
-    public override int Read(byte[] buffer, int offset, int count) {
-        var t = ReadAsync(buffer, offset, count, default);
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        var t = this.ReadAsync(buffer, offset, count, default);
         t.Wait();
         return t.Result;
     }
@@ -45,22 +49,24 @@ public abstract class BaseSqpackFileStream : Stream, ICloneable {
     public override long Length { get; }
 
     public override long Position {
-        get => PositionUint;
-        set => Seek(value, SeekOrigin.Begin);
+        get => this.PositionUint;
+        set => this.Seek(value, SeekOrigin.Begin);
     }
 
-    protected int ReadImplPadTo(byte[] buffer, ref int offset, ref int count, uint padTo) {
-        var pad = (int) Math.Min(padTo - PositionUint, count);
+    protected int ReadImplPadTo(byte[] buffer, ref int offset, ref int count, uint padTo)
+    {
+        var pad = (int) Math.Min(padTo - this.PositionUint, count);
         Array.Fill(buffer, (byte) 0, offset, pad);
         offset += pad;
         count -= pad;
-        PositionUint += (uint)pad;
+        this.PositionUint += (uint) pad;
         return pad;
     }
 
-    public object Clone() => Clone(false);
+    public object Clone() => this.Clone(false);
 
-    public virtual void CloseButOpenAgainWhenNecessary() { }
+    public virtual void CloseButOpenAgainWhenNecessary()
+    { }
 
     public abstract BaseSqpackFileStream Clone(bool keepOpen);
 
@@ -68,13 +74,14 @@ public abstract class BaseSqpackFileStream : Stream, ICloneable {
         private readonly string _datPath;
         private readonly PlatformId _platformId;
         public readonly long BaseOffset;
-        
-        public BaseOffsetManager(string datPath, PlatformId platformId, long baseOffset) {
-            _datPath = datPath;
-            _platformId = platformId;
-            BaseOffset = baseOffset;
+
+        public BaseOffsetManager(string datPath, PlatformId platformId, long baseOffset)
+        {
+            this._datPath = datPath;
+            this._platformId = platformId;
+            this.BaseOffset = baseOffset;
         }
-        
-        public LuminaBinaryReader CreateNewReader() => new(File.OpenRead(_datPath), _platformId);
+
+        public LuminaBinaryReader CreateNewReader() => new(File.OpenRead(this._datPath), this._platformId);
     }
 }

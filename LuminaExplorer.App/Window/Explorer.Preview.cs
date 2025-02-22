@@ -19,69 +19,76 @@ public partial class Explorer {
         private FileResource? _previewingFileResource;
         private CancellationTokenSource? _previewCancellationTokenSource;
 
-        public PreviewHandler(Explorer explorer) {
-            _explorer = explorer;
+        public PreviewHandler(Explorer explorer)
+        {
+            this._explorer = explorer;
         }
 
-        public void Dispose() {
-            ClearPreview();
+        public void Dispose()
+        {
+            this.ClearPreview();
         }
 
-        public void ClearPreview() {
-            _previewingFile = null;
-            _previewCancellationTokenSource?.Cancel();
-            _previewCancellationTokenSource = null;
-            _previewingFileResource = null;
-            _explorer.ppgPreview.SelectedObject = null;
-            _explorer.hbxPreview.ByteProvider = null;
-            _explorer.bitmapPreview.LoadingFileNameWhenEmpty = null;
-            _explorer.bitmapPreview.ClearFile();
+        public void ClearPreview()
+        {
+            this._previewingFile = null;
+            this._previewCancellationTokenSource?.Cancel();
+            this._previewCancellationTokenSource = null;
+            this._previewingFileResource = null;
+            this._explorer.ppgPreview.SelectedObject = null;
+            this._explorer.hbxPreview.ByteProvider = null;
+            this._explorer.bitmapPreview.LoadingFileNameWhenEmpty = null;
+            this._explorer.bitmapPreview.ClearFile();
         }
 
-        public bool TryGetAvailableFileResource(IVirtualFile file,
-            [MaybeNullWhen(false)] out FileResource fileResource) {
+        public bool TryGetAvailableFileResource(
+            IVirtualFile file,
+            [MaybeNullWhen(false)] out FileResource fileResource)
+        {
             fileResource = null!;
-            if (!Equals(file, _previewingFile) || _previewingFileResource is null)
+            if (!Equals(file, this._previewingFile) || this._previewingFileResource is null)
                 return false;
 
-            fileResource = _previewingFileResource;
+            fileResource = this._previewingFileResource;
             return true;
         }
 
-        public void PreviewFile(IVirtualFile file) {
-            if (Equals(_previewingFile, file))
+        public void PreviewFile(IVirtualFile file)
+        {
+            if (Equals(this._previewingFile, file))
                 return;
 
-            _previewingFile = file;
+            this._previewingFile = file;
 
             var mainThreadScheduler = TaskScheduler.FromCurrentSynchronizationContext();
-            var token = (_previewCancellationTokenSource = new()).Token;
+            var token = (this._previewCancellationTokenSource = new()).Token;
 
-            _explorer.bitmapPreview.LoadingFileNameWhenEmpty = file.Name;
-            _explorer.bitmapPreview.ClearFile(true);
+            this._explorer.bitmapPreview.LoadingFileNameWhenEmpty = file.Name;
+            this._explorer.bitmapPreview.ClearFile(true);
 
-            if (_explorer.Vfs is not { } tree)
+            if (this._explorer.Vfs is not { } tree)
                 return;
             using var lookup = tree.GetLookup(file);
             lookup.AsFileResource(token)
-                .ContinueWith(fr => {
-                        if (!Equals(file, _previewingFile))
+                .ContinueWith(
+                    fr => {
+                        if (!Equals(file, this._previewingFile))
                             return;
 
                         if (!fr.IsCompletedSuccessfully) {
-                            ClearPreview();
+                            this.ClearPreview();
                             return;
                         }
 
-                        _explorer.ppgPreview.SelectedObject = new WrapperTypeConverter().ConvertFrom(fr.Result);
-                        _explorer.hbxPreview.ByteProvider = new FileResourceByteProvider(fr.Result);
+                        this._explorer.ppgPreview.SelectedObject = new WrapperTypeConverter().ConvertFrom(fr.Result);
+                        this._explorer.hbxPreview.ByteProvider = new FileResourceByteProvider(fr.Result);
                         if (fr.Result is TexFile tf)
-                            _explorer.bitmapPreview.SetFile(tf);
+                            this._explorer.bitmapPreview.SetFile(tf);
                         else if (MultiBitmapViewerControl.MaySupportFileName(file.Name))
-                            _explorer.bitmapPreview.SetFile(fr.Result);
+                            this._explorer.bitmapPreview.SetFile(fr.Result);
                         else {
-                            _explorer.bitmapPreview.LoadingFileNameWhenEmpty = null;
-                            _explorer.bitmapPreview.ClearFile();
+                            this._explorer.bitmapPreview.LoadingFileNameWhenEmpty = null;
+                            this._explorer.bitmapPreview.ClearFile();
                         }
                     },
                     token,

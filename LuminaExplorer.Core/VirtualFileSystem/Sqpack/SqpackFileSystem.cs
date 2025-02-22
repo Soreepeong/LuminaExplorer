@@ -26,61 +26,69 @@ public sealed partial class SqpackFileSystem : IVirtualFileSystem {
     public event IVirtualFileSystem.FolderChangedDelegate? FolderChanged;
     public event IVirtualFileSystem.FileChangedDelegate? FileChanged;
 
-    public SqpackFileSystem(HashDatabase hashDatabase, GameData gameData) {
-        InstallationSqPackDirectory = gameData.DataPath;
-        PlatformId = gameData.Options.CurrentPlatform;
+    public SqpackFileSystem(HashDatabase hashDatabase, GameData gameData)
+    {
+        this.InstallationSqPackDirectory = gameData.DataPath;
+        this.PlatformId = gameData.Options.CurrentPlatform;
 
-        _childFoldersResolvers.Add(RootFolderTyped, new(() => Task.Run(() => {
-            _treeStructureLock.EnterReadLock();
-            try {
-                foreach (var (categoryId, categoryName) in Repository.CategoryIdToNameMap) {
-                    var repos = gameData.Repositories
-                        .Where(x => x.Value.Categories.GetValueOrDefault(categoryId)?.Count is > 0)
-                        .ToDictionary(x => x.Key, x => x.Value.Categories[categoryId]);
-                    switch (repos.Count) {
-                        case 1:
-                            PopulateFolderResolverFor(
-                                UnsafeGetOrCreateSubfolder(RootFolderTyped, categoryName),
-                                hashDatabase,
-                                categoryName,
-                                repos.First().Value);
-                            break;
+        this._childFoldersResolvers.Add(
+            this.RootFolderTyped,
+            new(
+                () => Task.Run(
+                    () => {
+                        this._treeStructureLock.EnterReadLock();
+                        try {
+                            foreach (var (categoryId, categoryName) in Repository.CategoryIdToNameMap) {
+                                var repos = gameData.Repositories
+                                    .Where(x => x.Value.Categories.GetValueOrDefault(categoryId)?.Count is > 0)
+                                    .ToDictionary(x => x.Key, x => x.Value.Categories[categoryId]);
+                                switch (repos.Count) {
+                                    case 1:
+                                        this.PopulateFolderResolverFor(
+                                            this.UnsafeGetOrCreateSubfolder(this.RootFolderTyped, categoryName),
+                                            hashDatabase,
+                                            categoryName,
+                                            repos.First().Value);
+                                        break;
 
-                        case > 1: {
-                            var categoryNode = UnsafeGetOrCreateSubfolder(RootFolderTyped, categoryName);
-                            foreach (var (repoName, chunks) in repos) {
-                                PopulateFolderResolverFor(
-                                    UnsafeGetOrCreateSubfolder(categoryNode, repoName),
-                                    hashDatabase,
-                                    $"{categoryName}/{repoName}",
-                                    chunks);
+                                    case > 1: {
+                                        var categoryNode = this.UnsafeGetOrCreateSubfolder(
+                                            this.RootFolderTyped,
+                                            categoryName);
+                                        foreach (var (repoName, chunks) in repos) {
+                                            this.PopulateFolderResolverFor(
+                                                this.UnsafeGetOrCreateSubfolder(categoryNode, repoName),
+                                                hashDatabase,
+                                                $"{categoryName}/{repoName}",
+                                                chunks);
+                                        }
+
+                                        break;
+                                    }
+                                }
                             }
-
-                            break;
+                        } finally {
+                            this._treeStructureLock.ExitReadLock();
                         }
-                    }
-                }
-            } finally {
-                _treeStructureLock.ExitReadLock();
-            }
 
-            return RootFolder;
-        })));
-    }
-    
-    public IVirtualFolder RootFolder => RootFolderTyped;
-
-    public void Dispose() {
-        lock (_fileLookups)
-            _fileLookups.Dispose();
-        FolderChanged = null;
-        FileChanged = null;
+                        return this.RootFolder;
+                    })));
     }
 
-    public SqpackFileLookup GetLookup(SqpackFile file) {
+    public IVirtualFolder RootFolder => this.RootFolderTyped;
+
+    public void Dispose()
+    {
+        lock (this._fileLookups) this._fileLookups.Dispose();
+        this.FolderChanged = null;
+        this.FileChanged = null;
+    }
+
+    public SqpackFileLookup GetLookup(SqpackFile file)
+    {
         SqpackFileLookup? data;
-        lock (_fileLookups) {
-            if (_fileLookups.TryGet(file, out data))
+        lock (this._fileLookups) {
+            if (this._fileLookups.TryGet(file, out data))
                 return (SqpackFileLookup) data.Clone();
         }
 
@@ -90,17 +98,16 @@ public sealed partial class SqpackFileSystem : IVirtualFileSystem {
         var repoName = (file.IndexId & 0x00FF00) == 0
             ? "ffxiv"
             : $"ex{(file.IndexId >> 8) & 0xFF:D}";
-        var fileName = Repository.BuildDatStr(cat, ex, chunk, PlatformId, $"dat{file.DataFileId}");
-        var datPath = Path.Combine(InstallationSqPackDirectory.FullName, repoName, fileName);
+        var fileName = Repository.BuildDatStr(cat, ex, chunk, this.PlatformId, $"dat{file.DataFileId}");
+        var datPath = Path.Combine(this.InstallationSqPackDirectory.FullName, repoName, fileName);
 
         data = new(this, file, datPath);
 
-        lock (_fileLookups)
-            _fileLookups.Add(file, data);
+        lock (this._fileLookups) this._fileLookups.Add(file, data);
         return (SqpackFileLookup) data.Clone();
     }
 
-    public IVirtualFileLookup GetLookup(IVirtualFile file) => GetLookup((SqpackFile) file);
+    public IVirtualFileLookup GetLookup(IVirtualFile file) => this.GetLookup((SqpackFile) file);
 
     public string NormalizePath(params string[] pathComponents) =>
         Path.Join(pathComponents).Replace('\\', '/').Trim('/');
@@ -116,8 +123,8 @@ public sealed partial class SqpackFileSystem : IVirtualFileSystem {
         public uint ConflictIndex;
         public fixed byte Name[0xF0];
 
-        public byte DataFileId => (byte) ((Data & 0b1110) >> 1);
+        public byte DataFileId => (byte) ((this.Data & 0b1110) >> 1);
 
-        public long Offset => (Data & ~0xF) * 0x08;
+        public long Offset => (this.Data & ~0xF) * 0x08;
     }
 }

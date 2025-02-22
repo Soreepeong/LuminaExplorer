@@ -36,242 +36,263 @@ public partial class Explorer {
         private Task _sortTask = Task.CompletedTask;
 
         public ExplorerListViewDataSource(VirtualObjectListView volv, IVirtualFileSystem vfs, int numPreviewerThreads)
-            : base(volv) {
-            _vfs = vfs;
-            _previewCache = new(numPreviewerThreads);
-            _previewCache.ImageLoaded += PreviewImageLoaded;
+            : base(volv)
+        {
+            this._vfs = vfs;
+            this._previewCache = new(numPreviewerThreads);
+            this._previewCache.ImageLoaded += this.PreviewImageLoaded;
         }
 
-        public void Dispose() {
-            _sorterCancel.Cancel();
-            _previewCache.Dispose();
-            _objects.AsParallel().ForAll(x => x.Dispose());
-            _objects.Clear();
+        public void Dispose()
+        {
+            this._sorterCancel.Cancel();
+            this._previewCache.Dispose();
+            this._objects.AsParallel().ForAll(x => x.Dispose());
+            this._objects.Clear();
         }
 
         public int SortThreads { get; set; }
 
         public int PreviewThreads {
-            get => _previewCache.Threads;
+            get => this._previewCache.Threads;
             set {
-                if (_previewCache.Threads == value)
+                if (this._previewCache.Threads == value)
                     return;
 
                 var newPreviewCache = new VirtualObjectImageLoader(value) {
-                    Capacity = _previewCache.Capacity,
-                    CropThresholdAspectRatioRatio = _previewCache.CropThresholdAspectRatioRatio,
-                    InterpolationMode = _previewCache.InterpolationMode,
+                    Capacity = this._previewCache.Capacity,
+                    CropThresholdAspectRatioRatio = this._previewCache.CropThresholdAspectRatioRatio,
+                    InterpolationMode = this._previewCache.InterpolationMode,
                 };
-                _previewCache.Dispose();
-                _previewCache = newPreviewCache;
+                this._previewCache.Dispose();
+                this._previewCache = newPreviewCache;
             }
         }
 
         public int PreviewCacheCapacity {
-            get => _previewCache.Capacity;
-            set => _previewCache.Capacity = value;
+            get => this._previewCache.Capacity;
+            set => this._previewCache.Capacity = value;
         }
 
         public float PreviewCropThresholdAspectRatioRatio {
-            get => _previewCache.CropThresholdAspectRatioRatio;
-            set => _previewCache.CropThresholdAspectRatioRatio = value;
+            get => this._previewCache.CropThresholdAspectRatioRatio;
+            set => this._previewCache.CropThresholdAspectRatioRatio = value;
         }
 
-        public IReadOnlyList<VirtualObject> ObjectList => _objects;
+        public IReadOnlyList<VirtualObject> ObjectList => this._objects;
 
         public InterpolationMode PreviewInterpolationMode {
-            get => _previewCache.InterpolationMode;
-            set => _previewCache.InterpolationMode = value;
+            get => this._previewCache.InterpolationMode;
+            set => this._previewCache.InterpolationMode = value;
         }
 
         public IVirtualFolder? CurrentFolder {
-            get => _currentFolder;
+            get => this._currentFolder;
             set {
-                if (Equals(_currentFolder, value))
+                if (Equals(this._currentFolder, value))
                     return;
 
-                _currentFolder = value;
-                if (_currentFolder is null) {
-                    listView.SetObjects(Array.Empty<object>());
+                this._currentFolder = value;
+                if (this._currentFolder is null) {
+                    this.listView.SetObjects(Array.Empty<object>());
                     return;
                 }
 
-                var fileNameResolver = _fileNameResolver = _vfs.AsFileNamesResolved(_currentFolder);
+                var fileNameResolver = this._fileNameResolver = this._vfs.AsFileNamesResolved(this._currentFolder);
                 if (!fileNameResolver.IsCompletedSuccessfully)
-                    listView.SetObjects(Array.Empty<object>());
+                    this.listView.SetObjects(Array.Empty<object>());
                 else
-                    listView.SelectedIndex = -1;
+                    this.listView.SelectedIndex = -1;
 
                 fileNameResolver
-                    .ContinueWith(_ => {
-                            if (_fileNameResolver != fileNameResolver)
+                    .ContinueWith(
+                        _ => {
+                            if (this._fileNameResolver != fileNameResolver)
                                 return;
-                            _fileNameResolver = null;
+                            this._fileNameResolver = null;
 
-                            listView.SetObjects(_vfs.GetFolders(_currentFolder)
-                                .Select(x => new VirtualObject(_vfs, x))
-                                .Concat(_vfs.GetFiles(_currentFolder).Select(x => new VirtualObject(_vfs, x))));
-                        }, default,
+                            this.listView.SetObjects(
+                                this._vfs.GetFolders(this._currentFolder)
+                                    .Select(x => new VirtualObject(this._vfs, x))
+                                    .Concat(
+                                        this._vfs.GetFiles(this._currentFolder)
+                                            .Select(x => new VirtualObject(this._vfs, x))));
+                        },
+                        default,
                         TaskContinuationOptions.DenyChildAttach,
                         TaskScheduler.FromCurrentSynchronizationContext());
             }
         }
 
         public int ImageThumbnailSize {
-            get => _previewSize;
+            get => this._previewSize;
             set {
-                if (_previewSize == value)
+                if (this._previewSize == value)
                     return;
 
-                _previewCache.Width = _previewCache.Height = _previewSize = value;
+                this._previewCache.Width = this._previewCache.Height = this._previewSize = value;
 
-                var largeImageListSize = _previewSize == 0 ? 32 : _previewSize;
-                listView.LargeImageList!.ImageSize = new(largeImageListSize, largeImageListSize);
-                listView.Invalidate();
+                var largeImageListSize = this._previewSize == 0 ? 32 : this._previewSize;
+                this.listView.LargeImageList!.ImageSize = new(largeImageListSize, largeImageListSize);
+                this.listView.Invalidate();
             }
         }
 
-        public override object GetNthObject(int n) => _objects[n];
+        public override object GetNthObject(int n) => this._objects[n];
 
-        public override int GetObjectCount() => _objects.Count;
+        public override int GetObjectCount() => this._objects.Count;
 
-        public override int GetObjectIndex(object model) => model is VirtualObject vo ? _objects.IndexOf(vo) : -1;
+        public override int GetObjectIndex(object model) => model is VirtualObject vo ? this._objects.IndexOf(vo) : -1;
 
-        public override void PrepareCache(int first, int last) {
+        public override void PrepareCache(int first, int last)
+        {
             // throw new NotImplementedException();
         }
 
         public override int SearchText(string value, int first, int last, OLVColumn column)
             => DefaultSearchText(value, first, last, column, this);
 
-        public override void Sort(OLVColumn column, SortOrder order) {
-            _sorterCancel.Cancel();
-            _sorterCancel = new();
+        public override void Sort(OLVColumn column, SortOrder order)
+        {
+            this._sorterCancel.Cancel();
+            this._sorterCancel = new();
 
             var orderMultiplier = order == SortOrder.Descending ? -1 : 1;
-            _sortTask = _sortTask.ContinueWith(
-                _ => _objects.SortIntoNewListAsync()
-                    .With(column.AspectName switch {
-                        nameof(VirtualObject.FullPath) => (a, b) =>
-                            MiscUtils.CompareNatural(a.FullPath, b.FullPath) *
-                            orderMultiplier,
-                        nameof(VirtualObject.Name) => (a, b) =>
-                            (a.CompareByFolderOrFile(b) ?? a.CompareByName(b)) * orderMultiplier,
-                        nameof(VirtualObject.PackTypeString) => (a, b) => orderMultiplier * (
-                            a.CompareByFolderOrFile(b) ??
-                            (a.IsFolder ? a.CompareByName(b) : a.Lookup.Type.CompareTo(b.Lookup.Type))),
-                        nameof(VirtualObject.Hash1) => (a, b) => orderMultiplier * (
-                            a.CompareByFolderOrFile(b) ??
-                            (a.IsFolder ? a.CompareByName(b) : MiscUtils.CompareNullable(a.Hash1Value, b.Hash1Value))),
-                        nameof(VirtualObject.Hash2) => (a, b) => orderMultiplier * (
-                            a.CompareByFolderOrFile(b) ??
-                            (a.IsFolder ? a.CompareByName(b) : MiscUtils.CompareNullable(a.Hash2Value, b.Hash2Value))),
-                        nameof(VirtualObject.RawSize) => (a, b) => orderMultiplier * (
-                            a.CompareByFolderOrFile(b) ??
-                            (a.IsFolder ? a.CompareByName(b) : a.Lookup.Size.CompareTo(b.Lookup.Size))),
-                        nameof(VirtualObject.StoredSize) => (a, b) => orderMultiplier * (
-                            a.CompareByFolderOrFile(b) ??
-                            (a.IsFolder
-                                ? a.CompareByName(b)
-                                : a.Lookup.OccupiedBytes.CompareTo(b.Lookup.OccupiedBytes))),
-                        nameof(VirtualObject.ReservedSize) => (a, b) => orderMultiplier * (
-                            a.CompareByFolderOrFile(b) ??
-                            (a.IsFolder
-                                ? a.CompareByName(b)
-                                : a.Lookup.ReservedBytes.CompareTo(b.Lookup.ReservedBytes))),
-                        _ => throw new FailFastException($"Invalid column AspectName {column.AspectName}"),
-                    })
+            this._sortTask = this._sortTask.ContinueWith(
+                _ => this._objects.SortIntoNewListAsync()
+                    .With(
+                        column.AspectName switch {
+                            nameof(VirtualObject.FullPath) => (a, b) =>
+                                MiscUtils.CompareNatural(a.FullPath, b.FullPath) *
+                                orderMultiplier,
+                            nameof(VirtualObject.Name) => (a, b) =>
+                                (a.CompareByFolderOrFile(b) ?? a.CompareByName(b)) * orderMultiplier,
+                            nameof(VirtualObject.PackTypeString) => (a, b) => orderMultiplier * (
+                                a.CompareByFolderOrFile(b) ??
+                                (a.IsFolder ? a.CompareByName(b) : a.Lookup.Type.CompareTo(b.Lookup.Type))),
+                            nameof(VirtualObject.Hash1) => (a, b) => orderMultiplier * (
+                                a.CompareByFolderOrFile(b) ??
+                                (a.IsFolder
+                                    ? a.CompareByName(b)
+                                    : MiscUtils.CompareNullable(a.Hash1Value, b.Hash1Value))),
+                            nameof(VirtualObject.Hash2) => (a, b) => orderMultiplier * (
+                                a.CompareByFolderOrFile(b) ??
+                                (a.IsFolder
+                                    ? a.CompareByName(b)
+                                    : MiscUtils.CompareNullable(a.Hash2Value, b.Hash2Value))),
+                            nameof(VirtualObject.RawSize) => (a, b) => orderMultiplier * (
+                                a.CompareByFolderOrFile(b) ??
+                                (a.IsFolder ? a.CompareByName(b) : a.Lookup.Size.CompareTo(b.Lookup.Size))),
+                            nameof(VirtualObject.StoredSize) => (a, b) => orderMultiplier * (
+                                a.CompareByFolderOrFile(b) ??
+                                (a.IsFolder
+                                    ? a.CompareByName(b)
+                                    : a.Lookup.OccupiedBytes.CompareTo(b.Lookup.OccupiedBytes))),
+                            nameof(VirtualObject.ReservedSize) => (a, b) => orderMultiplier * (
+                                a.CompareByFolderOrFile(b) ??
+                                (a.IsFolder
+                                    ? a.CompareByName(b)
+                                    : a.Lookup.ReservedBytes.CompareTo(b.Lookup.ReservedBytes))),
+                            _ => throw new FailFastException($"Invalid column AspectName {column.AspectName}"),
+                        })
                     .WithTaskScheduler(TaskScheduler.Default)
-                    .WithThreads(SortThreads)
-                    .WithCancellationToken(_sorterCancel.Token)
+                    .WithThreads(this.SortThreads)
+                    .WithCancellationToken(this._sorterCancel.Token)
                     .WithProgrssCallback(progress => Debug.Print("Sort progress: {0:0.00}%", 100 * progress))
                     .WithOrderMap()
                     .Sort()
-                    .ContinueWith(result => {
+                    .ContinueWith(
+                        result => {
                             if (!result.IsCompletedSuccessfully)
                                 return;
 
-                            var newSelectedIndices = listView.SelectedIndices
+                            var newSelectedIndices = this.listView.SelectedIndices
                                 .Cast<int>()
                                 .Select(x => result.Result.ReverseOrderMap![x])
                                 .ToArray();
-                            var focusedObject = listView.FocusedObject;
-                            _objects = result.Result.Data;
-                            listView.ClearCachedInfo();
-                            listView.UpdateVirtualListSize();
-                            listView.SelectedIndices.Clear();
-                            foreach (var si in newSelectedIndices)
-                                listView.SelectedIndices.Add(si);
-                            listView.FocusedObject =focusedObject;
-                            listView.Invalidate();
-                        }, default,
+                            var focusedObject = this.listView.FocusedObject;
+                            this._objects = result.Result.Data;
+                            this.listView.ClearCachedInfo();
+                            this.listView.UpdateVirtualListSize();
+                            this.listView.SelectedIndices.Clear();
+                            foreach (var si in newSelectedIndices) this.listView.SelectedIndices.Add(si);
+                            this.listView.FocusedObject = focusedObject;
+                            this.listView.Invalidate();
+                        },
+                        default,
                         TaskContinuationOptions.DenyChildAttach,
-                        TaskScheduler.FromCurrentSynchronizationContext()), default,
+                        TaskScheduler.FromCurrentSynchronizationContext()),
+                default,
                 TaskContinuationOptions.DenyChildAttach,
                 TaskScheduler.FromCurrentSynchronizationContext());
         }
 
-        public override void AddObjects(ICollection modelObjects) => InsertObjects(_objects.Count, modelObjects);
+        public override void AddObjects(ICollection modelObjects) =>
+            this.InsertObjects(this._objects.Count, modelObjects);
 
-        public override void InsertObjects(int index, ICollection modelObjects) {
-            _sorterCancel.Cancel();
-            _sortTask.Wait();
-            _objects.InsertRange(index, modelObjects.Cast<VirtualObject>());
+        public override void InsertObjects(int index, ICollection modelObjects)
+        {
+            this._sorterCancel.Cancel();
+            this._sortTask.Wait();
+            this._objects.InsertRange(index, modelObjects.Cast<VirtualObject>());
         }
 
-        public override void RemoveObjects(ICollection modelObjects) {
+        public override void RemoveObjects(ICollection modelObjects)
+        {
             foreach (var o in modelObjects) {
                 if (o is VirtualObject vo) {
-                    var i = _objects.IndexOf(vo);
+                    var i = this._objects.IndexOf(vo);
                     if (i != -1) {
-                        _sorterCancel.Cancel();
-                        _sortTask.Wait();
+                        this._sorterCancel.Cancel();
+                        this._sortTask.Wait();
 
-                        _objects[i].Dispose();
-                        _objects.RemoveAt(i);
+                        this._objects[i].Dispose();
+                        this._objects.RemoveAt(i);
                     }
                 }
             }
         }
 
-        public override void SetObjects(IEnumerable collection) {
-            _sorterCancel.Cancel();
-            _sortTask.Wait();
+        public override void SetObjects(IEnumerable collection)
+        {
+            this._sorterCancel.Cancel();
+            this._sortTask.Wait();
 
-            foreach (var o in _objects)
+            foreach (var o in this._objects)
                 o.Dispose();
 
-            _objects.Clear();
-            _objects.AddRange(collection.Cast<VirtualObject>());
+            this._objects.Clear();
+            this._objects.AddRange(collection.Cast<VirtualObject>());
         }
 
-        public override void UpdateObject(int index, object modelObject) {
-            if (_objects[index] == modelObject)
+        public override void UpdateObject(int index, object modelObject)
+        {
+            if (this._objects[index] == modelObject)
                 return;
 
-            _sorterCancel.Cancel();
-            _sortTask.Wait();
+            this._sorterCancel.Cancel();
+            this._sortTask.Wait();
 
-            _objects[index].Dispose();
-            _objects[index] = (VirtualObject) modelObject;
+            this._objects[index].Dispose();
+            this._objects[index] = (VirtualObject) modelObject;
         }
 
-        public VirtualObject this[int n] => _objects[n];
+        public VirtualObject this[int n] => this._objects[n];
 
-        public IEnumerator<VirtualObject> GetEnumerator() => _objects.GetEnumerator();
+        public IEnumerator<VirtualObject> GetEnumerator() => this._objects.GetEnumerator();
 
-        IEnumerator IEnumerable.GetEnumerator() => _objects.GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => this._objects.GetEnumerator();
 
-        public int Count => _objects.Count;
+        public int Count => this._objects.Count;
 
         public bool TryGetThumbnail(
             VirtualObject virtualObject,
             [MaybeNullWhen(false)] out Bitmap bitmap,
             out bool isAssociationIcon) =>
-            _previewCache.TryGetBitmap(virtualObject, out bitmap, out isAssociationIcon);
+            this._previewCache.TryGetBitmap(virtualObject, out bitmap, out isAssociationIcon);
 
         private void PreviewImageLoaded(VirtualObject arg1, IVirtualFile arg2, Bitmap arg3) =>
-            listView.BeginInvoke(() => listView.RefreshObject(arg1));
+            this.listView.BeginInvoke(() => this.listView.RefreshObject(arg1));
     }
 
     // ReSharper disable once ClassWithVirtualMembersNeverInherited.Local
@@ -286,109 +307,121 @@ public partial class Explorer {
 
         public readonly PlatformId PlatformId;
 
-        public VirtualObject(IVirtualFileSystem tree, IVirtualFile file) {
-            PlatformId = tree is SqpackFileSystem sqfs ? sqfs.PlatformId : PlatformId.Win32;
-            _file = file;
-            _name = file.Name;
-            _fullPath = new(() => tree.GetFullPath(file));
-            _lookup = new(() => tree.GetLookup(File));
-            _hash2 = new(() => tree.GetFullPathHash(File));
+        public VirtualObject(IVirtualFileSystem tree, IVirtualFile file)
+        {
+            this.PlatformId = tree is SqpackFileSystem sqfs ? sqfs.PlatformId : PlatformId.Win32;
+            this._file = file;
+            this._name = file.Name;
+            this._fullPath = new(() => tree.GetFullPath(file));
+            this._lookup = new(() => tree.GetLookup(this.File));
+            this._hash2 = new(() => tree.GetFullPathHash(this.File));
         }
 
-        public VirtualObject(IVirtualFileSystem tree, IVirtualFolder folder) {
-            PlatformId = tree is SqpackFileSystem sqfs ? sqfs.PlatformId : PlatformId.Win32;
-            _folder = folder;
-            _name = folder.Name.Trim('/');
-            _fullPath = new(() => tree.GetFullPath(folder));
-            _hash2 = new((uint?)null);
+        public VirtualObject(IVirtualFileSystem tree, IVirtualFolder folder)
+        {
+            this.PlatformId = tree is SqpackFileSystem sqfs ? sqfs.PlatformId : PlatformId.Win32;
+            this._folder = folder;
+            this._name = folder.Name.Trim('/');
+            this._fullPath = new(() => tree.GetFullPath(folder));
+            this._hash2 = new((uint?) null);
         }
 
-        private void ReleaseUnmanagedResources() {
-            if (_lookup is {IsValueCreated: true}) {
-                _lookup.Value.Dispose();
-                _lookup = null;
+        private void ReleaseUnmanagedResources()
+        {
+            if (this._lookup is { IsValueCreated: true }) {
+                this._lookup.Value.Dispose();
+                this._lookup = null;
             }
         }
 
-        public void Dispose() {
-            ReleaseUnmanagedResources();
+        public void Dispose()
+        {
+            this.ReleaseUnmanagedResources();
             GC.SuppressFinalize(this);
         }
 
-        ~VirtualObject() {
-            ReleaseUnmanagedResources();
+        ~VirtualObject()
+        {
+            this.ReleaseUnmanagedResources();
         }
 
-        public bool IsFolder => _lookup is null;
+        public bool IsFolder => this._lookup is null;
 
-        public IVirtualFile File => _file ?? throw new InvalidOperationException();
+        public IVirtualFile File => this._file ?? throw new InvalidOperationException();
 
-        public IVirtualFolder Folder => !IsFolder || _folder is null ? throw new InvalidOperationException() : _folder;
+        public IVirtualFolder Folder => !this.IsFolder || this._folder is null
+            ? throw new InvalidOperationException()
+            : this._folder;
 
-        public IVirtualFileLookup Lookup => _lookup?.Value ?? throw new InvalidOperationException();
+        public IVirtualFileLookup Lookup => this._lookup?.Value ?? throw new InvalidOperationException();
 
-        public bool TryGetLookup([MaybeNullWhen(false)] out IVirtualFileLookup lookup) {
-            lookup = _lookup?.Value;
+        public bool TryGetLookup([MaybeNullWhen(false)] out IVirtualFileLookup lookup)
+        {
+            lookup = this._lookup?.Value;
             return lookup is not null;
         }
 
-        public uint? Hash1Value => IsFolder ? Folder.PathHash : File.NameHash;
+        public uint? Hash1Value => this.IsFolder ? this.Folder.PathHash : this.File.NameHash;
 
-        public uint? Hash2Value => _hash2.Value;
+        public uint? Hash2Value => this._hash2.Value;
 
         [UsedImplicitly] public bool Checked { get; set; }
 
         public string Name {
-            get => _name;
-            set => SetField(ref _name, value);
+            get => this._name;
+            set => this.SetField(ref this._name, value);
         }
 
-        public string PackTypeString => _lookup is null
-            ? ""
-            : _lookup.Value.Type is var x
-                ? x switch {
-                    FileType.Empty => "Placeholder",
-                    FileType.Standard => "Standard",
-                    FileType.Model => "Model",
-                    FileType.Texture => "Texture",
-                    _ => $"{x}",
-                }
-                : "<error>";
+        public string PackTypeString =>
+            this._lookup is null
+                ? ""
+                : this._lookup.Value.Type is var x
+                    ? x switch {
+                        FileType.Empty => "Placeholder",
+                        FileType.Standard => "Standard",
+                        FileType.Model => "Model",
+                        FileType.Texture => "Texture",
+                        _ => $"{x}",
+                    }
+                    : "<error>";
 
-        public string Hash1 => Hash1Value is null ? "" : $"{Hash1Value.Value:X08}";
+        public string Hash1 => this.Hash1Value is null ? "" : $"{this.Hash1Value.Value:X08}";
 
-        public string Hash2 => Hash2Value is null ? "" : $"{Hash2Value.Value:X08}";
+        public string Hash2 => this.Hash2Value is null ? "" : $"{this.Hash2Value.Value:X08}";
 
-        public string RawSize => IsFolder ? "" : UiUtils.FormatSize(Lookup.Size);
+        public string RawSize => this.IsFolder ? "" : UiUtils.FormatSize(this.Lookup.Size);
 
-        public string StoredSize => IsFolder ? "" : UiUtils.FormatSize(Lookup.OccupiedBytes);
+        public string StoredSize => this.IsFolder ? "" : UiUtils.FormatSize(this.Lookup.OccupiedBytes);
 
-        public string ReservedSize => IsFolder ? "" : UiUtils.FormatSize(Lookup.ReservedBytes);
+        public string ReservedSize => this.IsFolder ? "" : UiUtils.FormatSize(this.Lookup.ReservedBytes);
 
         public string FullPath {
-            get => _fullPath.Value;
-            set => SetField(ref _fullPath, new(value));
+            get => this._fullPath.Value;
+            set => this.SetField(ref this._fullPath, new(value));
         }
 
         public int CompareByName(VirtualObject other) =>
-            !IsFolder && !other.IsFolder && File.NameResolved != other.File.NameResolved
-                ? File.NameResolved ? -1 : 1
-                : MiscUtils.CompareNatural(_name, other._name);
+            !this.IsFolder && !other.IsFolder && this.File.NameResolved != other.File.NameResolved
+                ? this.File.NameResolved ? -1 : 1
+                : MiscUtils.CompareNatural(this._name, other._name);
 
-        public int? CompareByFolderOrFile(VirtualObject other) => IsFolder == other.IsFolder ? null : IsFolder ? -1 : 1;
+        public int? CompareByFolderOrFile(VirtualObject other) =>
+            this.IsFolder == other.IsFolder ? null : this.IsFolder ? -1 : 1;
 
         #region Implementation of INotifyPropertyChanged
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        private void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
-            PropertyChanged?.Invoke(this, new(propertyName));
+        private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        {
+            this.PropertyChanged?.Invoke(this, new(propertyName));
         }
 
-        private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null) {
+        private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+        {
             if (EqualityComparer<T>.Default.Equals(field, value)) return false;
             field = value;
-            OnPropertyChanged(propertyName);
+            this.OnPropertyChanged(propertyName);
             return true;
         }
 

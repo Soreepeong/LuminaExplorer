@@ -15,5 +15,5 @@ public class GltfBufferView : BaseGltfObject {
     [JsonProperty("target", NullValueHandling = NullValueHandling.Ignore)]
     public GltfBufferViewTarget? Target;
 
-    [JsonIgnore] public long ByteOffsetTo => ByteLength + ByteOffset;
+    [JsonIgnore] public long ByteOffsetTo => this.ByteLength + this.ByteOffset;
 }

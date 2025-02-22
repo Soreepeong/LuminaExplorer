@@ -3,16 +3,18 @@
 namespace LuminaExplorer.Controls.Util.ScaleMode;
 
 public readonly struct FitInClientScaleMode : IScaleModeWithZoomInToFit {
-    public FitInClientScaleMode(bool zoomInToFit) {
-        ZoomInToFit = zoomInToFit;
+    public FitInClientScaleMode(bool zoomInToFit)
+    {
+        this.ZoomInToFit = zoomInToFit;
     }
 
     public bool ZoomInToFit { get; }
 
-    public float CalcZoom(SizeF content, SizeF client, int exponentUnit) => CalcZoomStatic(content, client, ZoomInToFit);
+    public float CalcZoom(SizeF content, SizeF client, int exponentUnit) =>
+        CalcZoomStatic(content, client, this.ZoomInToFit);
 
     public float CalcZoomExponent(SizeF content, SizeF client, int exponentUnit) =>
-        CalcZoomExponentStatic(content, client, ZoomInToFit, exponentUnit);
+        CalcZoomExponentStatic(content, client, this.ZoomInToFit, exponentUnit);
 
     public static float CalcZoomStatic(SizeF content, SizeF client, bool zoomInToFit) =>
         content.IsEmpty || (!zoomInToFit && IScaleMode.ContentFitsIn(content, client))

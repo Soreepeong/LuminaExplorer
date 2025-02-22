@@ -10,24 +10,28 @@ public class ValueNode : IValue {
     private readonly IList<Node?> _nodes;
     private readonly int _nodeIndex;
 
-    public ValueNode(IList<Node?> nodes, int nodeIndex) {
-        _nodes = nodes;
-        _nodeIndex = nodeIndex;
+    public ValueNode(IList<Node?> nodes, int nodeIndex)
+    {
+        this._nodes = nodes;
+        this._nodeIndex = nodeIndex;
     }
 
-    public Node Node => 0 <= _nodeIndex && _nodeIndex < _nodes.Count && _nodes[_nodeIndex] != null
-        ? _nodes[_nodeIndex]!
-        : throw new NullReferenceException(DescribeNode());
+    public Node Node => 0 <= this._nodeIndex && this._nodeIndex < this._nodes.Count &&
+        this._nodes[this._nodeIndex] != null
+            ? this._nodes[this._nodeIndex]!
+            : throw new NullReferenceException(this.DescribeNode());
 
-    public override string ToString() => $"Node#{_nodeIndex} ({DescribeNode()})";
+    public override string ToString() => $"Node#{this._nodeIndex} ({this.DescribeNode()})";
 
-    private string DescribeNode() => _nodeIndex < 0 || _nodes.Count <= _nodeIndex
-        ? "<out of range>"
-        : _nodes[_nodeIndex]?.ToString() ?? "<not yet available>";
+    private string DescribeNode() =>
+        this._nodeIndex < 0 || this._nodes.Count <= this._nodeIndex
+            ? "<out of range>"
+            : this._nodes[this._nodeIndex]?.ToString() ?? "<not yet available>";
 
     public static implicit operator Node(ValueNode d) => d.Node;
 
-    internal static ValueNode ReadReference(Parser parser) {
+    internal static ValueNode ReadReference(Parser parser)
+    {
         var refIndex = parser.ReadInt();
         if (refIndex < parser.References.Count)
             return new(parser.Nodes, parser.References[refIndex]);
@@ -44,7 +48,8 @@ public class ValueNode : IValue {
         Enumerable.Range(0, count).Select(_ => (IValue?) ReadReference(parser)).ToImmutableList(),
         FieldType.SingleReference);
 
-    internal static ValueNode ReadStruct(Parser parser, string? structName) {
+    internal static ValueNode ReadStruct(Parser parser, string? structName)
+    {
         var definition = parser.OrderedDefinitions.First(x => x?.Name == structName);
         if (definition is null)
             throw new NullReferenceException();
@@ -58,7 +63,8 @@ public class ValueNode : IValue {
         return new(parser.Nodes, parser.Nodes.Count - 1);
     }
 
-    internal static ValueArray ReadStructVector(Parser parser, string structName, int count) {
+    internal static ValueArray ReadStructVector(Parser parser, string structName, int count)
+    {
         var definition = parser.OrderedDefinitions.First(x => x?.Name == structName);
         if (definition is null)
             throw new NullReferenceException();
@@ -68,9 +74,12 @@ public class ValueNode : IValue {
             .Select(x => x.Second ? IValue.ReadVector(parser, x.First.FieldType, count).Values : null)
             .ToImmutableList();
 
-        return new(Enumerable.Range(0, count).Select(i => {
-            parser.Nodes.Add(new(definition, values.Select(x => x?[i]).ToImmutableList()));
-            return (IValue?) new ValueNode(parser.Nodes, parser.Nodes.Count - 1);
-        }).ToImmutableList(), FieldType.Struct(structName));
+        return new(
+            Enumerable.Range(0, count).Select(
+                i => {
+                    parser.Nodes.Add(new(definition, values.Select(x => x?[i]).ToImmutableList()));
+                    return (IValue?) new ValueNode(parser.Nodes, parser.Nodes.Count - 1);
+                }).ToImmutableList(),
+            FieldType.Struct(structName));
     }
 }

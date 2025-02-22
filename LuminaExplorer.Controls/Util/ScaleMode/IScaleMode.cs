@@ -5,11 +5,12 @@ namespace LuminaExplorer.Controls.Util.ScaleMode;
 
 public interface IScaleMode {
     float CalcZoom(SizeF content, SizeF client, int exponentUnit);
-    
+
     float CalcZoomExponent(SizeF content, SizeF client, int exponentUnit);
 
-    SizeF CalcSize(SizeF content, SizeF client, int exponentUnit) {
-        var zoom = CalcZoom(content, client, exponentUnit);
+    SizeF CalcSize(SizeF content, SizeF client, int exponentUnit)
+    {
+        var zoom = this.CalcZoom(content, client, exponentUnit);
         return new(content.Width * zoom, content.Height * zoom);
     }
 

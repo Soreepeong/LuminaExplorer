@@ -12,29 +12,35 @@ public sealed class HavokArrayWrapper : ArrayWrapper {
     private readonly FieldType _expectingType;
 
     internal HavokArrayWrapper(ValueArray array)
-        : this(array.Values.ToArray(), array.InnerType) { }
+        : this(array.Values.ToArray(), array.InnerType)
+    { }
 
-    private HavokArrayWrapper(Array obj, FieldType expectingType) : this(obj, expectingType, Array.Empty<int>()) { }
+    private HavokArrayWrapper(Array obj, FieldType expectingType) : this(obj, expectingType, [])
+    { }
 
     private HavokArrayWrapper(Array obj, FieldType expectingType, int[] baseIndices) :
-        base(obj, baseIndices) {
-        _expectingType = expectingType;
+        base(obj, baseIndices)
+    {
+        this._expectingType = expectingType;
     }
 
     private HavokArrayWrapper(Array obj, FieldType expectingType, int rangeFrom, int rangeTo, int[] baseIndices) :
-        base(obj, rangeFrom, rangeTo, baseIndices) {
-        _expectingType = expectingType;
+        base(obj, rangeFrom, rangeTo, baseIndices)
+    {
+        this._expectingType = expectingType;
     }
 
-    public override string ToString() {
-        if (!BaseIndices.Any() && RangeFrom == 0 && RangeTo == Obj.GetLength(0))
+    public override string ToString()
+    {
+        if (!this.BaseIndices.Any() && this.RangeFrom == 0 && this.RangeTo == this.Obj.GetLength(0))
             return
-                $"HavokArray<{_expectingType}>[{string.Join(", ", Enumerable.Range(0, Obj.Rank).Select(x => Obj.GetLength(x)))}]";
+                $"HavokArray<{this._expectingType}>[{string.Join(", ", Enumerable.Range(0, this.Obj.Rank).Select(x => this.Obj.GetLength(x)))}]";
 
         return base.ToString();
     }
 
-    protected override object? TransformObject(object? obj) {
+    protected override object? TransformObject(object? obj)
+    {
         return obj switch {
             ValueByte vb => vb.Value,
             ValueInt vi => vi.Value,
@@ -42,11 +48,12 @@ public sealed class HavokArrayWrapper : ArrayWrapper {
             ValueString vs => vs.Value,
             ValueNode vn => vn.Node,
             ValueArray va => va,
-            _ => base.TransformObject(obj)
+            _ => base.TransformObject(obj),
         };
     }
 
-    protected override Type TransformValueType(Type type) {
+    protected override Type TransformValueType(Type type)
+    {
         if (type == typeof(ValueByte))
             return typeof(byte);
         if (type == typeof(ValueInt))
@@ -63,8 +70,8 @@ public sealed class HavokArrayWrapper : ArrayWrapper {
     }
 
     protected override ArrayWrapper CreateSubView(int[] baseIndices) =>
-        new HavokArrayWrapper(Obj, _expectingType, baseIndices);
+        new HavokArrayWrapper(this.Obj, this._expectingType, baseIndices);
 
     protected override ArrayWrapper CreateSubView(int rangeFrom, int rangeTo, int[] baseIndices) =>
-        new HavokArrayWrapper(Obj, _expectingType, rangeFrom, rangeTo, baseIndices);
+        new HavokArrayWrapper(this.Obj, this._expectingType, rangeFrom, rangeTo, baseIndices);
 }

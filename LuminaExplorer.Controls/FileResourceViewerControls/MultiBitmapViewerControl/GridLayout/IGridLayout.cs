@@ -6,7 +6,7 @@ namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerCo
 
 public interface IGridLayout : IEnumerable<GridLayoutCell> {
     private const float LayoutTableMaxRatio = 2.5f;
-    
+
     public int Count { get; }
 
     public Size GridSize { get; }
@@ -15,7 +15,15 @@ public interface IGridLayout : IEnumerable<GridLayoutCell> {
 
     public GridLayoutCell this[int cellIndex] { get; }
 
-    public static IGridLayout CreateGridLayoutForDepthView(int imageIndex, int mipmap, int w, int h, int d, bool isCube, Size sliceSpacing) {
+    public static IGridLayout CreateGridLayoutForDepthView(
+        int imageIndex,
+        int mipmap,
+        int w,
+        int h,
+        int d,
+        bool isCube,
+        Size sliceSpacing)
+    {
         if (w == 0 || h == 0 || d == 0)
             return EmptyGridLayout.Instance;
 

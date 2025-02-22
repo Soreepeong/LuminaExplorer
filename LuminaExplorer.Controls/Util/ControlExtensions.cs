@@ -8,13 +8,15 @@ public static class ControlExtensions {
 
     public static ScopedDisableRedraw DisableRedrawScoped(this Control control) => new(control);
 
-    public static void DisableRedraw(this Control control) {
+    public static void DisableRedraw(this Control control)
+    {
         var msgSuspendUpdate = Message.Create(control.Handle, WmSetRedraw, 0, 0);
         var window = NativeWindow.FromHandle(control.Handle);
         window?.DefWndProc(ref msgSuspendUpdate);
     }
 
-    public static void EnableRedraw(this Control control) {
+    public static void EnableRedraw(this Control control)
+    {
         var msgResumeUpdate = Message.Create(control.Handle, WmSetRedraw, 1, 0);
         var window = NativeWindow.FromHandle(control.Handle);
         window?.DefWndProc(ref msgResumeUpdate);
@@ -24,13 +26,15 @@ public static class ControlExtensions {
     public sealed class ScopedDisableRedraw : IDisposable {
         private readonly Control _c;
 
-        public ScopedDisableRedraw(Control c) {
-            _c = c;
+        public ScopedDisableRedraw(Control c)
+        {
+            this._c = c;
             c.DisableRedraw();
         }
 
-        public void Dispose() {
-            _c.EnableRedraw();
+        public void Dispose()
+        {
+            this._c.EnableRedraw();
         }
     }
 }

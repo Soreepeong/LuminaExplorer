@@ -12,7 +12,8 @@ namespace LuminaExplorer.Core.ObjectRepresentationWrapper;
 
 public class WrapperTypeConverter : TypeConverter {
     [SuppressMessage("ReSharper", "PossibleMistakenCallToGetType.2")]
-    public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType) {
+    public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType)
+    {
         // Do not convert RuntimeType
         if (sourceType == typeof(Type).GetType())
             return false;
@@ -24,16 +25,17 @@ public class WrapperTypeConverter : TypeConverter {
             return false;
 
         // Do not double-wrap
-        if (IsWrappedType(sourceType))
+        if (this.IsWrappedType(sourceType))
             return false;
 
         return true;
     }
 
-    public Type GetWrapperType(Type t) {
-        if (IsWrappedType(t))
+    public Type GetWrapperType(Type t)
+    {
+        if (this.IsWrappedType(t))
             return t;
-        
+
         if (t.IsAssignableTo(typeof(Array)))
             return typeof(ArrayWrapper);
 
@@ -45,36 +47,39 @@ public class WrapperTypeConverter : TypeConverter {
 
         if (t.IsAssignableTo(typeof(ExtraFormats.HavokTagfile.Node)))
             return typeof(HavokNodeWrapper);
-        
+
         if (t.IsAssignableTo(typeof(ExtraFormats.HavokTagfile.Value.ValueArray)))
             return typeof(HavokArrayWrapper);
 
         return typeof(ObjectWrapper);
     }
 
-    public Type GetWrapperType<T>() => GetWrapperType(typeof(T));
+    public Type GetWrapperType<T>() => this.GetWrapperType(typeof(T));
 
-    public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object? value) {
+    public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object? value)
+    {
         if (value is null)
             return null;
 
         var vt = value.GetType();
-        if (IsWrappedType(vt))
+        if (this.IsWrappedType(vt))
             return value;
 
         switch (value) {
             case Array arr:
                 return new ArrayWrapper(arr);
             case ICollection col:
-                if (vt.IsGenericType && vt.TryFindTypedGenericParent(typeof(ICollection<>), out var typedGenericCollection)) {
+                if (vt.IsGenericType && vt.TryFindTypedGenericParent(
+                        typeof(ICollection<>),
+                        out var typedGenericCollection)) {
                     var arr = Array.CreateInstance(typedGenericCollection.GenericTypeArguments[0], col.Count);
                     var i = 0;
                     foreach (var c in col)
                         arr.SetValue(c, i++);
                     return new ArrayWrapper(arr);
                 }
-                
-                return new ArrayWrapper((from object? c in col select ConvertFrom(null, null, c)).ToArray());
+
+                return new ArrayWrapper((from object? c in col select this.ConvertFrom(null, null, c)).ToArray());
             case ScdFile scdFile:
                 return new ScdFileWrapper(scdFile);
             case ExtraFormats.HavokTagfile.Node havokNode:
@@ -86,8 +91,12 @@ public class WrapperTypeConverter : TypeConverter {
         }
     }
 
-    public override object? ConvertTo(ITypeDescriptorContext? context, CultureInfo? culture, object? value,
-        Type destinationType) {
+    public override object? ConvertTo(
+        ITypeDescriptorContext? context,
+        CultureInfo? culture,
+        object? value,
+        Type destinationType)
+    {
         return destinationType == typeof(string) && value is ObjectWrapper or ArrayWrapper
             ? value.ToString()
             : base.ConvertTo(context, culture, value, destinationType);
@@ -95,12 +104,16 @@ public class WrapperTypeConverter : TypeConverter {
 
     public override bool GetPropertiesSupported(ITypeDescriptorContext? context) => true;
 
-    public override PropertyDescriptorCollection? GetProperties(ITypeDescriptorContext? context, object value,
-        Attribute[]? attributes) {
+    public override PropertyDescriptorCollection? GetProperties(
+        ITypeDescriptorContext? context,
+        object value,
+        Attribute[]? attributes)
+    {
         return TypeDescriptor.GetProperties(value, attributes);
     }
 
-    public bool IsWrappedType(Type? type) {
+    public bool IsWrappedType(Type? type)
+    {
         while (type is not null) {
             if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(BaseWrapper<>))
                 return true;

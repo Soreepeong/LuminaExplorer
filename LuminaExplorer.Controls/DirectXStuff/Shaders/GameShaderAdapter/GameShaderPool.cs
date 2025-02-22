@@ -7,8 +7,7 @@ using Lumina.Models.Materials;
 using LuminaExplorer.Controls.DirectXStuff.Resources;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 using LuminaExplorer.Core.Util;
-using Silk.NET.Direct3D11;
-using Silk.NET.DXGI;
+using TerraFX.Interop.DirectX;
 
 namespace LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter;
 
@@ -18,100 +17,108 @@ public sealed unsafe class GameShaderPool : DirectXObject {
     private ID3D11DeviceContext* _pDeviceContext;
     private Texture2DShaderResource _dummy;
 
-    public GameShaderPool(ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext) {
+    public GameShaderPool(ID3D11Device* pDevice, ID3D11DeviceContext* pDeviceContext)
+    {
         try {
-            _pDevice = pDevice;
-            _pDevice->AddRef();
-            _pDeviceContext = pDeviceContext;
-            _pDeviceContext->AddRef();
+            this._pDevice = pDevice;
+            this._pDevice->AddRef();
+            this._pDeviceContext = pDeviceContext;
+            this._pDeviceContext->AddRef();
 
-            var samplerDesc = new SamplerDesc {
-                Filter = Filter.MinMagMipLinear,
+            var samplerDesc = new D3D11_SAMPLER_DESC {
+                Filter = D3D11_FILTER.D3D11_FILTER_MIN_MAG_MIP_LINEAR,
                 MaxAnisotropy = 0,
-                AddressU = TextureAddressMode.Wrap,
-                AddressV = TextureAddressMode.Wrap,
-                AddressW = TextureAddressMode.Wrap,
+                AddressU = D3D11_TEXTURE_ADDRESS_MODE.D3D11_TEXTURE_ADDRESS_WRAP,
+                AddressV = D3D11_TEXTURE_ADDRESS_MODE.D3D11_TEXTURE_ADDRESS_WRAP,
+                AddressW = D3D11_TEXTURE_ADDRESS_MODE.D3D11_TEXTURE_ADDRESS_WRAP,
                 MipLODBias = 0f,
                 MinLOD = 0,
                 MaxLOD = float.MaxValue,
-                ComparisonFunc = ComparisonFunc.Never,
+                ComparisonFunc = D3D11_COMPARISON_FUNC.D3D11_COMPARISON_NEVER,
             };
-            fixed (ID3D11SamplerState** ppSamplers = _pSamplers = new ID3D11SamplerState*[16]) {
-                for (var i = 0; i < _pSamplers.Length; i++)
-                    ThrowH(pDevice->CreateSamplerState(&samplerDesc, ppSamplers + i));
+            fixed (ID3D11SamplerState** ppSamplers = this._pSamplers = new ID3D11SamplerState*[16]) {
+                for (var i = 0; i < this._pSamplers.Length; i++)
+                    pDevice->CreateSamplerState(&samplerDesc, ppSamplers + i).Ensure();
             }
 
             // Some materials refer to dummy.tex; make them point to this.
             fixed (float* pDummy = stackalloc float[16])
-                _dummy = new(_pDevice, Format.FormatR8G8B8A8Unorm, 4, 4, 16, (nint) (&pDummy));
+                this._dummy = new(this._pDevice, DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM, 4, 4, 16, (nint) (&pDummy));
         } catch (Exception) {
-            DisposePrivate(true);
+            this.DisposePrivate(true);
             throw;
         }
     }
 
-    ~GameShaderPool() => ReleaseUnmanagedResources();
+    ~GameShaderPool() => this.ReleaseUnmanagedResources();
 
-    private void ReleaseUnmanagedResources() {
-        for (var i = 0; i < _pSamplers.Length; i++)
-            SafeRelease(ref _pSamplers[i]);
-        SafeRelease(ref _pDevice);
-        SafeRelease(ref _pDeviceContext);
+    private void ReleaseUnmanagedResources()
+    {
+        for (var i = 0; i < this._pSamplers.Length; i++)
+            SafeRelease(ref this._pSamplers[i]);
+        SafeRelease(ref this._pDevice);
+        SafeRelease(ref this._pDeviceContext);
     }
 
-    private void DisposePrivate(bool disposing) {
+    private void DisposePrivate(bool disposing)
+    {
         if (disposing)
-            SafeDispose.One(ref _dummy!);
-        ReleaseUnmanagedResources();
+            SafeDispose.One(ref this._dummy!);
+        this.ReleaseUnmanagedResources();
     }
 
-    protected override void Dispose(bool disposing) {
-        DisposePrivate(disposing);
+    protected override void Dispose(bool disposing)
+    {
+        this.DisposePrivate(disposing);
         base.Dispose(disposing);
     }
 
     public event ShaderEvents.FileRequested<ShpkFile>? ShpkFileRequested;
 
-    public void SetSamplers() {
-        fixed (ID3D11SamplerState** ppSamplers = _pSamplers)
-            _pDeviceContext->PSSetSamplers(0, (uint) _pSamplers.Length, ppSamplers);
+    public void SetSamplers()
+    {
+        fixed (ID3D11SamplerState** ppSamplers =
+                   this._pSamplers) this._pDeviceContext->PSSetSamplers(0, (uint) this._pSamplers.Length, ppSamplers);
     }
 
-    public void CopyDeviceAndContext(out ID3D11Device* pDevice, out ID3D11DeviceContext* pDeviceContext) {
-        pDevice = _pDevice;
+    public void CopyDeviceAndContext(out ID3D11Device* pDevice, out ID3D11DeviceContext* pDeviceContext)
+    {
+        pDevice = this._pDevice;
         pDevice->AddRef();
-        pDeviceContext = _pDeviceContext;
+        pDeviceContext = this._pDeviceContext;
         pDeviceContext->AddRef();
     }
 
-    public void SetShaderResourcesToDummyTexture(uint slot, uint count) {
+    public void SetShaderResourcesToDummyTexture(uint slot, uint count)
+    {
         Span<nint> r = stackalloc nint[(int) count];
-        r.Fill((nint) _dummy.ShaderResourceView);
-        fixed (void* p = r)
-            _pDeviceContext->PSSetShaderResources(slot, count, (ID3D11ShaderResourceView**) p);
+        r.Fill((nint) this._dummy.ShaderResourceView);
+        fixed (void* p = r) this._pDeviceContext->PSSetShaderResources(slot, count, (ID3D11ShaderResourceView**) p);
     }
 
-    public Task<ShaderSet?>? GetShaderSet(MdlFile mdl, Material material) {
+    public Task<ShaderSet?>? GetShaderSet(MdlFile mdl, Material material)
+    {
         Task<ShpkFile?>? task = null;
-        ShpkFileRequested?.Invoke($"shader/sm5/shpk/{material.ShaderPack}", ref task);
-        return task?.ContinueWith(r => {
-            var shpk = r.Result;
-            if (shpk is null)
-                return null;
+        this.ShpkFileRequested?.Invoke($"shader/sm5/shpk/{material.ShaderPack}", ref task);
+        return task?.ContinueWith(
+            r => {
+                var shpk = r.Result;
+                if (shpk is null)
+                    return null;
 
-            var mtrl = material;
-            var key = shpk.MaterialKeys.Select(x => x.DefaultValue).ToArray();
-            foreach (var k in mtrl.File!.ShaderKeys) {
-                for (var i = 0; i < shpk.MaterialKeys.Length; i++)
-                    if (shpk.MaterialKeys[i].Id == k.Category)
-                        key[i] = k.Value;
-            }
+                var mtrl = material;
+                var key = shpk.MaterialKeys.Select(x => x.DefaultValue).ToArray();
+                foreach (var k in mtrl.File!.ShaderKeys) {
+                    for (var i = 0; i < shpk.MaterialKeys.Length; i++)
+                        if (shpk.MaterialKeys[i].Id == k.Category)
+                            key[i] = k.Value;
+                }
 
-            var candidates = shpk.Nodes.Where(x => x.MaterialKeys.SequenceEqual(key)).ToArray();
+                var candidates = shpk.Nodes.Where(x => x.MaterialKeys.SequenceEqual(key)).ToArray();
 
-            Debugger.Break();
-            
-            return new ShaderSet(null!, null!);
-        });
+                Debugger.Break();
+
+                return new ShaderSet(null!, null!);
+            });
     }
 }

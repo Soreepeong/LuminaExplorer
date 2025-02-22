@@ -32,33 +32,34 @@ public class GltfMaterial : BaseGltfObject {
 
     [JsonProperty("alphaMode", NullValueHandling = NullValueHandling.Ignore)]
     public string? AlphaModeString {
-        get => AlphaMode switch {
-            null => null,
-            GltfMaterialAlphaMode.Opaque => "OPAQUE",
-            GltfMaterialAlphaMode.Mask => "MASK",
-            GltfMaterialAlphaMode.Blend => "BLEND",
-            _ => throw new ArgumentOutOfRangeException(nameof(AlphaMode)),
-        };
-        set => AlphaMode = value switch {
-            null => null,
-            "OPAQUE" => GltfMaterialAlphaMode.Opaque,
-            "MASK" => GltfMaterialAlphaMode.Mask,
-            "BLEND" => GltfMaterialAlphaMode.Blend,
-            _ => throw new ArgumentOutOfRangeException(nameof(value)),
-        };
+        get =>
+            this.AlphaMode switch {
+                null => null,
+                GltfMaterialAlphaMode.Opaque => "OPAQUE",
+                GltfMaterialAlphaMode.Mask => "MASK",
+                GltfMaterialAlphaMode.Blend => "BLEND",
+                _ => throw new ArgumentOutOfRangeException(nameof(this.AlphaMode)),
+            };
+        set =>
+            this.AlphaMode = value switch {
+                null => null,
+                "OPAQUE" => GltfMaterialAlphaMode.Opaque,
+                "MASK" => GltfMaterialAlphaMode.Mask,
+                "BLEND" => GltfMaterialAlphaMode.Blend,
+                _ => throw new ArgumentOutOfRangeException(nameof(value)),
+            };
     }
-    
+
     [JsonProperty("extras", NullValueHandling = NullValueHandling.Ignore)]
     public GltfMaterialExtras? Extras;
 
-    public bool HasNormalTexture() =>
-        NormalTexture is not null;
+    public bool HasNormalTexture() => this.NormalTexture is not null;
 
     public bool HasAnyTexture() =>
-        EmissiveTexture is not null
-        || OcclusionTexture is not null
-        || PbrMetallicRoughness?.BaseColorTexture is not null
-        || PbrMetallicRoughness?.MetallicRoughnessTexture is not null
-        || Extensions?.KhrMaterialsSpecular?.SpecularTexture is not null
-        || Extensions?.KhrMaterialsSpecular?.SpecularColorTexture is not null;
+        this.EmissiveTexture is not null
+        || this.OcclusionTexture is not null
+        || this.PbrMetallicRoughness?.BaseColorTexture is not null
+        || this.PbrMetallicRoughness?.MetallicRoughnessTexture is not null
+        || this.Extensions?.KhrMaterialsSpecular?.SpecularTexture is not null
+        || this.Extensions?.KhrMaterialsSpecular?.SpecularColorTexture is not null;
 }

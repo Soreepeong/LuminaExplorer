@@ -33,21 +33,22 @@ public partial class MultiBitmapViewerControl {
     private Size _sliceSpacing = new(16, 16);
     private DirectXTexRendererShader.VisibleColorChannelTypes _channelFilter;
     private bool _useAlphaChannel = true;
-    private IReadOnlyList<Tuple<Size, float>> _fontSizeStepLevel = new[] {
+
+    private IReadOnlyList<Tuple<Size, float>> _fontSizeStepLevel = [
         Tuple.Create(new Size(480, 360), 9f),
         Tuple.Create(new Size(720, 540), 15f),
         Tuple.Create(new Size(1280, 720), 18f),
         Tuple.Create(new Size(1920, 1080), 30f),
         Tuple.Create(new Size(2560, 1440), 36f),
         Tuple.Create(new Size(3840, 2160), 60f),
-    };
+    ];
 
     public event EventHandler? UseAlphaChannelChanged;
 
     public event EventHandler? VisibleColorChannelChanged;
-    
+
     public event EventHandler? RotationChanged;
-    
+
     public event EventHandler? ViewportChanged;
 
     public event EventHandler? FontSizeStepLevelChanged;
@@ -67,199 +68,205 @@ public partial class MultiBitmapViewerControl {
     public event EventHandler? PixelGridMinimumZoomChanged;
 
     public bool UseAlphaChannel {
-        get => _useAlphaChannel;
+        get => this._useAlphaChannel;
         set {
-            if (_useAlphaChannel == value)
+            if (this._useAlphaChannel == value)
                 return;
-            _useAlphaChannel = value;
-            UseAlphaChannelChanged?.Invoke(this, EventArgs.Empty);
-            ClearDisplayInformationCache();
-            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
-            Invalidate();
+            this._useAlphaChannel = value;
+            this.UseAlphaChannelChanged?.Invoke(this, EventArgs.Empty);
+            this.ClearDisplayInformationCache();
+            this.ExtendDescriptionMandatoryDisplay(this._fadeOutDelay);
+            this.Invalidate();
         }
     }
 
     public DirectXTexRendererShader.VisibleColorChannelTypes ChannelFilter {
-        get => _channelFilter;
+        get => this._channelFilter;
         set {
-            if (_channelFilter == value)
+            if (this._channelFilter == value)
                 return;
-            _channelFilter = value;
-            VisibleColorChannelChanged?.Invoke(this, EventArgs.Empty);
-            ClearDisplayInformationCache();
-            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
-            Invalidate();
+            this._channelFilter = value;
+            this.VisibleColorChannelChanged?.Invoke(this, EventArgs.Empty);
+            this.ClearDisplayInformationCache();
+            this.ExtendDescriptionMandatoryDisplay(this._fadeOutDelay);
+            this.Invalidate();
         }
     }
 
     public float Rotation {
-        get => Viewport.Rotation;
+        get => this.Viewport.Rotation;
         set {
-            if (Equals(Viewport.Rotation, value))
+            if (Equals(this.Viewport.Rotation, value))
                 return;
-            
-            Viewport.Rotation = value;
-            RotationChanged?.Invoke(this, EventArgs.Empty);
-            ClearDisplayInformationCache();
-            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
-            Invalidate();
+
+            this.Viewport.Rotation = value;
+            this.RotationChanged?.Invoke(this, EventArgs.Empty);
+            this.ClearDisplayInformationCache();
+            this.ExtendDescriptionMandatoryDisplay(this._fadeOutDelay);
+            this.Invalidate();
         }
     }
 
     public IReadOnlyList<Tuple<Size, float>> FontSizeStepLevel {
-        get => _fontSizeStepLevel;
+        get => this._fontSizeStepLevel;
         set {
-            if (Equals(_fontSizeStepLevel, value))
+            if (Equals(this._fontSizeStepLevel, value))
                 return;
-            _fontSizeStepLevel = value;
-            FontSizeStepLevelChanged?.Invoke(this, EventArgs.Empty);
-            ClearDisplayInformationCache();
-            ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
-            Invalidate();
+            this._fontSizeStepLevel = value;
+            this.FontSizeStepLevelChanged?.Invoke(this, EventArgs.Empty);
+            this.ClearDisplayInformationCache();
+            this.ExtendDescriptionMandatoryDisplay(this._fadeOutDelay);
+            this.Invalidate();
         }
     }
 
     public Color ForeColorWhenLoaded {
-        get => _foreColorWhenLoaded;
+        get => this._foreColorWhenLoaded;
         set {
-            if (_foreColorWhenLoaded == value)
+            if (this._foreColorWhenLoaded == value)
                 return;
-            _foreColorWhenLoaded = value;
-            ForeColorWhenLoadedChanged?.Invoke(this, EventArgs.Empty);
-            Invalidate();
+            this._foreColorWhenLoaded = value;
+            this.ForeColorWhenLoadedChanged?.Invoke(this, EventArgs.Empty);
+            this.Invalidate();
         }
     }
 
     public Color BackColorWhenLoaded {
-        get => _backColorWhenLoaded;
+        get => this._backColorWhenLoaded;
         set {
-            if (_backColorWhenLoaded == value)
+            if (this._backColorWhenLoaded == value)
                 return;
-            _backColorWhenLoaded = value;
-            BackColorWhenLoadedChanged?.Invoke(this, EventArgs.Empty);
-            Invalidate();
+            this._backColorWhenLoaded = value;
+            this.BackColorWhenLoadedChanged?.Invoke(this, EventArgs.Empty);
+            this.Invalidate();
         }
     }
 
     public Color TransparencyCellColor1 {
-        get => _transparencyCellColor1;
+        get => this._transparencyCellColor1;
         set {
-            if (_transparencyCellColor1 == value)
+            if (this._transparencyCellColor1 == value)
                 return;
-            _transparencyCellColor1 = value;
-            TransparencyCellColor1Changed?.Invoke(this, EventArgs.Empty);
-            Invalidate();
+            this._transparencyCellColor1 = value;
+            this.TransparencyCellColor1Changed?.Invoke(this, EventArgs.Empty);
+            this.Invalidate();
         }
     }
 
     public Color TransparencyCellColor2 {
-        get => _transparencyCellColor2;
+        get => this._transparencyCellColor2;
         set {
-            if (_transparencyCellColor2 == value)
+            if (this._transparencyCellColor2 == value)
                 return;
-            _transparencyCellColor2 = value;
-            TransparencyCellColor2Changed?.Invoke(this, EventArgs.Empty);
-            Invalidate();
+            this._transparencyCellColor2 = value;
+            this.TransparencyCellColor2Changed?.Invoke(this, EventArgs.Empty);
+            this.Invalidate();
         }
     }
 
     public int TransparencyCellSize {
-        get => _transparencyCellSize;
+        get => this._transparencyCellSize;
         set {
-            if (_transparencyCellSize == value)
+            if (this._transparencyCellSize == value)
                 return;
-            _transparencyCellSize = value;
-            TransparencyCellSizeChanged?.Invoke(this, EventArgs.Empty);
-            Invalidate();
+            this._transparencyCellSize = value;
+            this.TransparencyCellSizeChanged?.Invoke(this, EventArgs.Empty);
+            this.Invalidate();
         }
     }
 
     public Padding PanExtraRange {
-        get => Viewport.PanExtraRange;
-        set => Viewport.PanExtraRange = value;
+        get => this.Viewport.PanExtraRange;
+        set => this.Viewport.PanExtraRange = value;
     }
 
     public TimeSpan DelayShowingLoadingBoxFor { get; set; } = TimeSpan.FromMilliseconds(300);
 
     public bool IsLoadingBoxDelayed =>
-        _loadStartTicks == long.MaxValue ||
-        _loadStartTicks + DelayShowingLoadingBoxFor.Milliseconds > Environment.TickCount64;
+        this._loadStartTicks == long.MaxValue || this._loadStartTicks + this.DelayShowingLoadingBoxFor.Milliseconds >
+        Environment.TickCount64;
 
     public float OverlayBackgroundOpacity {
-        get => _overlayBackgroundOpacity;
+        get => this._overlayBackgroundOpacity;
         set {
-            if (!Equals(_overlayBackgroundOpacity, value))
+            if (!Equals(this._overlayBackgroundOpacity, value))
                 return;
-            _overlayBackgroundOpacity = value;
-            Invalidate();
+            this._overlayBackgroundOpacity = value;
+            this.Invalidate();
         }
     }
 
     public float NearestNeighborMinimumZoom {
-        get => _nearestNeighborMinimumZoom;
+        get => this._nearestNeighborMinimumZoom;
         set {
-            if (Equals(_nearestNeighborMinimumZoom, value))
+            if (Equals(this._nearestNeighborMinimumZoom, value))
                 return;
-            _nearestNeighborMinimumZoom = value;
-            Invalidate();
+            this._nearestNeighborMinimumZoom = value;
+            this.Invalidate();
         }
     }
 
     public Color PixelGridLineColor {
-        get => _pixelGridLineColor;
+        get => this._pixelGridLineColor;
         set {
-            if (_pixelGridLineColor == value)
+            if (this._pixelGridLineColor == value)
                 return;
-            _pixelGridLineColor = value;
-            PixelGridLineColorChanged?.Invoke(this, EventArgs.Empty);
-            Invalidate();
+            this._pixelGridLineColor = value;
+            this.PixelGridLineColorChanged?.Invoke(this, EventArgs.Empty);
+            this.Invalidate();
         }
     }
 
     public float PixelGridMinimumZoom {
-        get => _pixelGridMinimumZoom;
+        get => this._pixelGridMinimumZoom;
         set {
-            if (Equals(_pixelGridMinimumZoom, value))
+            if (Equals(this._pixelGridMinimumZoom, value))
                 return;
-            _pixelGridMinimumZoom = value;
-            PixelGridMinimumZoomChanged?.Invoke(this, EventArgs.Empty);
-            Invalidate();
+            this._pixelGridMinimumZoom = value;
+            this.PixelGridMinimumZoomChanged?.Invoke(this, EventArgs.Empty);
+            this.Invalidate();
         }
     }
 
     public Size SliceSpacing {
-        get => _sliceSpacing;
+        get => this._sliceSpacing;
         set {
-            if (_sliceSpacing == value)
+            if (this._sliceSpacing == value)
                 return;
 
-            _sliceSpacing = value;
+            this._sliceSpacing = value;
 
-            _bitmapSourceTaskPrevious?.Task.ContinueWith(r => {
-                r.Result.SliceSpacing = value;
-                Invalidate();
-            }, UiTaskScheduler);
-            _bitmapSourceTaskCurrent?.Task.ContinueWith(r => {
-                r.Result.SliceSpacing = value;
-                Invalidate();
-            }, UiTaskScheduler);
+            this._bitmapSourceTaskPrevious?.Task.ContinueWith(
+                r => {
+                    r.Result.SliceSpacing = value;
+                    this.Invalidate();
+                },
+                this.UiTaskScheduler);
+            this._bitmapSourceTaskCurrent?.Task.ContinueWith(
+                r => {
+                    r.Result.SliceSpacing = value;
+                    this.Invalidate();
+                },
+                this.UiTaskScheduler);
         }
     }
 
     public float EffectiveFontSizeScale =>
-        _fontSizeStepLevel.LastOrDefault(
-            x => x.Item1.Width <= ClientSize.Width && x.Item1.Height <= ClientSize.Height,
-            _fontSizeStepLevel.FirstOrDefault(Tuple.Create(Size.Empty, Font.Size))).Item2 / 9 * DeviceDpi / 96;
+        this._fontSizeStepLevel.LastOrDefault(
+            x => x.Item1.Width <= this.ClientSize.Width && x.Item1.Height <= this.ClientSize.Height,
+            this._fontSizeStepLevel.FirstOrDefault(Tuple.Create(Size.Empty, this.Font.Size))).Item2 / 9 *
+        this.DeviceDpi / 96;
 
     public float EffectiveFontSizeInPoints =>
-        _fontSizeStepLevel.LastOrDefault(
-            x => x.Item1.Width <= ClientSize.Width && x.Item1.Height <= ClientSize.Height,
-            _fontSizeStepLevel.FirstOrDefault(Tuple.Create(Size.Empty, Font.Size))).Item2 / 9 * Font.SizeInPoints;
+        this._fontSizeStepLevel.LastOrDefault(
+            x => x.Item1.Width <= this.ClientSize.Width && x.Item1.Height <= this.ClientSize.Height,
+            this._fontSizeStepLevel.FirstOrDefault(Tuple.Create(Size.Empty, this.Font.Size))).Item2 / 9 *
+        this.Font.SizeInPoints;
 
     public float AutoDescriptionOpacity {
         get {
-            var d = _autoDescriptionShowUntilTicks - Environment.TickCount64;
-            return _autoDescriptionBeingHovered ? 1f :
+            var d = this._autoDescriptionShowUntilTicks - Environment.TickCount64;
+            return this._autoDescriptionBeingHovered ? 1f :
                 d <= 0 ? 0f :
                 d >= FadeOutDurationMs ? 1f : (float) d / FadeOutDurationMs;
         }
@@ -267,85 +274,91 @@ public partial class MultiBitmapViewerControl {
 
     public Rectangle AutoDescriptionRectangle {
         get {
-            if (TryGetRenderers(out var renderers))
+            if (this.TryGetRenderers(out var renderers))
                 foreach (var r in renderers)
                     if (r.AutoDescriptionRectangle is { } rc)
                         return Rectangle.Truncate(rc);
-            
+
             return Rectangle.Empty;
         }
     }
-    
+
     private PanZoomTracker Viewport { get; }
 
     public PointF Pan {
-        get => Viewport.Pan;
+        get => this.Viewport.Pan;
         set {
-            if (Viewport.Pan != value)
+            if (this.Viewport.Pan != value)
                 return;
-            Viewport.Pan = value;
-            Invalidate();
+            this.Viewport.Pan = value;
+            this.Invalidate();
         }
     }
 
-    public RectangleF EffectiveRect => Viewport.EffectiveRect;
+    public RectangleF EffectiveRect => this.Viewport.EffectiveRect;
 
-    public SizeF EffectiveSize => Viewport.EffectiveSize;
+    public SizeF EffectiveSize => this.Viewport.EffectiveSize;
 
-    public SizeF EffectiveRotatedSize => Viewport.EffectiveRotatedSize;
+    public SizeF EffectiveRotatedSize => this.Viewport.EffectiveRotatedSize;
 
-    public float EffectiveZoom => Viewport.EffectiveZoom;
+    public float EffectiveZoom => this.Viewport.EffectiveZoom;
 
-    private void OnViewportChanged() {
-        ViewportChanged?.Invoke(this, EventArgs.Empty);
-        ClearDisplayInformationCache();
-        ExtendDescriptionMandatoryDisplay(_fadeOutDelay);
-        Invalidate();
+    private void OnViewportChanged()
+    {
+        this.ViewportChanged?.Invoke(this, EventArgs.Empty);
+        this.ClearDisplayInformationCache();
+        this.ExtendDescriptionMandatoryDisplay(this._fadeOutDelay);
+        this.Invalidate();
     }
 
-    private bool TryGetRenderers([MaybeNullWhen(false)] out ITexRenderer[] renderers, bool startLoading = false) {
-        if (_renderers?.IsCompletedSuccessfully is true) {
-            renderers = _renderers.Result;
+    private bool TryGetRenderers([MaybeNullWhen(false)] out ITexRenderer[] renderers, bool startLoading = false)
+    {
+        if (this._renderers?.IsCompletedSuccessfully is true) {
+            renderers = this._renderers.Result;
             return true;
         }
 
         renderers = null;
         if (startLoading) {
-            if (_renderers?.IsFaulted is true)
-                _renderers = null;
-            _renderers ??= RunOnUiThreadAfter(Task.Run(() => new ITexRenderer[] {
-                new DirectXTexRenderer(this),
-                // new GdipTexRenderer(this),
-            }), r => {
-                Invalidate();
-                foreach (var renderer in r.Result) {
-                    renderer.UiThreadInitialize();
-                    renderer.AnyBitmapSourceSliceLoadAttemptFinished +=
-                        RendererOnAnyBitmapSourceSliceLoadAttemptFinished;
-                }
+            if (this._renderers?.IsFaulted is true) this._renderers = null;
+            this._renderers ??= this.RunOnUiThreadAfter(
+                Task.Run(
+                    () => new ITexRenderer[] {
+                        new DirectXTexRenderer(this),
+                        // new GdipTexRenderer(this),
+                    }),
+                r => {
+                    this.Invalidate();
+                    foreach (var renderer in r.Result) {
+                        renderer.UiThreadInitialize();
+                        renderer.AnyBitmapSourceSliceLoadAttemptFinished +=
+                            this.RendererOnAnyBitmapSourceSliceLoadAttemptFinished;
+                    }
 
-                return r.Result;
-            });
+                    return r.Result;
+                });
         }
 
         return false;
     }
 
-    private void RendererOnAnyBitmapSourceSliceLoadAttemptFinished(Task<IBitmapSource> task) {
-        if (_bitmapSourceTaskCurrent?.Task != task)
+    private void RendererOnAnyBitmapSourceSliceLoadAttemptFinished(Task<IBitmapSource> task)
+    {
+        if (this._bitmapSourceTaskCurrent?.Task != task)
             return;
-        
-        Invoke(() => {
-            if (_bitmapSourceTaskPrevious is not null) {
-                if (TryGetRenderers(out var renderers))
-                    foreach (var r in renderers)
-                        r.PreviousSourceTask = null;
-                SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
-            }
-            
-            MouseActivity.Enabled = true;
-            Viewport.Reset(task.Result.Layout.GridSize, 0f);
-            Invalidate();
-        });
+
+        this.Invoke(
+            () => {
+                if (this._bitmapSourceTaskPrevious is not null) {
+                    if (this.TryGetRenderers(out var renderers))
+                        foreach (var r in renderers)
+                            r.PreviousSourceTask = null;
+                    SafeDispose.OneAsync(ref this._bitmapSourceTaskPrevious);
+                }
+
+                this.MouseActivity.Enabled = true;
+                this.Viewport.Reset(task.Result.Layout.GridSize, 0f);
+                this.Invalidate();
+            });
     }
 }

@@ -4,64 +4,74 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using DirectN;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
-using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.Util;
-using WicNet;
+using TerraFX.Interop.Windows;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 
 public class PlainBitmapSource : IBitmapSource {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private Stream? _stream;
-    private ResultDisposingTask<WicBitmapSource>? _wicBitmap;
+    private ResultDisposingTask<ComPtr<IWICBitmapSource>>? _wicBitmap;
     private ResultDisposingTask<Bitmap>? _bitmap;
 
     private Size _sliceSpacing;
     private bool _disposed;
 
-    public PlainBitmapSource(string name, long size, Stream stream, Size sliceSpacing = new()) {
-        FileName = name;
-        FileSize = size;
-        _stream = stream;
+    public PlainBitmapSource(string name, long size, Stream stream, Size sliceSpacing = new())
+    {
+        this.FileName = name;
+        this.FileSize = size;
+        this._stream = stream;
 
-        using (var decoder = WICImagingFactory.CreateDecoderFromStream(stream)) {
-            decoder.Object.GetFrame(0, out var pFrame).ThrowOnError();
-            _wicBitmap = new(Task.FromResult(new WicBitmapSource(pFrame)));
+        unsafe {
+            using var decoder = new ComPtr<IWICBitmapDecoder>();
+            using var s = ManagedIStream.Create(stream, true);
+            ImagingExtensions.WicFactory.Get()->CreateDecoderFromStream(
+                s.Get(),
+                null,
+                WICDecodeOptions.WICDecodeMetadataCacheOnDemand,
+                decoder.GetAddressOf()).Ensure();
+
+            using var frame = new ComPtr<IWICBitmapFrameDecode>();
+            decoder.Get()->GetFrame(0, frame.GetAddressOf()).Ensure();
+            this._wicBitmap = new(Task.FromResult<ComPtr<IWICBitmapSource>>(new((IWICBitmapSource*) frame.Get())));
         }
 
-        _sliceSpacing = sliceSpacing;
+        this._sliceSpacing = sliceSpacing;
 
-        Layout = null!;
-        Relayout();
+        this.Layout = null!;
+        this.Relayout();
     }
 
-    public void Dispose() {
-        if (_disposed)
+    public void Dispose()
+    {
+        if (this._disposed)
             return;
-        
-        _disposed = true;
-        _cancellationTokenSource.Cancel();
 
-        SafeDispose.One(ref _wicBitmap);
-        SafeDispose.One(ref _bitmap);
-        SafeDispose.One(ref _stream);
+        this._disposed = true;
+        this._cancellationTokenSource.Cancel();
 
-        _cancellationTokenSource.Dispose();
+        SafeDispose.One(ref this._wicBitmap);
+        SafeDispose.One(ref this._bitmap);
+        SafeDispose.One(ref this._stream);
+
+        this._cancellationTokenSource.Dispose();
     }
 
-    public async ValueTask DisposeAsync() {
-        if (_disposed)
+    public async ValueTask DisposeAsync()
+    {
+        if (this._disposed)
             return;
-        _disposed = true;
-        _cancellationTokenSource.Cancel();
+        this._disposed = true;
+        await this._cancellationTokenSource.CancelAsync();
 
         await Task.WhenAll(
-            SafeDispose.OneAsync(ref _wicBitmap),
-            SafeDispose.OneAsync(ref _bitmap));
+            SafeDispose.OneAsync(ref this._wicBitmap),
+            SafeDispose.OneAsync(ref this._bitmap));
 
-        _cancellationTokenSource.Dispose();
+        this._cancellationTokenSource.Dispose();
 
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true, true);
     }
@@ -79,13 +89,13 @@ public class PlainBitmapSource : IBitmapSource {
     public bool IsCubeMap => false;
 
     public Size SliceSpacing {
-        get => _sliceSpacing;
+        get => this._sliceSpacing;
         set {
-            if (_sliceSpacing == value)
+            if (this._sliceSpacing == value)
                 return;
 
-            _sliceSpacing = value;
-            Relayout();
+            this._sliceSpacing = value;
+            this.Relayout();
         }
     }
 
@@ -105,74 +115,97 @@ public class PlainBitmapSource : IBitmapSource {
         }
     }
 
-    public void UpdateSelection(int imageIndex, int mipmap) {
-        ImageIndex = imageIndex;
-        Mipmap = mipmap;
+    public void UpdateSelection(int imageIndex, int mipmap)
+    {
+        this.ImageIndex = imageIndex;
+        this.Mipmap = mipmap;
     }
 
-    public Task<WicBitmapSource> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice) {
-        if (_disposed)
+    public Task<ComPtr<IWICBitmapSource>> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice)
+    {
+        if (this._disposed)
             throw new ObjectDisposedException(nameof(TexBitmapSource));
         if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         if (mipmap != 0)
             throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
-        return (_wicBitmap ??= new(Task.Run(
-            () => _bitmap!.Result.TryToWicBitmap(out var b, out var e) ? b : throw e,
-            _cancellationTokenSource.Token))).Task;
+        return (this._wicBitmap ??= new(
+            Task.Run(
+                () => this._bitmap!.Result.TryToWicBitmap(out var b, out var e) ? b : throw e,
+                this._cancellationTokenSource.Token))).Task;
     }
 
-    public bool HasWicBitmapSource(int imageIndex, int mipmap, int slice) {
+    public bool HasWicBitmapSource(int imageIndex, int mipmap, int slice)
+    {
         if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         if (mipmap != 0)
             throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
-        return _wicBitmap?.IsCompletedSuccessfully is true;
+        return this._wicBitmap?.IsCompletedSuccessfully is true;
     }
 
-    Task<Bitmap> IBitmapSource.GetGdipBitmapAsync(int imageIndex, int mipmap, int slice) {
-        if (_disposed)
+    Task<Bitmap> IBitmapSource.GetGdipBitmapAsync(int imageIndex, int mipmap, int slice)
+    {
+        if (this._disposed)
             throw new ObjectDisposedException(nameof(TexBitmapSource));
         if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         if (mipmap != 0)
             throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
-        return (_bitmap ??= new(Task.Run(
-            () => _wicBitmap!.Result.TryToGdipBitmap(out var b, out var e) ? b : throw e,
-            _cancellationTokenSource.Token))).Task;
+        return (this._bitmap ??= new(
+            Task.Run(
+                () => this._wicBitmap!.Result.TryToGdipBitmap(out var b, out var e) ? b : throw e,
+                this._cancellationTokenSource.Token))).Task;
     }
 
-    public bool HasGdipBitmap(int imageIndex, int mipmap, int slice) {
+    public bool HasGdipBitmap(int imageIndex, int mipmap, int slice)
+    {
         if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         if (mipmap != 0)
             throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
-        return _bitmap?.IsCompletedSuccessfully is true;
+        return this._bitmap?.IsCompletedSuccessfully is true;
     }
 
-    public int NumberOfMipmaps(int imageIndex) {
+    public int NumberOfMipmaps(int imageIndex)
+    {
         if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         return 1;
     }
 
-    public int WidthOfMipmap(int imageIndex, int mipmap) {
+    public int WidthOfMipmap(int imageIndex, int mipmap)
+    {
         if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         if (mipmap != 0)
             throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
-        return _bitmap?.IsCompletedSuccessfully is true ? _bitmap.Result.Width : _wicBitmap!.Result.Width;
+        if (this._bitmap?.IsCompletedSuccessfully is true)
+            return this._bitmap.Result.Width;
+        unsafe {
+            uint width, height;
+            this._wicBitmap!.Result.Get()->GetSize(&width, &height).Ensure();
+            return (int) width;
+        }
     }
 
-    public int HeightOfMipmap(int imageIndex, int mipmap) {
+    public int HeightOfMipmap(int imageIndex, int mipmap)
+    {
         if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         if (mipmap != 0)
             throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
-        return _bitmap?.IsCompletedSuccessfully is true ? _bitmap.Result.Height : _wicBitmap!.Result.Height;
+        if (this._bitmap?.IsCompletedSuccessfully is true)
+            return this._bitmap.Result.Width;
+        unsafe {
+            uint width, height;
+            this._wicBitmap!.Result.Get()->GetSize(&width, &height).Ensure();
+            return (int) height;
+        }
     }
 
-    public int NumSlicesOfMipmap(int imageIndex, int mipmap) {
+    public int NumSlicesOfMipmap(int imageIndex, int mipmap)
+    {
         if (imageIndex != 0)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
         if (mipmap != 0)
@@ -184,23 +217,25 @@ public class PlainBitmapSource : IBitmapSource {
 
     public void WriteDdsFile(Stream stream) => throw new NotImplementedException();
 
-    public void DescribeImage(StringBuilder sb) {
-        sb.AppendLine($"{FileSize:##,###} Bytes");
+    public void DescribeImage(StringBuilder sb)
+    {
+        sb.AppendLine($"{this.FileSize:##,###} Bytes");
 
-        sb.Append("2D: ").Append(WidthOfMipmap(0, 0))
-            .Append(" x ").Append(HeightOfMipmap(0, 0))
+        sb.Append("2D: ").Append(this.WidthOfMipmap(0, 0))
+            .Append(" x ").Append(this.HeightOfMipmap(0, 0))
             .AppendLine();
     }
 
-    private void Relayout() {
-        Layout = IGridLayout.CreateGridLayoutForDepthView(
+    private void Relayout()
+    {
+        this.Layout = IGridLayout.CreateGridLayoutForDepthView(
             0,
             0,
-            WidthOfMipmap(0, 0),
-            HeightOfMipmap(0, 0),
+            this.WidthOfMipmap(0, 0),
+            this.HeightOfMipmap(0, 0),
             1,
             false,
-            _sliceSpacing);
-        LayoutChanged?.Invoke();
+            this._sliceSpacing);
+        this.LayoutChanged?.Invoke();
     }
 }

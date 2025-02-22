@@ -14,76 +14,83 @@ public class TabbedTextViewerControl : AbstractFileResourceViewerControl {
     private readonly TabControl _tabControl;
     private readonly List<string> _contents = new();
 
-    public TabbedTextViewerControl() {
+    public TabbedTextViewerControl()
+    {
         SplitContainer splitter;
-        Controls.Add(splitter = new() {
-            Dock = DockStyle.Fill,
-            FixedPanel = FixedPanel.Panel1,
-            SplitterDistance = 160,
-        });
-        splitter.Panel1.Controls.Add(_listBox = new() {
-            Dock = DockStyle.Fill,
-        });
-        splitter.Panel2.Controls.Add(_tabControl = new() {
-            Dock = DockStyle.Fill,
-            Multiline = true,
-        });
+        this.Controls.Add(
+            splitter = new() {
+                Dock = DockStyle.Fill,
+                FixedPanel = FixedPanel.Panel1,
+                SplitterDistance = 160,
+            });
+        splitter.Panel1.Controls.Add(
+            this._listBox = new() {
+                Dock = DockStyle.Fill,
+            });
+        splitter.Panel2.Controls.Add(
+            this._tabControl = new() {
+                Dock = DockStyle.Fill,
+                Multiline = true,
+            });
 
-        _listBox.SelectedIndexChanged += ListBoxOnSelectedIndexChanged;
-        _listBox.KeyDown += ListBoxOnKeyDown;
-        _listBox.DoubleClick += ListBoxOnDoubleClick;
+        this._listBox.SelectedIndexChanged += this.ListBoxOnSelectedIndexChanged;
+        this._listBox.KeyDown += this.ListBoxOnKeyDown;
+        this._listBox.DoubleClick += this.ListBoxOnDoubleClick;
     }
 
-    private void ListBoxOnKeyDown(object? sender, KeyEventArgs e) {
-        if (e.KeyCode == Keys.Enter)
-            _tabControl.SelectedTab?.Controls.Cast<Control>().FirstOrDefault()?.Focus();
+    private void ListBoxOnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Enter) this._tabControl.SelectedTab?.Controls.Cast<Control>().FirstOrDefault()?.Focus();
     }
 
-    private void ListBoxOnDoubleClick(object? sender, EventArgs e) {
-        _tabControl.SelectedTab?.Controls.Cast<Control>().FirstOrDefault()?.Focus();
+    private void ListBoxOnDoubleClick(object? sender, EventArgs e)
+    {
+        this._tabControl.SelectedTab?.Controls.Cast<Control>().FirstOrDefault()?.Focus();
     }
 
-    protected override void Dispose(bool disposing) {
-        if (disposing)
-            _tabControl.Dispose();
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) this._tabControl.Dispose();
 
         base.Dispose(disposing);
     }
 
-    private void ListBoxOnSelectedIndexChanged(object? sender, EventArgs e) {
-        if (_listBox.SelectedItem is not string selectedItem)
+    private void ListBoxOnSelectedIndexChanged(object? sender, EventArgs e)
+    {
+        if (this._listBox.SelectedItem is not string selectedItem)
             return;
 
-        using (_tabControl.DisableRedrawScoped()) {
-            var tab = _tabControl.TabPages.Cast<TabPage>()
+        using (this._tabControl.DisableRedrawScoped()) {
+            var tab = this._tabControl.TabPages.Cast<TabPage>()
                 .Select((x, i) => (x, i)).FirstOrDefault(x => x.x.Name == selectedItem, (null!, -1)).i;
             if (tab != -1) {
-                var tabPage = _tabControl.TabPages[tab];
-                _tabControl.TabPages.RemoveAt(tab);
-                _tabControl.TabPages.Insert(0, tabPage);
-                _tabControl.SelectedIndex = 0;
+                var tabPage = this._tabControl.TabPages[tab];
+                this._tabControl.TabPages.RemoveAt(tab);
+                this._tabControl.TabPages.Insert(0, tabPage);
+                this._tabControl.SelectedIndex = 0;
             } else {
-                var tabPage = NewPage(_listBox.SelectedIndex);
-                _tabControl.TabPages.Insert(0, tabPage);
-                _tabControl.SelectedIndex = 0;
+                var tabPage = this.NewPage(this._listBox.SelectedIndex);
+                this._tabControl.TabPages.Insert(0, tabPage);
+                this._tabControl.SelectedIndex = 0;
             }
 
-            while (_tabControl.TabPages.Count > 8)
-                _tabControl.TabPages.RemoveAt(_tabControl.TabPages.Count - 1);
+            while (this._tabControl.TabPages.Count > 8)
+                this._tabControl.TabPages.RemoveAt(this._tabControl.TabPages.Count - 1);
 
-            _listBox.Focus();
+            this._listBox.Focus();
         }
     }
 
-    private TabPage NewPage(int pageIndex) {
-        var page = new TabPage(_listBox.Items[pageIndex].ToString());
-        var scintilla = new Scintilla {Dock = DockStyle.Fill};
+    private TabPage NewPage(int pageIndex)
+    {
+        var page = new TabPage(this._listBox.Items[pageIndex].ToString());
+        var scintilla = new Scintilla { Dock = DockStyle.Fill };
 
         scintilla.StyleResetDefault();
         scintilla.Styles[Style.Default].Font = FontFamily.GenericMonospace.Name;
         scintilla.Styles[Style.Default].Size = (int) base.Font.Size;
         scintilla.StyleClearAll();
-        scintilla.Text = _contents[pageIndex];
+        scintilla.Text = this._contents[pageIndex];
         scintilla.ReadOnly = true;
         scintilla.BorderStyle = BorderStyle.None;
 
@@ -91,34 +98,38 @@ public class TabbedTextViewerControl : AbstractFileResourceViewerControl {
         return page;
     }
 
-    public void SetTexts(IEnumerable<string?>? names, IEnumerable<string> contents) {
-        Clear();
-        AppendTexts(names, contents);
+    public void SetTexts(IEnumerable<string?>? names, IEnumerable<string> contents)
+    {
+        this.Clear();
+        this.AppendTexts(names, contents);
     }
 
-    public void AppendTexts(IEnumerable<string?>? names, IEnumerable<string> contents) {
-        _contents.AddRange(contents);
-        using (_listBox.DisableRedrawScoped())
-        using (_tabControl.DisableRedrawScoped()) {
+    public void AppendTexts(IEnumerable<string?>? names, IEnumerable<string> contents)
+    {
+        this._contents.AddRange(contents);
+        using (this._listBox.DisableRedrawScoped())
+        using (this._tabControl.DisableRedrawScoped()) {
             if (names is not null)
-                _listBox.Items.AddRange(names.Cast<object>().Take(_contents.Count - _listBox.Items.Count).ToArray());
-            if (_listBox.Items.Count < _contents.Count) {
-                _listBox.Items.AddRange(Enumerable.Range(_listBox.Items.Count, _contents.Count - _listBox.Items.Count)
-                    .Select(i => (object) $"Item {i}")
-                    .ToArray());
+                this._listBox.Items.AddRange(
+                    names.Cast<object>().Take(this._contents.Count - this._listBox.Items.Count).ToArray());
+            if (this._listBox.Items.Count < this._contents.Count) {
+                this._listBox.Items.AddRange(
+                    Enumerable.Range(this._listBox.Items.Count, this._contents.Count - this._listBox.Items.Count)
+                        .Select(i => (object) $"Item {i}")
+                        .ToArray());
             }
 
-            var ll = _tabControl.TabPages.Count;
-            var ul = Math.Min(_listBox.Items.Count, 8);
-            if (ll < ul)
-                _tabControl.TabPages.AddRange(Enumerable.Range(ll, ul).Select(NewPage).ToArray());
+            var ll = this._tabControl.TabPages.Count;
+            var ul = Math.Min(this._listBox.Items.Count, 8);
+            if (ll < ul) this._tabControl.TabPages.AddRange(Enumerable.Range(ll, ul).Select(this.NewPage).ToArray());
 
-            _tabControl.SelectedIndex = 0;
+            this._tabControl.SelectedIndex = 0;
         }
     }
 
-    public override Size GetPreferredSize(Size proposedSize) {
-        if (_tabControl.TabPages.Cast<TabPage>().FirstOrDefault() is not { } tabPage ||
+    public override Size GetPreferredSize(Size proposedSize)
+    {
+        if (this._tabControl.TabPages.Cast<TabPage>().FirstOrDefault() is not { } tabPage ||
             tabPage.Controls.Cast<Control>().FirstOrDefault() is not Scintilla scintilla)
             return new(640, 480);
 
@@ -132,28 +143,27 @@ public class TabbedTextViewerControl : AbstractFileResourceViewerControl {
         }
 
         width = Math.Min(
-            width + DeviceDpi * 2 +
-            _tabControl.Padding.X + _tabControl.Margin.Horizontal +
+            width + this.DeviceDpi * 2 + this._tabControl.Padding.X + this._tabControl.Margin.Horizontal +
             tabPage.Padding.Horizontal + tabPage.Margin.Horizontal +
             scintilla.Padding.Horizontal + scintilla.Margin.Horizontal,
             proposedSize.Width);
         height = Math.Min(
-            height + DeviceDpi / 3 +
-            _tabControl.Height - tabPage.Height +
+            height + this.DeviceDpi / 3 + this._tabControl.Height - tabPage.Height +
             tabPage.Padding.Vertical + tabPage.Margin.Vertical +
             scintilla.Padding.Vertical + scintilla.Margin.Vertical,
             proposedSize.Width);
         return new(width, height);
     }
 
-    public void Clear() {
-        while (_tabControl.TabPages.Count > 0) {
-            var page = _tabControl.TabPages[^1];
-            _tabControl.TabPages.RemoveAt(_tabControl.TabPages.Count - 1);
+    public void Clear()
+    {
+        while (this._tabControl.TabPages.Count > 0) {
+            var page = this._tabControl.TabPages[^1];
+            this._tabControl.TabPages.RemoveAt(this._tabControl.TabPages.Count - 1);
             page.Dispose();
         }
 
-        _listBox.Items.Clear();
-        _contents.Clear();
+        this._listBox.Items.Clear();
+        this._contents.Clear();
     }
 }

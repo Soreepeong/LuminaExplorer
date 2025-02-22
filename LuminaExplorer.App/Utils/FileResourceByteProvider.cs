@@ -7,11 +7,12 @@ namespace LuminaExplorer.App.Utils;
 public class FileResourceByteProvider : IByteProvider {
     private readonly FileResource _fileResource;
 
-    public FileResourceByteProvider(FileResource fileResource) {
-        _fileResource = fileResource;
+    public FileResourceByteProvider(FileResource fileResource)
+    {
+        this._fileResource = fileResource;
     }
 
-    public byte ReadByte(long index) => _fileResource.Data[index];
+    public byte ReadByte(long index) => this._fileResource.Data[index];
 
     public void WriteByte(long index, byte value) => throw new NotSupportedException();
 
@@ -19,7 +20,7 @@ public class FileResourceByteProvider : IByteProvider {
 
     public void DeleteBytes(long index, long length) => throw new NotSupportedException();
 
-    public long Length => _fileResource.Data.LongLength;
+    public long Length => this._fileResource.Data.LongLength;
 
     public event EventHandler? LengthChanged;
 

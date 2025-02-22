@@ -6,7 +6,8 @@ using System.Threading.Tasks;
 namespace LuminaExplorer.Core.Util;
 
 public static class SafeDispose {
-    public static void Lazy<T>(ref Lazy<T>? u) {
+    public static void Lazy<T>(ref Lazy<T>? u)
+    {
         if (u?.IsValueCreated is true) {
             var v = u.Value;
             One(ref v);
@@ -14,14 +15,16 @@ public static class SafeDispose {
 
         u = null;
     }
-    
-    public static void One<T>(ref T? u) {
+
+    public static void One<T>(ref T? u)
+    {
         if (u is IDisposable disposable)
             disposable.Dispose();
         u = default;
     }
 
-    public static void Enumerable<T>(ref T? items) where T : IEnumerable {
+    public static void Enumerable<T>(ref T? items) where T : IEnumerable
+    {
         if (items is null)
             return;
         foreach (var item in items) {
@@ -40,7 +43,8 @@ public static class SafeDispose {
             ud.Dispose();
     }
 
-    public static Task LazyAsync<T>(ref Lazy<T>? u) {
+    public static Task LazyAsync<T>(ref Lazy<T>? u)
+    {
         if (u?.IsValueCreated is true) {
             var v = u.Value;
             u = null;
@@ -50,8 +54,9 @@ public static class SafeDispose {
         u = null;
         return Task.CompletedTask;
     }
-    
-    public static Task OneAsync<T>(ref T? u) {
+
+    public static Task OneAsync<T>(ref T? u)
+    {
         if (u is not IAsyncDisposable asyncDisposable) {
             One(ref u);
             return Task.CompletedTask;
@@ -62,15 +67,18 @@ public static class SafeDispose {
         return t;
     }
 
-    public static Task EnumerableAsync<T>(ref T? items) where T : IEnumerable {
+    public static Task EnumerableAsync<T>(ref T? items) where T : IEnumerable
+    {
         if (items is null)
             return Task.CompletedTask;
 
         var itemCopy = items;
         items = default;
-        
-        return Task.WhenAll(itemCopy.Cast<object?>()
-            .Select(item => item is IEnumerable enumerable ? EnumerableAsync(ref enumerable!) : OneAsync(ref item)))
+
+        return Task.WhenAll(
+                itemCopy.Cast<object?>()
+                    .Select(
+                        item => item is IEnumerable enumerable ? EnumerableAsync(ref enumerable!) : OneAsync(ref item)))
             .ContinueWith(_ => OneAsync(ref itemCopy))
             .Unwrap();
     }

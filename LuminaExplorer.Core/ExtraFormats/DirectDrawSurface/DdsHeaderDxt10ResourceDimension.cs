@@ -5,5 +5,5 @@ public enum DdsHeaderDxt10ResourceDimension {
     Buffer = 1,
     Texture1D = 2,
     Texture2D = 3,
-    Texture3D = 4
+    Texture3D = 4,
 };

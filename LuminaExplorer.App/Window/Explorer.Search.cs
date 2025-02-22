@@ -12,87 +12,98 @@ public partial class Explorer {
     private sealed class SearchHandler : IDisposable {
         private readonly Explorer _explorer;
         private readonly TextBox _txtSearch;
-        
+
         private CancellationTokenSource _searchCancellationTokenSource = new();
-        
-        public SearchHandler(Explorer explorer) {
-            _explorer = explorer;
-            Vfs = explorer.Vfs;
-            AppConfig = explorer._appConfig;
-            _txtSearch = _explorer.txtSearch.TextBox!;
-            _txtSearch.PlaceholderText = @"Search...";
-            _explorer.btnSearch.Click += btnSearch_Click;
-            _explorer.txtSearch.KeyUp += txtSearch_KeyUp;
+
+        public SearchHandler(Explorer explorer)
+        {
+            this._explorer = explorer;
+            this.Vfs = explorer.Vfs;
+            this.AppConfig = explorer._appConfig;
+            this._txtSearch = this._explorer.txtSearch.TextBox!;
+            this._txtSearch.PlaceholderText = @"Search...";
+            this._explorer.btnSearch.Click += this.btnSearch_Click;
+            this._explorer.txtSearch.KeyUp += this.txtSearch_KeyUp;
         }
 
-        public void Dispose() {
-            _searchCancellationTokenSource.Cancel();
-            _explorer.btnSearch.Click -= btnSearch_Click;
-            _explorer.txtSearch.KeyUp -= txtSearch_KeyUp;
+        public void Dispose()
+        {
+            this._searchCancellationTokenSource.Cancel();
+            this._explorer.btnSearch.Click -= this.btnSearch_Click;
+            this._explorer.txtSearch.KeyUp -= this.txtSearch_KeyUp;
         }
-        
+
         public IVirtualFileSystem? Vfs { get; set; }
 
         public AppConfig AppConfig { get; set; }
 
-        private void btnSearch_Click(object? sender, EventArgs e) => Search(_txtSearch.Text);
+        private void btnSearch_Click(object? sender, EventArgs e) => this.Search(this._txtSearch.Text);
 
-        private void txtSearch_KeyUp(object? sender, KeyEventArgs e) {
-            if (e.KeyCode == Keys.Enter)
-                Search(_txtSearch.Text);
+        private void txtSearch_KeyUp(object? sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter) this.Search(this._txtSearch.Text);
         }
 
-        public void SearchAbort() {
-            if (_searchCancellationTokenSource.IsCancellationRequested)
+        public void SearchAbort()
+        {
+            if (this._searchCancellationTokenSource.IsCancellationRequested)
                 return;
 
-            _searchCancellationTokenSource.Cancel();
-            _explorer._navigationHandler?.NavigateToCurrent();
+            this._searchCancellationTokenSource.Cancel();
+            this._explorer._navigationHandler?.NavigateToCurrent();
         }
 
-        public void Search(string query) {
+        public void Search(string query)
+        {
             if (string.IsNullOrWhiteSpace(query)) {
-                SearchAbort();
+                this.SearchAbort();
                 return;
             }
 
-            _searchCancellationTokenSource.Cancel();
+            this._searchCancellationTokenSource.Cancel();
 
-            if (_explorer._fileListHandler is null || _explorer._navigationHandler is null || Vfs is null)
+            if (this._explorer._fileListHandler is null || this._explorer._navigationHandler is null ||
+                this.Vfs is null)
                 return;
 
-            var cancelSource = _searchCancellationTokenSource = new();
+            var cancelSource = this._searchCancellationTokenSource = new();
 
-            _explorer._fileListHandler.Clear();
+            this._explorer._fileListHandler.Clear();
 
             var pendingObjectsLock = new object();
             var pendingObjects1 = new List<VirtualObject>();
             var pendingObjects2 = new List<VirtualObject>();
-            var searchBaseFolder = _explorer._navigationHandler.CurrentFolder;
+            var searchBaseFolder = this._explorer._navigationHandler.CurrentFolder;
             if (searchBaseFolder is null)
                 return;
 
-            void OnObjectFound(VirtualObject vo) {
+            void OnObjectFound(VirtualObject vo)
+            {
                 cancelSource.Token.ThrowIfCancellationRequested();
 
                 lock (pendingObjectsLock)
                     pendingObjects1.Add(vo);
             }
 
-            void ReportProgress(IVirtualFileSystem.SearchProgress progress) {
+            void ReportProgress(IVirtualFileSystem.SearchProgress progress)
+            {
                 cancelSource.Token.ThrowIfCancellationRequested();
 
-                Debug.Print("{0:0.00}% {1:##.###} / {2:##.###}: {3}",
+                Debug.Print(
+                    "{0:0.00}% {1:##.###} / {2:##.###}: {3}",
                     100.0 * progress.Progress / progress.Total,
-                    progress.Progress, progress.Total, progress.LastObject);
+                    progress.Progress,
+                    progress.Total,
+                    progress.LastObject);
 
                 if (progress.Completed) {
                     if (pendingObjects1.Any())
-                        _explorer.BeginInvoke(() => _explorer._fileListHandler?.AddObjects(pendingObjects1));
+                        this._explorer.BeginInvoke(() => this._explorer._fileListHandler?.AddObjects(pendingObjects1));
                     return;
                 }
 
-                if (_explorer._fileListHandler is not { } fileListHandler || fileListHandler.CurrentFolder is not null)  {
+                if (this._explorer._fileListHandler is not { } fileListHandler ||
+                    fileListHandler.CurrentFolder is not null) {
                     cancelSource.Cancel();
                     throw new OperationCanceledException();
                 }
@@ -109,17 +120,17 @@ public partial class Explorer {
 
                     pendingObjects1.Clear();
                     var objects = pendingObjects2.ToArray();
-                    _explorer.BeginInvoke(() => _explorer._fileListHandler?.AddObjects(objects));
+                    this._explorer.BeginInvoke(() => this._explorer._fileListHandler?.AddObjects(objects));
                     pendingObjects2.Clear();
                 }
             }
 
-            Vfs.Search(
+            this.Vfs.Search(
                 searchBaseFolder,
-                _txtSearch.Text,
+                this._txtSearch.Text,
                 ReportProgress,
                 folder => {
-                    if (Vfs is { } tree)
+                    if (this.Vfs is { } tree)
                         OnObjectFound(new(tree, folder));
                     else {
                         cancelSource.Cancel();
@@ -127,15 +138,15 @@ public partial class Explorer {
                     }
                 },
                 file => {
-                    if (Vfs is { } tree)
+                    if (this.Vfs is { } tree)
                         OnObjectFound(new(tree, file));
                     else {
                         cancelSource.Cancel();
                         throw new OperationCanceledException();
                     }
                 },
-                AppConfig.SearchThreads,
-                AppConfig.SearchEntryTimeout,
+                this.AppConfig.SearchThreads,
+                this.AppConfig.SearchEntryTimeout,
                 cancelSource.Token);
         }
     }

@@ -30,7 +30,8 @@ public interface IVirtualFileLookup : IDisposable {
 
     public Task<T> AsFileResource<T>(CancellationToken cancellationToken = default) where T : FileResource;
 
-    protected static HashSet<Type> FindPossibleTypes(IVirtualFileLookup lookup, LuminaBinaryReader reader) {
+    protected static HashSet<Type> FindPossibleTypes(IVirtualFileLookup lookup, LuminaBinaryReader reader)
+    {
         var magic = lookup.Size >= 4 ? reader.ReadUInt32() : 0;
 
         var fileResourceType = typeof(FileResource);

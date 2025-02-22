@@ -54,12 +54,13 @@ public unsafe struct DdsHeader {
     /// On setting this value, it will also change Flags accordingly.
     /// </summary>
     public int Pitch {
-        get => Flags.HasFlag(DdsHeaderFlags.LinearSize)
-            ? PitchOrLinearSize / Height
-            : PitchOrLinearSize;
+        get =>
+            this.Flags.HasFlag(DdsHeaderFlags.LinearSize)
+                ? this.PitchOrLinearSize / this.Height
+                : this.PitchOrLinearSize;
         set {
-            Flags &= ~DdsHeaderFlags.LinearSize;
-            PitchOrLinearSize = value;
+            this.Flags &= ~DdsHeaderFlags.LinearSize;
+            this.PitchOrLinearSize = value;
         }
     }
 
@@ -68,12 +69,13 @@ public unsafe struct DdsHeader {
     /// On setting this value, it will also change Flags accordingly.
     /// </summary>
     public int LinearSize {
-        get => Flags.HasFlag(DdsHeaderFlags.LinearSize)
-            ? PitchOrLinearSize
-            : PitchOrLinearSize * Height;
+        get =>
+            this.Flags.HasFlag(DdsHeaderFlags.LinearSize)
+                ? this.PitchOrLinearSize
+                : this.PitchOrLinearSize * this.Height;
         set {
-            Flags |= DdsHeaderFlags.LinearSize;
-            PitchOrLinearSize = value;
+            this.Flags |= DdsHeaderFlags.LinearSize;
+            this.PitchOrLinearSize = value;
         }
     }
 }

@@ -16,36 +16,38 @@ public class DdsFile {
 
     private readonly byte[] _data;
 
-    public DdsFile(string name, DdsHeaderLegacy legacyHeader, DdsHeaderDxt10? dxt10Header, byte[] data) {
-        Name = name;
-        LegacyHeader = legacyHeader;
-        UseDxt10Header = dxt10Header is not null;
-        Dxt10Header = dxt10Header ?? new();
-        _data = data;
+    public DdsFile(string name, DdsHeaderLegacy legacyHeader, DdsHeaderDxt10? dxt10Header, byte[] data)
+    {
+        this.Name = name;
+        this.LegacyHeader = legacyHeader;
+        this.UseDxt10Header = dxt10Header is not null;
+        this.Dxt10Header = dxt10Header ?? new();
+        this._data = data;
     }
 
-    public DdsFile(string name, Stream stream, bool closeAfter = true) {
-        Name = name;
+    public DdsFile(string name, Stream stream, bool closeAfter = true)
+    {
+        this.Name = name;
         try {
             try {
-                _data = new byte[stream.Length];
-                stream.ReadExactly(_data);
+                this._data = new byte[stream.Length];
+                stream.ReadExactly(this._data);
                 stream.Dispose();
             } catch (NotSupportedException) {
                 using var ms = new MemoryStream();
                 stream.CopyTo(ms);
-                _data = ms.ToArray();
+                this._data = ms.ToArray();
             }
 
             unsafe {
-                fixed (void* lh = &LegacyHeader)
-                    Marshal.Copy(_data, 0, (nint) lh, sizeof(DdsHeaderLegacy));
-                
-                if (LegacyHeader.Header.PixelFormat.Flags.HasFlag(DdsPixelFormatFlags.FourCc) &&
-                    LegacyHeader.Header.PixelFormat.FourCc == DdsFourCc.Dx10) {
-                    UseDxt10Header = true;
-                    fixed (void* dh = &Dxt10Header)
-                        Marshal.Copy(_data, sizeof(DdsHeaderLegacy), (nint) dh, sizeof(DdsHeaderDxt10));
+                fixed (void* lh = &this.LegacyHeader)
+                    Marshal.Copy(this._data, 0, (nint) lh, sizeof(DdsHeaderLegacy));
+
+                if (this.LegacyHeader.Header.PixelFormat.Flags.HasFlag(DdsPixelFormatFlags.FourCc) &&
+                    this.LegacyHeader.Header.PixelFormat.FourCc == DdsFourCc.Dx10) {
+                    this.UseDxt10Header = true;
+                    fixed (void* dh = &this.Dxt10Header)
+                        Marshal.Copy(this._data, sizeof(DdsHeaderLegacy), (nint) dh, sizeof(DdsHeaderDxt10));
                 }
             }
         } finally {
@@ -54,18 +56,19 @@ public class DdsFile {
         }
     }
 
-    public DdsFile(string name, byte[] data) {
-        Name = name;
-        _data = data;
+    public DdsFile(string name, byte[] data)
+    {
+        this.Name = name;
+        this._data = data;
         unsafe {
-            fixed (void* lh = &LegacyHeader)
-                Marshal.Copy(_data, 0, (nint) lh, sizeof(DdsHeaderLegacy));
-                
-            if (LegacyHeader.Header.PixelFormat.Flags.HasFlag(DdsPixelFormatFlags.FourCc) &&
-                LegacyHeader.Header.PixelFormat.FourCc == DdsFourCc.Dx10) {
-                UseDxt10Header = true;
-                fixed (void* dh = &Dxt10Header)
-                    Marshal.Copy(_data, sizeof(DdsHeaderLegacy), (nint) dh, sizeof(DdsHeaderDxt10));
+            fixed (void* lh = &this.LegacyHeader)
+                Marshal.Copy(this._data, 0, (nint) lh, sizeof(DdsHeaderLegacy));
+
+            if (this.LegacyHeader.Header.PixelFormat.Flags.HasFlag(DdsPixelFormatFlags.FourCc) &&
+                this.LegacyHeader.Header.PixelFormat.FourCc == DdsFourCc.Dx10) {
+                this.UseDxt10Header = true;
+                fixed (void* dh = &this.Dxt10Header)
+                    Marshal.Copy(this._data, sizeof(DdsHeaderLegacy), (nint) dh, sizeof(DdsHeaderDxt10));
             }
         }
     }
@@ -74,144 +77,159 @@ public class DdsFile {
 
     public int DataOffset =>
         Unsafe.SizeOf<DdsHeaderLegacy>() +
-        (UseDxt10Header ? Unsafe.SizeOf<DdsHeaderDxt10>() : 0);
+        (this.UseDxt10Header ? Unsafe.SizeOf<DdsHeaderDxt10>() : 0);
 
-    public Stream CreateStream() => new MemoryStream(_data, false);
+    public Stream CreateStream() => new MemoryStream(this._data, false);
 
-    public DdsHeader Header => LegacyHeader.Header;
+    public DdsHeader Header => this.LegacyHeader.Header;
 
-    public ReadOnlySpan<byte> Body => new(_data, DataOffset, _data.Length - DataOffset);
+    public ReadOnlySpan<byte> Body => new(this._data, this.DataOffset, this._data.Length - this.DataOffset);
 
-    public ReadOnlySpan<byte> Data => _data.AsSpan();
+    public ReadOnlySpan<byte> Data => this._data.AsSpan();
 
-    public int NumImages => UseDxt10Header ? Dxt10Header.ArraySize : 1;
+    public int NumImages => this.UseDxt10Header ? this.Dxt10Header.ArraySize : 1;
 
-    public int NumMipmaps => Header.Flags.HasFlag(DdsHeaderFlags.MipmapCount) ? Header.MipMapCount : 1;
+    public int NumMipmaps => this.Header.Flags.HasFlag(DdsHeaderFlags.MipmapCount) ? this.Header.MipMapCount : 1;
 
-    public int Bpp => PixFmt.Bpp;
+    public int Bpp => this.PixFmt.Bpp;
 
-    public bool Is1D => !IsCubeMap && (Header.Flags & DdsHeaderFlags.DimensionMask) == DdsHeaderFlags.Dimension1;
-    
-    public bool Is2D => !IsCubeMap && (Header.Flags & DdsHeaderFlags.DimensionMask) == DdsHeaderFlags.Dimension2;
-    
-    public bool Is3D => !IsCubeMap && (Header.Flags & DdsHeaderFlags.DimensionMask) == DdsHeaderFlags.Dimension3;
+    public bool Is1D =>
+        !this.IsCubeMap && (this.Header.Flags & DdsHeaderFlags.DimensionMask) == DdsHeaderFlags.Dimension1;
 
-    public bool IsCubeMap => Header.Caps2.HasFlag(DdsCaps2.Cubemap);
+    public bool Is2D =>
+        !this.IsCubeMap && (this.Header.Flags & DdsHeaderFlags.DimensionMask) == DdsHeaderFlags.Dimension2;
+
+    public bool Is3D =>
+        !this.IsCubeMap && (this.Header.Flags & DdsHeaderFlags.DimensionMask) == DdsHeaderFlags.Dimension3;
+
+    public bool IsCubeMap => this.Header.Caps2.HasFlag(DdsCaps2.Cubemap);
 
     public int Width(int mipmapIndex) =>
-        0 <= mipmapIndex && mipmapIndex < NumMipmaps
-            ? Header.Flags.HasFlag(DdsHeaderFlags.Width) ? Math.Max(1, Header.Width >> mipmapIndex) : 1
+        0 <= mipmapIndex && mipmapIndex < this.NumMipmaps
+            ? this.Header.Flags.HasFlag(DdsHeaderFlags.Width) ? Math.Max(1, this.Header.Width >> mipmapIndex) : 1
             : throw new ArgumentOutOfRangeException(nameof(mipmapIndex), mipmapIndex, null);
 
-    public int Pitch(int mipmapIndex) {
-        var pf = PixFmt;
+    public int Pitch(int mipmapIndex)
+    {
+        var pf = this.PixFmt;
         if (pf is BcPixFmt bcPixelFormat)
-            return Math.Max(1, (Width(mipmapIndex) + 3) / 4) * bcPixelFormat.BlockSize;
+            return Math.Max(1, (this.Width(mipmapIndex) + 3) / 4) * bcPixelFormat.BlockSize;
 
         // For R8G8_B8G8, G8R8_G8B8, legacy UYVY-packed, and legacy YUY2-packed formats, compute the pitch as:
         // ((width+1) >> 1) * 4
 
-        return (Width(mipmapIndex) * pf.Bpp + 7) / 8;
+        return (this.Width(mipmapIndex) * pf.Bpp + 7) / 8;
     }
 
     public int Height(int mipmapIndex) =>
-        0 <= mipmapIndex && mipmapIndex < NumMipmaps
-            ? Header.Flags.HasFlag(DdsHeaderFlags.Height) ? Math.Max(1, Header.Height >> mipmapIndex) : 1
+        0 <= mipmapIndex && mipmapIndex < this.NumMipmaps
+            ? this.Header.Flags.HasFlag(DdsHeaderFlags.Height) ? Math.Max(1, this.Header.Height >> mipmapIndex) : 1
             : throw new ArgumentOutOfRangeException(nameof(mipmapIndex), mipmapIndex, null);
 
-    public int NumFaces => !IsCubeMap
+    public int NumFaces => !this.IsCubeMap
         ? 1
-        : (Header.Caps2.HasFlag(DdsCaps2.CubemapNegativeX) ? 1 : 0)
-        + (Header.Caps2.HasFlag(DdsCaps2.CubemapPositiveX) ? 1 : 0)
-        + (Header.Caps2.HasFlag(DdsCaps2.CubemapNegativeY) ? 1 : 0)
-        + (Header.Caps2.HasFlag(DdsCaps2.CubemapPositiveY) ? 1 : 0)
-        + (Header.Caps2.HasFlag(DdsCaps2.CubemapNegativeZ) ? 1 : 0)
-        + (Header.Caps2.HasFlag(DdsCaps2.CubemapPositiveZ) ? 1 : 0);
+        : (this.Header.Caps2.HasFlag(DdsCaps2.CubemapNegativeX) ? 1 : 0)
+        + (this.Header.Caps2.HasFlag(DdsCaps2.CubemapPositiveX) ? 1 : 0)
+        + (this.Header.Caps2.HasFlag(DdsCaps2.CubemapNegativeY) ? 1 : 0)
+        + (this.Header.Caps2.HasFlag(DdsCaps2.CubemapPositiveY) ? 1 : 0)
+        + (this.Header.Caps2.HasFlag(DdsCaps2.CubemapNegativeZ) ? 1 : 0)
+        + (this.Header.Caps2.HasFlag(DdsCaps2.CubemapPositiveZ) ? 1 : 0);
 
-    public int Depth(int mipmapIndex) => 0 <= mipmapIndex && mipmapIndex < NumMipmaps
-        ? Header.Flags.HasFlag(DdsHeaderFlags.Depth) ? Math.Max(1, Header.Depth >> mipmapIndex) : 1
+    public int Depth(int mipmapIndex) => 0 <= mipmapIndex && mipmapIndex < this.NumMipmaps
+        ? this.Header.Flags.HasFlag(DdsHeaderFlags.Depth) ? Math.Max(1, this.Header.Depth >> mipmapIndex) : 1
         : throw new ArgumentOutOfRangeException(nameof(mipmapIndex), mipmapIndex, null);
 
-    public int DepthOrNumFaces(int mipmapIndex) => IsCubeMap ? NumFaces : Depth(mipmapIndex);
+    public int DepthOrNumFaces(int mipmapIndex) => this.IsCubeMap ? this.NumFaces : this.Depth(mipmapIndex);
 
-    public int SliceSize(int mipmapIndex) {
-        var pf = PixFmt;
+    public int SliceSize(int mipmapIndex)
+    {
+        var pf = this.PixFmt;
         if (pf is BcPixFmt bcPixelFormat) {
-            return Math.Max(1, (Width(mipmapIndex) + 3) / 4) *
-                Math.Max(1, (Height(mipmapIndex) + 3) / 4) *
+            return Math.Max(1, (this.Width(mipmapIndex) + 3) / 4) *
+                Math.Max(1, (this.Height(mipmapIndex) + 3) / 4) *
                 bcPixelFormat.BlockSize;
         }
 
         // For R8G8_B8G8, G8R8_G8B8, legacy UYVY-packed, and legacy YUY2-packed formats, compute the pitch as:
         // ((width+1) >> 1) * 4
 
-        return (Width(mipmapIndex) * pf.Bpp + 7) / 8 * Height(mipmapIndex);
+        return (this.Width(mipmapIndex) * pf.Bpp + 7) / 8 * this.Height(mipmapIndex);
     }
 
-    public int MipmapSize(int mipmapIndex) => SliceSize(mipmapIndex) * Depth(mipmapIndex);
+    public int MipmapSize(int mipmapIndex) => this.SliceSize(mipmapIndex) * this.Depth(mipmapIndex);
 
-    public int FaceSize => Enumerable.Range(0, NumMipmaps).Sum(MipmapSize);
+    public int FaceSize => Enumerable.Range(0, this.NumMipmaps).Sum(this.MipmapSize);
 
-    public int ImageSize => FaceSize * NumFaces;
+    public int ImageSize => this.FaceSize * this.NumFaces;
 
-    public int ImageDataOffset(int imageIndex, out int size) {
-        if (imageIndex < 0 || imageIndex >= NumImages)
+    public int ImageDataOffset(int imageIndex, out int size)
+    {
+        if (imageIndex < 0 || imageIndex >= this.NumImages)
             throw new ArgumentOutOfRangeException(nameof(imageIndex), imageIndex, null);
 
-        size = ImageSize;
-        return DataOffset + size * imageIndex;
+        size = this.ImageSize;
+        return this.DataOffset + size * imageIndex;
     }
 
-    public ReadOnlySpan<byte> ImageData(int imageIndex) {
-        var offset = ImageDataOffset(imageIndex, out var size);
-        return new(_data, offset, size);
+    public ReadOnlySpan<byte> ImageData(int imageIndex)
+    {
+        var offset = this.ImageDataOffset(imageIndex, out var size);
+        return new(this._data, offset, size);
     }
 
-    public int FaceDataOffset(int imageIndex, int faceIndex, out int size) {
-        var offset = ImageDataOffset(imageIndex, out _);
-        size = FaceSize;
+    public int FaceDataOffset(int imageIndex, int faceIndex, out int size)
+    {
+        var offset = this.ImageDataOffset(imageIndex, out _);
+        size = this.FaceSize;
         return offset + size * faceIndex;
     }
 
-    public ReadOnlySpan<byte> FaceData(int imageIndex, int faceIndex) {
-        var offset = FaceDataOffset(imageIndex, faceIndex, out var size);
-        return new(_data, offset, size);
+    public ReadOnlySpan<byte> FaceData(int imageIndex, int faceIndex)
+    {
+        var offset = this.FaceDataOffset(imageIndex, faceIndex, out var size);
+        return new(this._data, offset, size);
     }
 
-    public int MipmapDataOffset(int imageIndex, int faceIndex, int mipmapIndex, out int size) {
-        var baseOffset = FaceDataOffset(imageIndex, faceIndex, out _);
-        var mipOffset = Enumerable.Range(0, mipmapIndex).Sum(MipmapSize);
-        size = MipmapSize(mipmapIndex);
+    public int MipmapDataOffset(int imageIndex, int faceIndex, int mipmapIndex, out int size)
+    {
+        var baseOffset = this.FaceDataOffset(imageIndex, faceIndex, out _);
+        var mipOffset = Enumerable.Range(0, mipmapIndex).Sum(this.MipmapSize);
+        size = this.MipmapSize(mipmapIndex);
         return baseOffset + mipOffset;
     }
 
-    public ReadOnlySpan<byte> MipmapData(int imageIndex, int faceIndex, int mipmapIndex) {
-        var offset = MipmapDataOffset(imageIndex, faceIndex, mipmapIndex, out var size);
-        return new(_data, offset, size);
+    public ReadOnlySpan<byte> MipmapData(int imageIndex, int faceIndex, int mipmapIndex)
+    {
+        var offset = this.MipmapDataOffset(imageIndex, faceIndex, mipmapIndex, out var size);
+        return new(this._data, offset, size);
     }
 
-    public int SliceDataOffset(int imageIndex, int faceIndex, int mipmapIndex, int sliceIndex, out int size) {
-        var offset = MipmapDataOffset(imageIndex, faceIndex, mipmapIndex, out _);
-        size = SliceSize(mipmapIndex);
+    public int SliceDataOffset(int imageIndex, int faceIndex, int mipmapIndex, int sliceIndex, out int size)
+    {
+        var offset = this.MipmapDataOffset(imageIndex, faceIndex, mipmapIndex, out _);
+        size = this.SliceSize(mipmapIndex);
         return offset + size * sliceIndex;
     }
 
-    public ReadOnlySpan<byte> SliceData(int imageIndex, int faceIndex, int mipmapIndex, int sliceIndex) {
-        var offset = SliceDataOffset(imageIndex, faceIndex, mipmapIndex, sliceIndex, out var size);
-        return new(_data, offset, size);
+    public ReadOnlySpan<byte> SliceData(int imageIndex, int faceIndex, int mipmapIndex, int sliceIndex)
+    {
+        var offset = this.SliceDataOffset(imageIndex, faceIndex, mipmapIndex, sliceIndex, out var size);
+        return new(this._data, offset, size);
     }
 
-    public int SliceOrFaceDataOffset(int imageIndex, int mipmapIndex, int sliceIndex, out int size) => IsCubeMap
-        ? SliceDataOffset(imageIndex, sliceIndex, mipmapIndex, 0, out size)
-        : SliceDataOffset(imageIndex, 0, mipmapIndex, sliceIndex, out size);
+    public int SliceOrFaceDataOffset(int imageIndex, int mipmapIndex, int sliceIndex, out int size) =>
+        this.IsCubeMap
+            ? this.SliceDataOffset(imageIndex, sliceIndex, mipmapIndex, 0, out size)
+            : this.SliceDataOffset(imageIndex, 0, mipmapIndex, sliceIndex, out size);
 
-    public ReadOnlySpan<byte> SliceOrFaceData(int imageIndex, int mipmapIndex, int sliceIndex) => IsCubeMap
-        ? SliceData(imageIndex, sliceIndex, mipmapIndex, 0)
-        : SliceData(imageIndex, 0, mipmapIndex, sliceIndex);
+    public ReadOnlySpan<byte> SliceOrFaceData(int imageIndex, int mipmapIndex, int sliceIndex) =>
+        this.IsCubeMap
+            ? this.SliceData(imageIndex, sliceIndex, mipmapIndex, 0)
+            : this.SliceData(imageIndex, 0, mipmapIndex, sliceIndex);
 
     public IPixFmt PixFmt {
         get {
-            var pf = Header.PixelFormat;
+            var pf = this.Header.PixelFormat;
 
             if (!pf.Flags.HasFlag(DdsPixelFormatFlags.FourCc)) {
                 var alpha = ChannelDefinition.Empty;
@@ -271,17 +289,19 @@ public class DdsFile {
             if (!Equals(ipf, UnknownPixFmt.Instance))
                 return ipf;
 
-            if (pf.FourCc != DdsFourCc.Dx10 || !UseDxt10Header)
+            if (pf.FourCc != DdsFourCc.Dx10 || !this.UseDxt10Header)
                 return UnknownPixFmt.Instance;
 
-            return PixFmtResolver.GetPixelFormat(Dxt10Header.MiscFlags2 switch {
-                DdsHeaderDxt10MiscFlags2.AlphaModeUnknown => AlphaType.Straight,
-                DdsHeaderDxt10MiscFlags2.AlphaModeStraight => AlphaType.Straight,
-                DdsHeaderDxt10MiscFlags2.AlphaModePremultiplied => AlphaType.Premultiplied,
-                DdsHeaderDxt10MiscFlags2.AlphaModeOpaque => AlphaType.None,
-                DdsHeaderDxt10MiscFlags2.AlphaModeCustom => AlphaType.Custom,
-                _ => throw new ArgumentOutOfRangeException()
-            }, Dxt10Header.DxgiFormat);
+            return PixFmtResolver.GetPixelFormat(
+                this.Dxt10Header.MiscFlags2 switch {
+                    DdsHeaderDxt10MiscFlags2.AlphaModeUnknown => AlphaType.Straight,
+                    DdsHeaderDxt10MiscFlags2.AlphaModeStraight => AlphaType.Straight,
+                    DdsHeaderDxt10MiscFlags2.AlphaModePremultiplied => AlphaType.Premultiplied,
+                    DdsHeaderDxt10MiscFlags2.AlphaModeOpaque => AlphaType.None,
+                    DdsHeaderDxt10MiscFlags2.AlphaModeCustom => AlphaType.Custom,
+                    _ => throw new ArgumentOutOfRangeException(),
+                },
+                this.Dxt10Header.DxgiFormat);
         }
     }
 }

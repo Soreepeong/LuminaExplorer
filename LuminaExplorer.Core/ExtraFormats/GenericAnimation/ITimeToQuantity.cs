@@ -1,12 +1,12 @@
 ﻿using System.Collections.Generic;
 
-namespace LuminaExplorer.Core.ExtraFormats.GenericAnimation; 
+namespace LuminaExplorer.Core.ExtraFormats.GenericAnimation;
 
 public interface ITimeToQuantity {
     bool IsEmpty { get; }
-    
+
     bool IsStatic { get; }
-    
+
     float Duration { get; }
 
     /// <summary>

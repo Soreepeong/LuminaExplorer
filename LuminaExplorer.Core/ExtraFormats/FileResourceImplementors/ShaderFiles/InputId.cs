@@ -1,4 +1,4 @@
-﻿namespace LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles; 
+﻿namespace LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 
 public enum InputId : uint {
     // From characters.shpk
@@ -29,7 +29,7 @@ public enum InputId : uint {
     DecalColor = 0x5B0F708Cu,
     SamplerDecal = 0x0237CB94u,
     LightDirection = 0xEF4E7491u,
-    
+
     // TODO: dig into shpk files
     BackgroundInstanceData = 0xEC4CCAA5u,
     InstancingData = 0xC7DB2357u,

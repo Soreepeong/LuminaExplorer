@@ -3,18 +3,24 @@
 namespace LuminaExplorer.Core.ExtraFormats.GltfInterop.Models;
 
 public class GltfMaterialPbrMetallicRoughness : BaseGltfObject {
-    [JsonProperty("baseColorFactor", NullValueHandling = NullValueHandling.Ignore,
+    [JsonProperty(
+        "baseColorFactor",
+        NullValueHandling = NullValueHandling.Ignore,
         DefaultValueHandling = DefaultValueHandling.Ignore)]
-    public float[]? BaseColorFactor = {1f, 1f, 1f, 1f};
+    public float[]? BaseColorFactor = [1f, 1f, 1f, 1f];
 
     [JsonProperty("baseColorTexture", NullValueHandling = NullValueHandling.Ignore)]
     public GltfTextureInfo? BaseColorTexture;
 
-    [JsonProperty("metallicFactor", NullValueHandling = NullValueHandling.Ignore,
+    [JsonProperty(
+        "metallicFactor",
+        NullValueHandling = NullValueHandling.Ignore,
         DefaultValueHandling = DefaultValueHandling.Ignore)]
     public float? MetallicFactor = 1f;
 
-    [JsonProperty("roughnessFactor", NullValueHandling = NullValueHandling.Ignore,
+    [JsonProperty(
+        "roughnessFactor",
+        NullValueHandling = NullValueHandling.Ignore,
         DefaultValueHandling = DefaultValueHandling.Ignore)]
     public float? RoughnessFactor = 1f;
 

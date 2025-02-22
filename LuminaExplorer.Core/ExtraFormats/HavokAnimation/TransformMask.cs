@@ -9,25 +9,26 @@ public class TransformMask {
     public QuaternionType Rotation;
     public VectorType Scale;
 
-    public TransformMask(BinaryReader reader) {
-        reader.ReadInto(out Quantization);
-        reader.ReadInto(out Translation);
-        reader.ReadInto(out Rotation);
-        reader.ReadInto(out Scale);
+    public TransformMask(BinaryReader reader)
+    {
+        reader.ReadInto(out this.Quantization);
+        reader.ReadInto(out this.Translation);
+        reader.ReadInto(out this.Rotation);
+        reader.ReadInto(out this.Scale);
     }
 
     public ScalarQuantization TranslationQuantization {
-        get => (ScalarQuantization) (Quantization & 0b11);
-        set => Quantization = (byte) ((Quantization & 0b11111100) | (int) value);
+        get => (ScalarQuantization) (this.Quantization & 0b11);
+        set => this.Quantization = (byte) ((this.Quantization & 0b11111100) | (int) value);
     }
 
     public QuaternionQuantization RotationQuantization {
-        get => (QuaternionQuantization) ((Quantization >> 2) & 0b1111);
-        set => Quantization = (byte) ((Quantization & 0b11000011) | ((int) value << 2));
+        get => (QuaternionQuantization) ((this.Quantization >> 2) & 0b1111);
+        set => this.Quantization = (byte) ((this.Quantization & 0b11000011) | ((int) value << 2));
     }
 
     public ScalarQuantization ScaleQuantization {
-        get => (ScalarQuantization) ((Quantization >> 6) & 0b11);
-        set => Quantization = (byte) ((Quantization & 0b00111111) | ((int) value << 6));
+        get => (ScalarQuantization) ((this.Quantization >> 6) & 0b11);
+        set => this.Quantization = (byte) ((this.Quantization & 0b00111111) | ((int) value << 6));
     }
 }

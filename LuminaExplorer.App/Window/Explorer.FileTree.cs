@@ -16,66 +16,70 @@ public partial class Explorer {
 
         private IVirtualFileSystem? _vfs;
 
-        public FileTreeHandler(Explorer explorer) {
-            _explorer = explorer;
-            _treeView = explorer.tvwFiles;
-            _treeView.ImageList = new();
-            _treeView.ImageList.ColorDepth = ColorDepth.Depth32Bit;
-            _treeView.ImageList.ImageSize = new(16, 16);
+        public FileTreeHandler(Explorer explorer)
+        {
+            this._explorer = explorer;
+            this._treeView = explorer.tvwFiles;
+            this._treeView.ImageList = new();
+            this._treeView.ImageList.ColorDepth = ColorDepth.Depth32Bit;
+            this._treeView.ImageList.ImageSize = new(16, 16);
             using (var icon = UiUtils.ExtractPeIcon("shell32.dll", 4, false)!)
-                _treeView.ImageList.Images.Add(icon);
-            _treeView.AfterExpand += AfterExpand;
-            _treeView.AfterSelect += AfterSelect;
+                this._treeView.ImageList.Images.Add(icon);
+            this._treeView.AfterExpand += this.AfterExpand;
+            this._treeView.AfterSelect += this.AfterSelect;
 
-            _vfs = _explorer._vfs;
-            if (_vfs is not null) {
-                _treeView.Nodes.Add(new FolderTreeNode(_vfs));
-                _treeView.Nodes[0].Expand();
-                _treeView.SelectedNode = _treeView.Nodes[0];
+            this._vfs = this._explorer._vfs;
+            if (this._vfs is not null) {
+                this._treeView.Nodes.Add(new FolderTreeNode(this._vfs));
+                this._treeView.Nodes[0].Expand();
+                this._treeView.SelectedNode = this._treeView.Nodes[0];
 
-                _vfs.FolderChanged += IVirtualFolderChanged;
+                this._vfs.FolderChanged += this.IVirtualFolderChanged;
             }
         }
 
-        public void Dispose() {
-            Vfs = null;
+        public void Dispose()
+        {
+            this.Vfs = null;
 
-            _treeView.AfterExpand -= AfterExpand;
-            _treeView.AfterSelect -= AfterSelect;
+            this._treeView.AfterExpand -= this.AfterExpand;
+            this._treeView.AfterSelect -= this.AfterSelect;
         }
 
         public IVirtualFileSystem? Vfs {
-            get => _vfs;
+            get => this._vfs;
             set {
-                if (_vfs == value)
+                if (this._vfs == value)
                     return;
 
-                if (_vfs is not null) {
-                    _vfs.FolderChanged -= IVirtualFolderChanged;
-                    _treeView.Nodes.Clear();
+                if (this._vfs is not null) {
+                    this._vfs.FolderChanged -= this.IVirtualFolderChanged;
+                    this._treeView.Nodes.Clear();
                 }
 
-                _vfs = value;
+                this._vfs = value;
 
-                if (_vfs is not null) {
-                    _treeView.Nodes.Add(new FolderTreeNode(_vfs));
-                    _treeView.Nodes[0].Expand();
-                    _treeView.SelectedNode = _treeView.Nodes[0];
+                if (this._vfs is not null) {
+                    this._treeView.Nodes.Add(new FolderTreeNode(this._vfs));
+                    this._treeView.Nodes[0].Expand();
+                    this._treeView.SelectedNode = this._treeView.Nodes[0];
 
-                    _vfs.FolderChanged += IVirtualFolderChanged;
+                    this._vfs.FolderChanged += this.IVirtualFolderChanged;
                 }
             }
         }
 
-        private void IVirtualFolderChanged(IVirtualFolder changedFolder,
-            IVirtualFolder[]? previousPathFromRoot) {
-            if (_vfs is not { } tree)
+        private void IVirtualFolderChanged(
+            IVirtualFolder changedFolder,
+            IVirtualFolder[]? previousPathFromRoot)
+        {
+            if (this._vfs is not { } tree)
                 return;
 
             if (previousPathFromRoot is null)
                 return;
 
-            if (_treeView.Nodes[0] is not FolderTreeNode node)
+            if (this._treeView.Nodes[0] is not FolderTreeNode node)
                 return;
 
             foreach (var folder in previousPathFromRoot.Skip(1)) {
@@ -90,7 +94,7 @@ public partial class Explorer {
             node.Remove();
             // TODO: does above work, or node.Parent.Nodes.Remove must be used?
 
-            if (_treeView.Nodes[0] is not FolderTreeNode newParentNode)
+            if (this._treeView.Nodes[0] is not FolderTreeNode newParentNode)
                 return;
 
             foreach (var folder in tree.GetTreeFromRoot(changedFolder).Skip(1)) {
@@ -105,26 +109,28 @@ public partial class Explorer {
             }
         }
 
-        private void AfterExpand(object? sender, TreeViewEventArgs e) {
-            if (e.Node is FolderTreeNode ln)
-                _treeView_PostProcessFolderTreeNodeExpansion(ln);
+        private void AfterExpand(object? sender, TreeViewEventArgs e)
+        {
+            if (e.Node is FolderTreeNode ln) this._treeView_PostProcessFolderTreeNodeExpansion(ln);
         }
 
-        private void AfterSelect(object? sender, TreeViewEventArgs e) {
-            if (e.Node is FolderTreeNode node)
-                _explorer._navigationHandler?.NavigateTo(node.Folder, true);
+        private void AfterSelect(object? sender, TreeViewEventArgs e)
+        {
+            if (e.Node is FolderTreeNode node) this._explorer._navigationHandler?.NavigateTo(node.Folder, true);
         }
 
-        public Task<FolderTreeNode> ExpandTreeTo(params string[] pathComponents) {
-            if (_vfs is null)
+        public Task<FolderTreeNode> ExpandTreeTo(params string[] pathComponents)
+        {
+            if (this._vfs is null)
                 throw new InvalidOperationException();
-            return ExpandTreeToImpl(
-                (FolderTreeNode) _treeView.Nodes[0],
+            return this.ExpandTreeToImpl(
+                (FolderTreeNode) this._treeView.Nodes[0],
                 Path.Join(pathComponents).Replace('\\', '/').TrimStart('/').Split('/'),
                 0);
         }
 
-        private Task<FolderTreeNode> ExpandTreeToImpl(FolderTreeNode node, string[] parts, int partIndex) {
+        private Task<FolderTreeNode> ExpandTreeToImpl(FolderTreeNode node, string[] parts, int partIndex)
+        {
             for (; partIndex < parts.Length; partIndex++) {
                 var name = parts[partIndex] + "/";
                 if (name == "./")
@@ -136,53 +142,63 @@ public partial class Explorer {
                 }
 
                 node.Expand();
-                return _treeView_PostProcessFolderTreeNodeExpansion(node)
-                    .ContinueWith(_ => {
-                        var i = 0;
-                        for (; i < node.Nodes.Count; i++) {
-                            if (node.Nodes[i] is FolderTreeNode subnode &&
-                                string.Compare(subnode.Folder.Name, name, StringComparison.InvariantCultureIgnoreCase)
-                                ==
-                                0) {
-                                return ExpandTreeToImpl(subnode, parts, partIndex + 1);
+                return this._treeView_PostProcessFolderTreeNodeExpansion(node)
+                    .ContinueWith(
+                        _ => {
+                            var i = 0;
+                            for (; i < node.Nodes.Count; i++) {
+                                if (node.Nodes[i] is FolderTreeNode subnode &&
+                                    string.Compare(
+                                        subnode.Folder.Name,
+                                        name,
+                                        StringComparison.InvariantCultureIgnoreCase)
+                                    ==
+                                    0) {
+                                    return this.ExpandTreeToImpl(subnode, parts, partIndex + 1);
+                                }
                             }
-                        }
 
-                        _explorer._navigationHandler?.NavigateTo(node.Folder, true);
-                        return Task.FromResult(node);
-                    }, default,
-                    TaskContinuationOptions.DenyChildAttach,
-                    TaskScheduler.FromCurrentSynchronizationContext()).Unwrap();
+                            this._explorer._navigationHandler?.NavigateTo(node.Folder, true);
+                            return Task.FromResult(node);
+                        },
+                        default,
+                        TaskContinuationOptions.DenyChildAttach,
+                        TaskScheduler.FromCurrentSynchronizationContext()).Unwrap();
             }
 
-            _explorer._navigationHandler?.NavigateTo(node.Folder, true);
+            this._explorer._navigationHandler?.NavigateTo(node.Folder, true);
             return Task.FromResult(node);
         }
 
-        private Task _treeView_PostProcessFolderTreeNodeExpansion(FolderTreeNode ln) {
-            if (_vfs is not { } tree)
+        private Task _treeView_PostProcessFolderTreeNodeExpansion(FolderTreeNode ln)
+        {
+            if (this._vfs is not { } tree)
                 return Task.CompletedTask;
             var resolvedFolder = tree.AsFoldersResolved(ln.Folder);
 
             if (ln.CallerMustPopulate()) {
                 resolvedFolder = resolvedFolder
-                    .ContinueWith(f => {
-                            if (_vfs is not { } tree2)
+                    .ContinueWith(
+                        f => {
+                            if (this._vfs is not { } tree2)
                                 return f.Result;
                             ln.Nodes.Clear();
-                            ln.Nodes.AddRange(tree2.GetFolders(ln.Folder)
-                                .OrderBy(x => x.Name.ToLowerInvariant())
-                                .Select(x => (TreeNode) new FolderTreeNode(tree2, x))
-                                .ToArray());
+                            ln.Nodes.AddRange(
+                                tree2.GetFolders(ln.Folder)
+                                    .OrderBy(x => x.Name.ToLowerInvariant())
+                                    .Select(x => (TreeNode) new FolderTreeNode(tree2, x))
+                                    .ToArray());
 
                             return f.Result;
-                        }, default,
+                        },
+                        default,
                         TaskContinuationOptions.DenyChildAttach,
                         TaskScheduler.FromCurrentSynchronizationContext());
             }
 
             return resolvedFolder
-                .ContinueWith(_ => {
+                .ContinueWith(
+                    _ => {
                         if (tree.GetKnownFolderCount(ln.Folder) == 1) {
                             foreach (var n in ln.Nodes)
                                 ((TreeNode) n).Expand();
@@ -198,21 +214,24 @@ public partial class Explorer {
 
             private bool _populateTriggered;
 
-            public FolderTreeNode(IVirtualFileSystem tree) : this(tree.RootFolder, @"(root)", true) { }
+            public FolderTreeNode(IVirtualFileSystem tree) : this(tree.RootFolder, @"(root)", true)
+            { }
 
             public FolderTreeNode(IVirtualFileSystem tree, IVirtualFolder folder)
-                : this(folder, folder.Name.Trim('/'), !tree.HasNoSubfolder(folder)) { }
+                : this(folder, folder.Name.Trim('/'), !tree.HasNoSubfolder(folder))
+            { }
 
-            private FolderTreeNode(IVirtualFolder folder, string displayName, bool mayHaveChildren) {
-                Text = displayName;
-                Folder = folder;
-                SelectedImageIndex = ImageIndex = 0;
-                if (mayHaveChildren)
-                    Nodes.Add(new TreeNode(@"Expanding..."));
+            private FolderTreeNode(IVirtualFolder folder, string displayName, bool mayHaveChildren)
+            {
+                this.Text = displayName;
+                this.Folder = folder;
+                this.SelectedImageIndex = this.ImageIndex = 0;
+                if (mayHaveChildren) this.Nodes.Add(new TreeNode(@"Expanding..."));
             }
 
-            public bool TryFindChildNode(IVirtualFolder folder, [MaybeNullWhen(false)] out FolderTreeNode childNode) {
-                foreach (var node in Nodes) {
+            public bool TryFindChildNode(IVirtualFolder folder, [MaybeNullWhen(false)] out FolderTreeNode childNode)
+            {
+                foreach (var node in this.Nodes) {
                     if (node is not FolderTreeNode n)
                         continue;
 
@@ -226,11 +245,12 @@ public partial class Explorer {
                 return false;
             }
 
-            public bool CallerMustPopulate() {
-                if (_populateTriggered)
+            public bool CallerMustPopulate()
+            {
+                if (this._populateTriggered)
                     return false;
 
-                _populateTriggered = true;
+                this._populateTriggered = true;
                 return true;
             }
         }

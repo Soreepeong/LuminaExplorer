@@ -10,14 +10,15 @@ public class GridLayoutCell {
     public readonly int Width;
     public readonly int Height;
 
-    public GridLayoutCell(int cellIndex, int imageIndex, int mipmap, int slice, int width, int height) {
-        CellIndex = cellIndex;
-        ImageIndex = imageIndex;
-        Mipmap = mipmap;
-        Slice = slice;
-        Width = width;
-        Height = height;
+    public GridLayoutCell(int cellIndex, int imageIndex, int mipmap, int slice, int width, int height)
+    {
+        this.CellIndex = cellIndex;
+        this.ImageIndex = imageIndex;
+        this.Mipmap = mipmap;
+        this.Slice = slice;
+        this.Width = width;
+        this.Height = height;
     }
 
-    public Size Size => new(Width, Height);
+    public Size Size => new(this.Width, this.Height);
 }

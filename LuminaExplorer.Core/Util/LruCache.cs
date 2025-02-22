@@ -15,25 +15,26 @@ public sealed class LruCache<TKey, TValue> : IDisposable, IEnumerable<LruCache<T
     private int _capacity;
     private readonly bool _disposeOnAnyThread;
 
-    public LruCache(int capacity, bool disposeOnAnyThread) {
-        _capacity = capacity;
-        _disposeOnAnyThread = disposeOnAnyThread;
+    public LruCache(int capacity, bool disposeOnAnyThread)
+    {
+        this._capacity = capacity;
+        this._disposeOnAnyThread = disposeOnAnyThread;
     }
 
     public int Capacity {
-        get => _capacity;
+        get => this._capacity;
         set {
-            _capacity = value;
-            while (_entryLookup.Count >= _capacity)
-                RemoveFirst();
+            this._capacity = value;
+            while (this._entryLookup.Count >= this._capacity) this.RemoveFirst();
         }
     }
 
-    public bool TryGet(TKey key, [MaybeNullWhen(false)] out TValue value) {
-        if (_entryLookup.TryGetValue(key, out var node)) {
+    public bool TryGet(TKey key, [MaybeNullWhen(false)] out TValue value)
+    {
+        if (this._entryLookup.TryGetValue(key, out var node)) {
             value = node.Value.Value;
-            _entries.Remove(node);
-            _entries.AddLast(node);
+            this._entries.Remove(node);
+            this._entries.AddLast(node);
             return true;
         }
 
@@ -41,45 +42,48 @@ public sealed class LruCache<TKey, TValue> : IDisposable, IEnumerable<LruCache<T
         return false;
     }
 
-    public void Add(TKey key, TValue val) {
-        if (_entryLookup.TryGetValue(key, out var existingNode)) {
-            _entries.Remove(existingNode);
+    public void Add(TKey key, TValue val)
+    {
+        if (this._entryLookup.TryGetValue(key, out var existingNode)) {
+            this._entries.Remove(existingNode);
             if (!EqualityComparer<TValue>.Default.Equals(existingNode.Value.Value, val)) {
                 if (existingNode.Value.Value is IDisposable disposable)
                     disposable.Dispose();
             }
-        } else if (_entryLookup.Count >= _capacity)
-            RemoveFirst();
+        } else if (this._entryLookup.Count >= this._capacity) this.RemoveFirst();
 
         var cacheItem = new LruCacheItem(key, val);
         var node = new LinkedListNode<LruCacheItem>(cacheItem);
-        _entries.AddLast(node);
-        _entryLookup[key] = node;
+        this._entries.AddLast(node);
+        this._entryLookup[key] = node;
     }
 
-    public void Flush() {
-        _entryLookup.Clear();
-        if (_disposeOnAnyThread) {
-            var entries = _entries;
-            Task.Run(() => {
-                foreach (var e in entries) {
-                    if (e.Value is IDisposable disposable)
-                        disposable.Dispose();
-                }
-            });
-            _entries = new();
+    public void Flush()
+    {
+        this._entryLookup.Clear();
+        if (this._disposeOnAnyThread) {
+            var entries = this._entries;
+            Task.Run(
+                () => {
+                    foreach (var e in entries) {
+                        if (e.Value is IDisposable disposable)
+                            disposable.Dispose();
+                    }
+                });
+            this._entries = new();
         } else {
-            foreach (var e in _entries)
+            foreach (var e in this._entries)
                 if (e.Value is IDisposable disposable)
                     disposable.Dispose();
-            _entries.Clear();
+            this._entries.Clear();
         }
     }
 
-    private void RemoveFirst() {
-        var node = _entries.First!;
-        _entries.RemoveFirst();
-        _entryLookup.Remove(node.Value.Key);
+    private void RemoveFirst()
+    {
+        var node = this._entries.First!;
+        this._entries.RemoveFirst();
+        this._entryLookup.Remove(node.Value.Key);
         if (node.Value.Value is IDisposable disposable)
             disposable.Dispose();
     }
@@ -88,15 +92,16 @@ public sealed class LruCache<TKey, TValue> : IDisposable, IEnumerable<LruCache<T
         public readonly TKey Key;
         public readonly TValue Value;
 
-        public LruCacheItem(TKey k, TValue v) {
-            Key = k;
-            Value = v;
+        public LruCacheItem(TKey k, TValue v)
+        {
+            this.Key = k;
+            this.Value = v;
         }
     }
 
-    public void Dispose() => Flush();
+    public void Dispose() => this.Flush();
 
-    public IEnumerator<LruCacheItem> GetEnumerator() => _entries.GetEnumerator();
+    public IEnumerator<LruCacheItem> GetEnumerator() => this._entries.GetEnumerator();
 
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator() => this.GetEnumerator();
 }

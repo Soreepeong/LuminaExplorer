@@ -4,7 +4,8 @@ namespace LuminaExplorer.Core.VirtualFileSystem.Sqpack.SqpackFileStream;
 
 public class EmptySqpackFileStream : BaseSqpackFileStream {
     public EmptySqpackFileStream(PlatformId platformId)
-        : base(platformId, 0) { }
+        : base(platformId, 0)
+    { }
 
     public override int Read(byte[] buffer, int offset, int count) => 0;
 

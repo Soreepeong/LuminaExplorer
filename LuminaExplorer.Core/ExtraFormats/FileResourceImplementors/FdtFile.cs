@@ -34,15 +34,17 @@ public class FdtFile : FileResource {
     /// </summary>
     public KerningTableEntry[] Distances = null!;
 
-    public override void LoadFile() {
-        FileHeader = Reader.ReadStructure<FdtHeader>();
+    public override void LoadFile()
+    {
+        this.FileHeader = this.Reader.ReadStructure<FdtHeader>();
 
-        FontHeader = Reader.WithSeek(FileHeader.FontTableHeaderOffset).ReadStructure<FontTableHeader>();
-        Glyphs = Reader.ReadStructuresAsArray<FontTableEntry>(FontHeader.FontTableEntryCount);
+        this.FontHeader = this.Reader.WithSeek(this.FileHeader.FontTableHeaderOffset).ReadStructure<FontTableHeader>();
+        this.Glyphs = this.Reader.ReadStructuresAsArray<FontTableEntry>(this.FontHeader.FontTableEntryCount);
 
-        KerningHeader = Reader.WithSeek(FileHeader.KerningTableHeaderOffset).ReadStructure<KerningTableHeader>();
-        Distances = Reader.ReadStructuresAsArray<KerningTableEntry>(
-            Math.Min(FontHeader.KerningTableEntryCount, KerningHeader.Count));
+        this.KerningHeader = this.Reader.WithSeek(this.FileHeader.KerningTableHeaderOffset)
+            .ReadStructure<KerningTableHeader>();
+        this.Distances = this.Reader.ReadStructuresAsArray<KerningTableEntry>(
+            Math.Min(this.FontHeader.KerningTableEntryCount, this.KerningHeader.Count));
     }
 
     /// <summary>
@@ -120,9 +122,10 @@ public class FdtFile : FileResource {
         /// <summary>
         /// Gets descent of the font defined from this file, in pixels unit.
         /// </summary>
-        public int Descent => LineHeight - Ascent;
+        public int Descent => this.LineHeight - this.Ascent;
 
-        public override string ToString() => $"{Size}pt ({FontTableEntryCount}, {KerningTableEntryCount})";
+        public override string ToString() =>
+            $"{this.Size}pt ({this.FontTableEntryCount}, {this.KerningTableEntryCount})";
     }
 
     /// <summary>
@@ -133,7 +136,7 @@ public class FdtFile : FileResource {
         /// <summary>
         /// Mapping of texture channel index to byte index.
         /// </summary>
-        public static readonly int[] TextureChannelOrder = {2, 1, 0, 3};
+        public static readonly int[] TextureChannelOrder = [2, 1, 0, 3];
 
         /// <summary>
         /// Integer representation of a Unicode character in UTF-8 in reverse order, read in little endian.
@@ -183,56 +186,57 @@ public class FdtFile : FileResource {
         /// <summary>
         /// Gets the index of the file among all the backing texture files.
         /// </summary>
-        public int TextureFileIndex => TextureIndex / 4;
+        public int TextureFileIndex => this.TextureIndex / 4;
 
         /// <summary>
         /// Gets the channel index in the backing texture file.
         /// </summary>
-        public int TextureChannelIndex => TextureIndex % 4;
+        public int TextureChannelIndex => this.TextureIndex % 4;
 
         /// <summary>
         /// Gets the byte index in a multichannel pixel corresponding to the channel.
         /// </summary>
-        public int TextureChannelByteIndex => TextureChannelOrder[TextureChannelIndex];
+        public int TextureChannelByteIndex => TextureChannelOrder[this.TextureChannelIndex];
 
         /// <summary>
         /// Gets the advance width of this character.
         /// </summary>
-        public int AdvanceWidth => BoundingWidth + NextOffsetX;
+        public int AdvanceWidth => this.BoundingWidth + this.NextOffsetX;
 
         /// <summary>
         /// Gets the Unicode codepoint of the character for this entry in int type.
         /// </summary>
-        public int CharInt => Utf8Uint32ToCodePoint(CharUtf8);
+        public int CharInt => Utf8Uint32ToCodePoint(this.CharUtf8);
 
         /// <summary>
         /// Gets the Unicode codepoint of the character for this entry in char type.
         /// </summary>
-        public char Char => (char) Utf8Uint32ToCodePoint(CharUtf8);
+        public char Char => (char) Utf8Uint32ToCodePoint(this.CharUtf8);
 
         /// <inheritdoc/>
-        public int CompareTo(FontTableEntry other) {
-            return CharUtf8 - other.CharUtf8;
+        public int CompareTo(FontTableEntry other)
+        {
+            return this.CharUtf8 - other.CharUtf8;
         }
 
         public string StringFromUtf8 {
             get {
-                var c = CharInt;
+                var c = this.CharInt;
                 return c == 0 ? string.Empty : char.ConvertFromUtf32(c);
             }
         }
 
         public string StringFromSjis {
             get {
-                if (CharSjis == 0)
+                if (this.CharSjis == 0)
                     return string.Empty;
                 Span<byte> bytes = stackalloc byte[2];
                 var len = 1;
-                if (CharSjis < 0x100)
-                    bytes[0] = unchecked((byte) CharSjis);
+                if (this.CharSjis < 0x100)
+                    bytes[0] = unchecked((byte) this.CharSjis);
                 else {
-                    bytes[0] = unchecked((byte) (CharSjis >> 8));
-                    bytes[1] = unchecked((byte) (CharSjis >> 0));
+                    bytes[0] = unchecked((byte) (this.CharSjis >> 8));
+                    bytes[1] = unchecked((byte) (this.CharSjis >> 0));
                     len = 2;
                 }
 
@@ -240,20 +244,23 @@ public class FdtFile : FileResource {
             }
         }
 
-        public override string ToString() {
+        public override string ToString()
+        {
             var sb = new StringBuilder();
-            sb.Append(CharInt switch {
-                var r and <= 0xFF => $"\\x{r:X02}",
-                var r and <= 0xFFFF => $"\\u{r:X04}",
-                var r => $"\\U{r:X08}",
-            });
-            var u8s = StringFromUtf8;
-            var sjs = StringFromSjis;
+            sb.Append(
+                this.CharInt switch {
+                    var r and <= 0xFF => $"\\x{r:X02}",
+                    var r and <= 0xFFFF => $"\\u{r:X04}",
+                    var r => $"\\U{r:X08}",
+                });
+            var u8s = this.StringFromUtf8;
+            var sjs = this.StringFromSjis;
             if (u8s == sjs)
                 sb.Append($" {u8s}");
             else
                 sb.Append($" {u8s}({sjs})");
-            sb.Append($" ({BoundingWidth}x{BoundingHeight}) @{TextureIndex}:{TextureOffsetX}:{TextureOffsetY}");
+            sb.Append(
+                $" ({this.BoundingWidth}x{this.BoundingHeight}) @{this.TextureIndex}:{this.TextureOffsetX}:{this.TextureOffsetY}");
             return sb.ToString();
         }
     }
@@ -275,7 +282,7 @@ public class FdtFile : FileResource {
         public uint Padding1;
         public uint Padding2;
 
-        public override string ToString() => $"K={Count}";
+        public override string ToString() => $"K={this.Count}";
     }
 
     /// <summary>
@@ -311,36 +318,38 @@ public class FdtFile : FileResource {
         /// <summary>
         /// Gets the Unicode codepoint of the character for this entry in int type.
         /// </summary>
-        public int LeftInt => Utf8Uint32ToCodePoint(LeftUtf8);
+        public int LeftInt => Utf8Uint32ToCodePoint(this.LeftUtf8);
 
         /// <summary>
         /// Gets the Unicode codepoint of the character for this entry in char type.
         /// </summary>
-        public char Left => (char) Utf8Uint32ToCodePoint(LeftUtf8);
+        public char Left => (char) Utf8Uint32ToCodePoint(this.LeftUtf8);
 
         /// <summary>
         /// Gets the Unicode codepoint of the character for this entry in int type.
         /// </summary>
-        public int RightInt => Utf8Uint32ToCodePoint(RightUtf8);
+        public int RightInt => Utf8Uint32ToCodePoint(this.RightUtf8);
 
         /// <summary>
         /// Gets the Unicode codepoint of the character for this entry in char type.
         /// </summary>
-        public char Right => (char) Utf8Uint32ToCodePoint(RightUtf8);
+        public char Right => (char) Utf8Uint32ToCodePoint(this.RightUtf8);
 
         /// <inheritdoc/>
-        public int CompareTo(KerningTableEntry other) {
-            if (LeftUtf8 == other.LeftUtf8)
-                return RightUtf8 - other.RightUtf8;
+        public int CompareTo(KerningTableEntry other)
+        {
+            if (this.LeftUtf8 == other.LeftUtf8)
+                return this.RightUtf8 - other.RightUtf8;
             else
-                return LeftUtf8 - other.LeftUtf8;
+                return this.LeftUtf8 - other.LeftUtf8;
         }
 
-        public string StringFromLeftUtf8 => char.ConvertFromUtf32(LeftUtf8);
+        public string StringFromLeftUtf8 => char.ConvertFromUtf32(this.LeftUtf8);
 
-        public string StringFromRightUtf8 => char.ConvertFromUtf32(RightUtf8);
+        public string StringFromRightUtf8 => char.ConvertFromUtf32(this.RightUtf8);
 
-        public override string ToString() => $"K[{StringFromLeftUtf8}, {StringFromRightUtf8}] = {RightOffset}";
+        public override string ToString() =>
+            $"K[{this.StringFromLeftUtf8}, {this.StringFromRightUtf8}] = {this.RightOffset}";
     }
 
     /// <summary>
@@ -348,11 +357,12 @@ public class FdtFile : FileResource {
     /// </summary>
     /// <param name="codepoint">Unicode codepoint (UTF-32 value).</param>
     /// <returns>Corresponding FontTableEntry, or null if not found.</returns>
-    public FontTableEntry? FindGlyph(int codepoint) {
-        var i = Array.BinarySearch(Glyphs, new() {CharUtf8 = CodePointToUtf8Int32(codepoint)});
-        if (i < 0 || i == Glyphs.Length)
+    public FontTableEntry? FindGlyph(int codepoint)
+    {
+        var i = Array.BinarySearch(this.Glyphs, new() { CharUtf8 = CodePointToUtf8Int32(codepoint) });
+        if (i < 0 || i == this.Glyphs.Length)
             return null;
-        return Glyphs[i];
+        return this.Glyphs[i];
     }
 
     /// <summary>
@@ -360,11 +370,12 @@ public class FdtFile : FileResource {
     /// </summary>
     /// <param name="codepoint">Unicode codepoint (UTF-32 value).</param>
     /// <returns>Corresponding FontTableEntry, or that of a fallback character.</returns>
-    public FontTableEntry GetGlyph(int codepoint) {
-        return (FindGlyph(codepoint)
-            ?? FindGlyph('〓')
-            ?? FindGlyph('?')
-            ?? FindGlyph('='))!.Value;
+    public FontTableEntry GetGlyph(int codepoint)
+    {
+        return (this.FindGlyph(codepoint)
+            ?? this.FindGlyph('〓')
+            ?? this.FindGlyph('?')
+            ?? this.FindGlyph('='))!.Value;
     }
 
     /// <summary>
@@ -373,17 +384,21 @@ public class FdtFile : FileResource {
     /// <param name="codepoint1">Left character.</param>
     /// <param name="codepoint2">Right character.</param>
     /// <returns>Supposed distance adjustment between given characters.</returns>
-    public int GetDistance(int codepoint1, int codepoint2) {
-        var i = Array.BinarySearch(Distances, new() {
-            LeftUtf8 = CodePointToUtf8Int32(codepoint1),
-            RightUtf8 = CodePointToUtf8Int32(codepoint2),
-        });
-        if (i < 0 || i == Distances.Length)
+    public int GetDistance(int codepoint1, int codepoint2)
+    {
+        var i = Array.BinarySearch(
+            this.Distances,
+            new() {
+                LeftUtf8 = CodePointToUtf8Int32(codepoint1),
+                RightUtf8 = CodePointToUtf8Int32(codepoint2),
+            });
+        if (i < 0 || i == this.Distances.Length)
             return 0;
-        return Distances[i].RightOffset;
+        return this.Distances[i].RightOffset;
     }
 
-    public static int CodePointToUtf8Int32(int codepoint) {
+    public static int CodePointToUtf8Int32(int codepoint)
+    {
         return codepoint switch {
             <= 0x7F => codepoint,
             <= 0x7FF =>
@@ -398,11 +413,12 @@ public class FdtFile : FileResource {
                 ((0x80 | ((codepoint >> 12) & 0x3F)) << 16) |
                 ((0x80 | ((codepoint >> 6) & 0x3F)) << 8) |
                 ((0x80 | ((codepoint >> 0) & 0x3F)) << 0),
-            _ => 0xFFFE
+            _ => 0xFFFE,
         };
     }
 
-    public static int Utf8Uint32ToCodePoint(int n) {
+    public static int Utf8Uint32ToCodePoint(int n)
+    {
         if ((n & 0xFFFFFF80) == 0)
             return n & 0x7F;
 

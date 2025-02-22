@@ -10,24 +10,28 @@ public class ValueArray : IValue {
     public readonly FieldType InnerType;
     public readonly IList<IValue?> Values;
 
-    public ValueArray(IList<IValue?> values, FieldType innerType) {
-        Values = values;
-        InnerType = innerType;
+    public ValueArray(IList<IValue?> values, FieldType innerType)
+    {
+        this.Values = values;
+        this.InnerType = innerType;
     }
 
-    public override string ToString() => Values.Count switch {
-        0 => "ValueArray(empty)",
-        1 => "ValueArray(1 item)",
-        _ => $"ValueArray({Values.Count} items)",
-    };
+    public override string ToString() =>
+        this.Values.Count switch {
+            0 => "ValueArray(empty)",
+            1 => "ValueArray(1 item)",
+            _ => $"ValueArray({this.Values.Count} items)",
+        };
 
-    internal static ValueArray Read(Parser parser, FieldType innerType) {
+    internal static ValueArray Read(Parser parser, FieldType innerType)
+    {
         if (innerType is null)
             throw new InvalidDataException("Array cannot have null innerType");
         return IValue.ReadVector(parser, innerType, parser.ReadInt());
     }
 
-    internal static ValueArray Read(Parser parser, FieldType innerType, int count) {
+    internal static ValueArray Read(Parser parser, FieldType innerType, int count)
+    {
         if (innerType is null)
             throw new InvalidDataException("Array cannot have null innerType");
         return new(
@@ -37,18 +41,27 @@ public class ValueArray : IValue {
             innerType);
     }
 
-    internal static ValueArray ReadVector(Parser parser, FieldType innerType, int innerCount,
-        FieldType outerType, int outerCount) {
+    internal static ValueArray ReadVector(
+        Parser parser,
+        FieldType innerType,
+        int innerCount,
+        FieldType outerType,
+        int outerCount)
+    {
         if (innerType is null)
             throw new InvalidDataException("Array cannot have null innerType");
         if (innerCount == 4)
             innerCount = parser.ReadInt();
 
-        return new(Enumerable.Range(0, outerCount)
-            .Select(_ => (IValue?) new ValueArray(
-                Enumerable.Range(0, innerCount)
-                    .Select(_ => IValue.Read(parser, innerType))
-                    .ToImmutableList(), innerType))
-            .ToImmutableList(), outerType);
+        return new(
+            Enumerable.Range(0, outerCount)
+                .Select(
+                    _ => (IValue?) new ValueArray(
+                        Enumerable.Range(0, innerCount)
+                            .Select(_ => IValue.Read(parser, innerType))
+                            .ToImmutableList(),
+                        innerType))
+                .ToImmutableList(),
+            outerType);
     }
 }

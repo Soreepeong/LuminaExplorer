@@ -2,279 +2,300 @@
 using System.Collections.Generic;
 using System.Linq;
 using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface.PixelFormats.Channels;
-using WicNet;
+using TerraFX.Interop.DirectX;
+using TerraFX.Interop.Windows;
 using ValueType = LuminaExplorer.Core.ExtraFormats.DirectDrawSurface.PixelFormats.Channels.ValueType;
+using static TerraFX.Interop.DirectX.DXGI_FORMAT;
 
 namespace LuminaExplorer.Core.ExtraFormats.DirectDrawSurface.PixelFormats;
 
 public static class PixFmtResolver {
     public static readonly IReadOnlyDictionary<DdsFourCc, IPixFmt> FourCcToPixelFormat;
 
-    public static readonly IReadOnlyDictionary<AlphaType, IReadOnlyDictionary<DxgiFormat, IPixFmt>>
+    public static readonly IReadOnlyDictionary<AlphaType, IReadOnlyDictionary<DXGI_FORMAT, IPixFmt>>
         DxgiFormatToPixelFormat;
 
     public static readonly IReadOnlyDictionary<Guid, IPixFmt> WicToPixelFormat;
 
     // https://learn.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-resources-data-conversion
-    static PixFmtResolver() {
+    static PixFmtResolver()
+    {
         FourCcToPixelFormat = new Dictionary<DdsFourCc, IPixFmt> {
-            {DdsFourCc.Dxt1, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 1)},
-            {DdsFourCc.Dxt2, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 2)},
-            {DdsFourCc.Dxt3, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 2)},
-            {DdsFourCc.Dxt4, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 3)},
-            {DdsFourCc.Dxt5, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 3)},
-            {DdsFourCc.Bc4, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 4)},
-            {DdsFourCc.Bc4U, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 4)},
-            {DdsFourCc.Bc4S, new BcPixFmt(ValueType.Snorm, AlphaType.Straight, 4)},
-            {DdsFourCc.Bc5, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 5)},
-            {DdsFourCc.Bc5U, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 5)},
-            {DdsFourCc.Bc5S, new BcPixFmt(ValueType.Snorm, AlphaType.Straight, 5)},
+            { DdsFourCc.Dxt1, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 1) },
+            { DdsFourCc.Dxt2, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 2) },
+            { DdsFourCc.Dxt3, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 2) },
+            { DdsFourCc.Dxt4, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 3) },
+            { DdsFourCc.Dxt5, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 3) },
+            { DdsFourCc.Bc4, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 4) },
+            { DdsFourCc.Bc4U, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 4) },
+            { DdsFourCc.Bc4S, new BcPixFmt(ValueType.Snorm, AlphaType.Straight, 4) },
+            { DdsFourCc.Bc5, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 5) },
+            { DdsFourCc.Bc5U, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 5) },
+            { DdsFourCc.Bc5S, new BcPixFmt(ValueType.Snorm, AlphaType.Straight, 5) },
         };
         DxgiFormatToPixelFormat =
-            new Dictionary<AlphaType, IReadOnlyDictionary<DxgiFormat, IPixFmt>> {
+            new Dictionary<AlphaType, IReadOnlyDictionary<DXGI_FORMAT, IPixFmt>> {
                 {
-                    AlphaType.None, new Dictionary<DxgiFormat, IPixFmt> {
+                    AlphaType.None, new Dictionary<DXGI_FORMAT, IPixFmt> {
                         {
-                            DxgiFormat.R32G32B32Typeless,
+                            DXGI_FORMAT_R32G32B32_TYPELESS,
                             RgbaPixFmt.NewRgb(32, 32, 32, 0, 0, ValueType.Typeless, AlphaType.None)
                         }, {
-                            DxgiFormat.R32G32B32Float,
+                            DXGI_FORMAT_R32G32B32_FLOAT,
                             RgbaPixFmt.NewRgb(32, 32, 32, 0, 0, ValueType.Float, AlphaType.None)
+                        }, {
+                            DXGI_FORMAT_R32G32B32_UINT,
+                            RgbaPixFmt.NewRgb(32, 32, 32, 0, 0, ValueType.Uint, AlphaType.None)
+                        }, {
+                            DXGI_FORMAT_R32G32B32_SINT,
+                            RgbaPixFmt.NewRgb(32, 32, 32, 0, 0, ValueType.Sint, AlphaType.None)
                         },
-                        {DxgiFormat.R32G32B32Uint, RgbaPixFmt.NewRgb(32, 32, 32, 0, 0, ValueType.Uint, AlphaType.None)},
-                        {DxgiFormat.R32G32B32Sint, RgbaPixFmt.NewRgb(32, 32, 32, 0, 0, ValueType.Sint, AlphaType.None)},
-                        {DxgiFormat.R32G32Float, RgbaPixFmt.NewRg(32, 32, 0, 0, ValueType.Float, AlphaType.None)},
-                        {DxgiFormat.R32G32Uint, RgbaPixFmt.NewRg(32, 32, 0, 0, ValueType.Uint, AlphaType.None)},
-                        {DxgiFormat.R32G32Sint, RgbaPixFmt.NewRg(32, 32, 0, 0, ValueType.Sint, AlphaType.None)},
-                        {DxgiFormat.R16G16Typeless, RgbaPixFmt.NewRg(16, 16, 0, 0, ValueType.Typeless, AlphaType.None)},
-                        {DxgiFormat.R16G16Float, RgbaPixFmt.NewRg(16, 16, 0, 0, ValueType.Float, AlphaType.None)},
-                        {DxgiFormat.R16G16Unorm, RgbaPixFmt.NewRg(16, 16, 0, 0, ValueType.Unorm, AlphaType.None)},
-                        {DxgiFormat.R16G16Uint, RgbaPixFmt.NewRg(16, 16, 0, 0, ValueType.Uint, AlphaType.None)},
-                        {DxgiFormat.R16G16Snorm, RgbaPixFmt.NewRg(16, 16, 0, 0, ValueType.Snorm, AlphaType.None)},
-                        {DxgiFormat.R16G16Sint, RgbaPixFmt.NewRg(16, 16, 0, 0, ValueType.Sint, AlphaType.None)},
-                        {DxgiFormat.R32Typeless, RgbaPixFmt.NewR(32, 0, 0, ValueType.Typeless, AlphaType.None)},
-                        {DxgiFormat.R32Float, RgbaPixFmt.NewR(32, 0, 0, ValueType.Float, AlphaType.None)},
-                        {DxgiFormat.R32Uint, RgbaPixFmt.NewR(32, 0, 0, ValueType.Uint, AlphaType.None)},
-                        {DxgiFormat.R32Sint, RgbaPixFmt.NewR(32, 0, 0, ValueType.Sint, AlphaType.None)},
-                        {DxgiFormat.R24G8Typeless, RgbaPixFmt.NewRg(24, 8, 0, 0, ValueType.Typeless, AlphaType.None)},
-                        {DxgiFormat.R8G8Typeless, RgbaPixFmt.NewRg(8, 8, 0, 0, ValueType.Typeless, AlphaType.None)},
-                        {DxgiFormat.R8G8Unorm, RgbaPixFmt.NewRg(8, 8, 0, 0, ValueType.Unorm, AlphaType.None)},
-                        {DxgiFormat.R8G8Uint, RgbaPixFmt.NewRg(8, 8, 0, 0, ValueType.Uint, AlphaType.None)},
-                        {DxgiFormat.R8G8Snorm, RgbaPixFmt.NewRg(8, 8, 0, 0, ValueType.Snorm, AlphaType.None)},
-                        {DxgiFormat.R8G8Sint, RgbaPixFmt.NewRg(8, 8, 0, 0, ValueType.Sint, AlphaType.None)},
-                        {DxgiFormat.R16Typeless, RgbaPixFmt.NewR(16, 0, 0, ValueType.Typeless, AlphaType.None)},
-                        {DxgiFormat.R16Float, RgbaPixFmt.NewR(16, 0, 0, ValueType.Float, AlphaType.None)},
-                        {DxgiFormat.R16Unorm, RgbaPixFmt.NewR(16, 0, 0, ValueType.Unorm, AlphaType.None)},
-                        {DxgiFormat.R16Uint, RgbaPixFmt.NewR(16, 0, 0, ValueType.Uint, AlphaType.None)},
-                        {DxgiFormat.R16Snorm, RgbaPixFmt.NewR(16, 0, 0, ValueType.Snorm, AlphaType.None)},
-                        {DxgiFormat.R16Sint, RgbaPixFmt.NewR(16, 0, 0, ValueType.Sint, AlphaType.None)},
-                        {DxgiFormat.R8Typeless, RgbaPixFmt.NewR(8, 0, 0, ValueType.Typeless, AlphaType.None)},
-                        {DxgiFormat.R8Unorm, RgbaPixFmt.NewR(8, 0, 0, ValueType.Float, AlphaType.None)},
-                        {DxgiFormat.R8Uint, RgbaPixFmt.NewR(8, 0, 0, ValueType.Unorm, AlphaType.None)},
-                        {DxgiFormat.R8Snorm, RgbaPixFmt.NewR(8, 0, 0, ValueType.Uint, AlphaType.None)},
-                        {DxgiFormat.R8Sint, RgbaPixFmt.NewR(8, 0, 0, ValueType.Sint, AlphaType.None)},
-                        {DxgiFormat.B5G6R5Unorm, RgbaPixFmt.NewBgr(5, 6, 5, 0, 0, ValueType.Unorm, AlphaType.None)},
-                        {DxgiFormat.Bc1Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.None, 1)},
-                        {DxgiFormat.Bc1Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.None, 1)},
-                        {DxgiFormat.Bc1UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.None, 1)},
-                        {DxgiFormat.Bc2Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.None, 2)},
-                        {DxgiFormat.Bc2Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.None, 2)},
-                        {DxgiFormat.Bc2UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.None, 2)},
-                        {DxgiFormat.Bc3Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.None, 3)},
-                        {DxgiFormat.Bc3Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.None, 3)},
-                        {DxgiFormat.Bc3UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.None, 3)},
-                        {DxgiFormat.Bc4Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.None, 4)},
-                        {DxgiFormat.Bc4Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.None, 4)},
-                        {DxgiFormat.Bc4Snorm, new BcPixFmt(ValueType.Snorm, AlphaType.None, 4)},
-                        {DxgiFormat.Bc5Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.None, 5)},
-                        {DxgiFormat.Bc5Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.None, 5)},
-                        {DxgiFormat.Bc5Snorm, new BcPixFmt(ValueType.Snorm, AlphaType.None, 5)},
-                        {DxgiFormat.Bc6HTypeless, new BcPixFmt(ValueType.Typeless, AlphaType.None, 6)},
-                        {DxgiFormat.Bc6HUf16, new BcPixFmt(ValueType.Uf16, AlphaType.None, 6)},
-                        {DxgiFormat.Bc6HSf16, new BcPixFmt(ValueType.Sf16, AlphaType.None, 6)},
-                        {DxgiFormat.Bc7Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.None, 7)},
-                        {DxgiFormat.Bc7Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.None, 7)},
-                        {DxgiFormat.Bc7UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.None, 7)},
+                        { DXGI_FORMAT_R32G32_FLOAT, RgbaPixFmt.NewRg(32, 32, 0, 0, ValueType.Float, AlphaType.None) },
+                        { DXGI_FORMAT_R32G32_UINT, RgbaPixFmt.NewRg(32, 32, 0, 0, ValueType.Uint, AlphaType.None) },
+                        { DXGI_FORMAT_R32G32_SINT, RgbaPixFmt.NewRg(32, 32, 0, 0, ValueType.Sint, AlphaType.None) }, {
+                            DXGI_FORMAT_R16G16_TYPELESS,
+                            RgbaPixFmt.NewRg(16, 16, 0, 0, ValueType.Typeless, AlphaType.None)
+                        },
+                        { DXGI_FORMAT_R16G16_FLOAT, RgbaPixFmt.NewRg(16, 16, 0, 0, ValueType.Float, AlphaType.None) },
+                        { DXGI_FORMAT_R16G16_UNORM, RgbaPixFmt.NewRg(16, 16, 0, 0, ValueType.Unorm, AlphaType.None) },
+                        { DXGI_FORMAT_R16G16_UINT, RgbaPixFmt.NewRg(16, 16, 0, 0, ValueType.Uint, AlphaType.None) },
+                        { DXGI_FORMAT_R16G16_SNORM, RgbaPixFmt.NewRg(16, 16, 0, 0, ValueType.Snorm, AlphaType.None) },
+                        { DXGI_FORMAT_R16G16_SINT, RgbaPixFmt.NewRg(16, 16, 0, 0, ValueType.Sint, AlphaType.None) },
+                        { DXGI_FORMAT_R32_TYPELESS, RgbaPixFmt.NewR(32, 0, 0, ValueType.Typeless, AlphaType.None) },
+                        { DXGI_FORMAT_R32_FLOAT, RgbaPixFmt.NewR(32, 0, 0, ValueType.Float, AlphaType.None) },
+                        { DXGI_FORMAT_R32_UINT, RgbaPixFmt.NewR(32, 0, 0, ValueType.Uint, AlphaType.None) },
+                        { DXGI_FORMAT_R32_SINT, RgbaPixFmt.NewR(32, 0, 0, ValueType.Sint, AlphaType.None) }, {
+                            DXGI_FORMAT_R24G8_TYPELESS,
+                            RgbaPixFmt.NewRg(24, 8, 0, 0, ValueType.Typeless, AlphaType.None)
+                        },
+                        { DXGI_FORMAT_R8G8_TYPELESS, RgbaPixFmt.NewRg(8, 8, 0, 0, ValueType.Typeless, AlphaType.None) },
+                        { DXGI_FORMAT_R8G8_UNORM, RgbaPixFmt.NewRg(8, 8, 0, 0, ValueType.Unorm, AlphaType.None) },
+                        { DXGI_FORMAT_R8G8_UINT, RgbaPixFmt.NewRg(8, 8, 0, 0, ValueType.Uint, AlphaType.None) },
+                        { DXGI_FORMAT_R8G8_SNORM, RgbaPixFmt.NewRg(8, 8, 0, 0, ValueType.Snorm, AlphaType.None) },
+                        { DXGI_FORMAT_R8G8_SINT, RgbaPixFmt.NewRg(8, 8, 0, 0, ValueType.Sint, AlphaType.None) },
+                        { DXGI_FORMAT_R16_TYPELESS, RgbaPixFmt.NewR(16, 0, 0, ValueType.Typeless, AlphaType.None) },
+                        { DXGI_FORMAT_R16_FLOAT, RgbaPixFmt.NewR(16, 0, 0, ValueType.Float, AlphaType.None) },
+                        { DXGI_FORMAT_R16_UNORM, RgbaPixFmt.NewR(16, 0, 0, ValueType.Unorm, AlphaType.None) },
+                        { DXGI_FORMAT_R16_UINT, RgbaPixFmt.NewR(16, 0, 0, ValueType.Uint, AlphaType.None) },
+                        { DXGI_FORMAT_R16_SNORM, RgbaPixFmt.NewR(16, 0, 0, ValueType.Snorm, AlphaType.None) },
+                        { DXGI_FORMAT_R16_SINT, RgbaPixFmt.NewR(16, 0, 0, ValueType.Sint, AlphaType.None) },
+                        { DXGI_FORMAT_R8_TYPELESS, RgbaPixFmt.NewR(8, 0, 0, ValueType.Typeless, AlphaType.None) },
+                        { DXGI_FORMAT_R8_UNORM, RgbaPixFmt.NewR(8, 0, 0, ValueType.Float, AlphaType.None) },
+                        { DXGI_FORMAT_R8_UINT, RgbaPixFmt.NewR(8, 0, 0, ValueType.Unorm, AlphaType.None) },
+                        { DXGI_FORMAT_R8_SNORM, RgbaPixFmt.NewR(8, 0, 0, ValueType.Uint, AlphaType.None) },
+                        { DXGI_FORMAT_R8_SINT, RgbaPixFmt.NewR(8, 0, 0, ValueType.Sint, AlphaType.None) },
+                        { DXGI_FORMAT_B5G6R5_UNORM, RgbaPixFmt.NewBgr(5, 6, 5, 0, 0, ValueType.Unorm, AlphaType.None) },
+                        { DXGI_FORMAT_BC1_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.None, 1) },
+                        { DXGI_FORMAT_BC1_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.None, 1) },
+                        { DXGI_FORMAT_BC1_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.None, 1) },
+                        { DXGI_FORMAT_BC2_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.None, 2) },
+                        { DXGI_FORMAT_BC2_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.None, 2) },
+                        { DXGI_FORMAT_BC2_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.None, 2) },
+                        { DXGI_FORMAT_BC3_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.None, 3) },
+                        { DXGI_FORMAT_BC3_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.None, 3) },
+                        { DXGI_FORMAT_BC3_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.None, 3) },
+                        { DXGI_FORMAT_BC4_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.None, 4) },
+                        { DXGI_FORMAT_BC4_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.None, 4) },
+                        { DXGI_FORMAT_BC4_SNORM, new BcPixFmt(ValueType.Snorm, AlphaType.None, 4) },
+                        { DXGI_FORMAT_BC5_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.None, 5) },
+                        { DXGI_FORMAT_BC5_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.None, 5) },
+                        { DXGI_FORMAT_BC5_SNORM, new BcPixFmt(ValueType.Snorm, AlphaType.None, 5) },
+                        { DXGI_FORMAT_BC6H_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.None, 6) },
+                        { DXGI_FORMAT_BC6H_UF16, new BcPixFmt(ValueType.Uf16, AlphaType.None, 6) },
+                        { DXGI_FORMAT_BC6H_SF16, new BcPixFmt(ValueType.Sf16, AlphaType.None, 6) },
+                        { DXGI_FORMAT_BC7_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.None, 7) },
+                        { DXGI_FORMAT_BC7_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.None, 7) },
+                        { DXGI_FORMAT_BC7_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.None, 7) },
                     }
                 }, {
-                    AlphaType.Straight, new Dictionary<DxgiFormat, IPixFmt> {
-                        {DxgiFormat.R32G32B32A32Typeless, RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Typeless)},
-                        {DxgiFormat.R32G32B32A32Float, RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Float)},
-                        {DxgiFormat.R32G32B32A32Uint, RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Uint)},
-                        {DxgiFormat.R32G32B32A32Sint, RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Sint)},
-                        {DxgiFormat.R16G16B16A16Typeless, RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Typeless)},
-                        {DxgiFormat.R16G16B16A16Float, RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Float)},
-                        {DxgiFormat.R16G16B16A16Unorm, RgbaPixFmt.NewRgba(16, 16, 16, 16)},
-                        {DxgiFormat.R16G16B16A16Uint, RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Uint)},
-                        {DxgiFormat.R16G16B16A16Snorm, RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Snorm)},
-                        {DxgiFormat.R16G16B16A16Sint, RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Sint)},
-                        {DxgiFormat.R10G10B10A2Typeless, RgbaPixFmt.NewRgba(10, 10, 10, 2, 0, 0, ValueType.Typeless)},
-                        {DxgiFormat.R10G10B10A2Unorm, RgbaPixFmt.NewRgba(10, 10, 10, 2)},
-                        {DxgiFormat.R10G10B10A2Uint, RgbaPixFmt.NewRgba(10, 10, 10, 2, 0, 0, ValueType.Uint)},
-                        {DxgiFormat.R8G8B8A8Typeless, RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Typeless)},
-                        {DxgiFormat.R8G8B8A8Unorm, RgbaPixFmt.NewRgba(8, 8, 8, 8)},
-                        {DxgiFormat.R8G8B8A8UnormSrgb, RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.UnormSrgb)},
-                        {DxgiFormat.R8G8B8A8Uint, RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Uint)},
-                        {DxgiFormat.R8G8B8A8Snorm, RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Snorm)},
-                        {DxgiFormat.R8G8B8A8Sint, RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Sint)},
-                        {DxgiFormat.A8Unorm, RgbaPixFmt.NewA(8)},
-                        {DxgiFormat.B5G5R5A1Unorm, RgbaPixFmt.NewBgra(5, 5, 5, 1)},
-                        {DxgiFormat.B8G8R8A8Unorm, RgbaPixFmt.NewBgra(8, 8, 8, 8)},
-                        {DxgiFormat.B8G8R8A8Typeless, RgbaPixFmt.NewBgra(8, 8, 8, 8, 0, 0, ValueType.Typeless)},
-                        {DxgiFormat.B8G8R8A8UnormSrgb, RgbaPixFmt.NewBgra(8, 8, 8, 8, 0, 0, ValueType.UnormSrgb)},
-                        {DxgiFormat.B4G4R4A4Unorm, RgbaPixFmt.NewBgra(4, 4, 4, 4)},
-                        {DxgiFormat.Bc1Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Straight, 1)},
-                        {DxgiFormat.Bc1Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 1)},
-                        {DxgiFormat.Bc1UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Straight, 1)},
-                        {DxgiFormat.Bc2Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Straight, 2)},
-                        {DxgiFormat.Bc2Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 2)},
-                        {DxgiFormat.Bc2UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Straight, 2)},
-                        {DxgiFormat.Bc3Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Straight, 3)},
-                        {DxgiFormat.Bc3Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 3)},
-                        {DxgiFormat.Bc3UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Straight, 3)},
-                        {DxgiFormat.Bc4Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Straight, 4)},
-                        {DxgiFormat.Bc4Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 4)},
-                        {DxgiFormat.Bc4Snorm, new BcPixFmt(ValueType.Snorm, AlphaType.Straight, 4)},
-                        {DxgiFormat.Bc5Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Straight, 5)},
-                        {DxgiFormat.Bc5Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 5)},
-                        {DxgiFormat.Bc5Snorm, new BcPixFmt(ValueType.Snorm, AlphaType.Straight, 5)},
-                        {DxgiFormat.Bc6HTypeless, new BcPixFmt(ValueType.Typeless, AlphaType.Straight, 6)},
-                        {DxgiFormat.Bc6HUf16, new BcPixFmt(ValueType.Uf16, AlphaType.Straight, 6)},
-                        {DxgiFormat.Bc6HSf16, new BcPixFmt(ValueType.Sf16, AlphaType.Straight, 6)},
-                        {DxgiFormat.Bc7Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Straight, 7)},
-                        {DxgiFormat.Bc7Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 7)},
-                        {DxgiFormat.Bc7UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Straight, 7)},
-                    }
-                }, {
-                    AlphaType.Premultiplied, new Dictionary<DxgiFormat, IPixFmt> {
+                    AlphaType.Straight, new Dictionary<DXGI_FORMAT, IPixFmt> {
                         {
-                            DxgiFormat.R32G32B32A32Typeless,
+                            DXGI_FORMAT_R32G32B32A32_TYPELESS,
+                            RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Typeless)
+                        },
+                        { DXGI_FORMAT_R32G32B32A32_FLOAT, RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Float) },
+                        { DXGI_FORMAT_R32G32B32A32_UINT, RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Uint) },
+                        { DXGI_FORMAT_R32G32B32A32_SINT, RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Sint) }, {
+                            DXGI_FORMAT_R16G16B16A16_TYPELESS,
+                            RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Typeless)
+                        },
+                        { DXGI_FORMAT_R16G16B16A16_FLOAT, RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Float) },
+                        { DXGI_FORMAT_R16G16B16A16_UNORM, RgbaPixFmt.NewRgba(16, 16, 16, 16) },
+                        { DXGI_FORMAT_R16G16B16A16_UINT, RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Uint) },
+                        { DXGI_FORMAT_R16G16B16A16_SNORM, RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Snorm) },
+                        { DXGI_FORMAT_R16G16B16A16_SINT, RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Sint) }, {
+                            DXGI_FORMAT_R10G10B10A2_TYPELESS,
+                            RgbaPixFmt.NewRgba(10, 10, 10, 2, 0, 0, ValueType.Typeless)
+                        },
+                        { DXGI_FORMAT_R10G10B10A2_UNORM, RgbaPixFmt.NewRgba(10, 10, 10, 2) },
+                        { DXGI_FORMAT_R10G10B10A2_UINT, RgbaPixFmt.NewRgba(10, 10, 10, 2, 0, 0, ValueType.Uint) },
+                        { DXGI_FORMAT_R8G8B8A8_TYPELESS, RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Typeless) },
+                        { DXGI_FORMAT_R8G8B8A8_UNORM, RgbaPixFmt.NewRgba(8, 8, 8, 8) },
+                        { DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.UnormSrgb) },
+                        { DXGI_FORMAT_R8G8B8A8_UINT, RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Uint) },
+                        { DXGI_FORMAT_R8G8B8A8_SNORM, RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Snorm) },
+                        { DXGI_FORMAT_R8G8B8A8_SINT, RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Sint) },
+                        { DXGI_FORMAT_A8_UNORM, RgbaPixFmt.NewA(8) },
+                        { DXGI_FORMAT_B5G5R5A1_UNORM, RgbaPixFmt.NewBgra(5, 5, 5, 1) },
+                        { DXGI_FORMAT_B8G8R8A8_UNORM, RgbaPixFmt.NewBgra(8, 8, 8, 8) },
+                        { DXGI_FORMAT_B8G8R8A8_TYPELESS, RgbaPixFmt.NewBgra(8, 8, 8, 8, 0, 0, ValueType.Typeless) },
+                        { DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, RgbaPixFmt.NewBgra(8, 8, 8, 8, 0, 0, ValueType.UnormSrgb) },
+                        { DXGI_FORMAT_B4G4R4A4_UNORM, RgbaPixFmt.NewBgra(4, 4, 4, 4) },
+                        { DXGI_FORMAT_BC1_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Straight, 1) },
+                        { DXGI_FORMAT_BC1_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 1) },
+                        { DXGI_FORMAT_BC1_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Straight, 1) },
+                        { DXGI_FORMAT_BC2_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Straight, 2) },
+                        { DXGI_FORMAT_BC2_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 2) },
+                        { DXGI_FORMAT_BC2_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Straight, 2) },
+                        { DXGI_FORMAT_BC3_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Straight, 3) },
+                        { DXGI_FORMAT_BC3_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 3) },
+                        { DXGI_FORMAT_BC3_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Straight, 3) },
+                        { DXGI_FORMAT_BC4_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Straight, 4) },
+                        { DXGI_FORMAT_BC4_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 4) },
+                        { DXGI_FORMAT_BC4_SNORM, new BcPixFmt(ValueType.Snorm, AlphaType.Straight, 4) },
+                        { DXGI_FORMAT_BC5_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Straight, 5) },
+                        { DXGI_FORMAT_BC5_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 5) },
+                        { DXGI_FORMAT_BC5_SNORM, new BcPixFmt(ValueType.Snorm, AlphaType.Straight, 5) },
+                        { DXGI_FORMAT_BC6H_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Straight, 6) },
+                        { DXGI_FORMAT_BC6H_UF16, new BcPixFmt(ValueType.Uf16, AlphaType.Straight, 6) },
+                        { DXGI_FORMAT_BC6H_SF16, new BcPixFmt(ValueType.Sf16, AlphaType.Straight, 6) },
+                        { DXGI_FORMAT_BC7_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Straight, 7) },
+                        { DXGI_FORMAT_BC7_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Straight, 7) },
+                        { DXGI_FORMAT_BC7_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Straight, 7) },
+                    }
+                }, {
+                    AlphaType.Premultiplied, new Dictionary<DXGI_FORMAT, IPixFmt> {
+                        {
+                            DXGI_FORMAT_R32G32B32A32_TYPELESS,
                             RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Typeless, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R32G32B32A32Float,
+                            DXGI_FORMAT_R32G32B32A32_FLOAT,
                             RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Float, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R32G32B32A32Uint,
+                            DXGI_FORMAT_R32G32B32A32_UINT,
                             RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Uint, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R32G32B32A32Sint,
+                            DXGI_FORMAT_R32G32B32A32_SINT,
                             RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Sint, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R16G16B16A16Typeless,
+                            DXGI_FORMAT_R16G16B16A16_TYPELESS,
                             RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Typeless, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R16G16B16A16Float,
+                            DXGI_FORMAT_R16G16B16A16_FLOAT,
                             RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Float, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R16G16B16A16Unorm,
+                            DXGI_FORMAT_R16G16B16A16_UNORM,
                             RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R16G16B16A16Uint,
+                            DXGI_FORMAT_R16G16B16A16_UINT,
                             RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Uint, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R16G16B16A16Snorm,
+                            DXGI_FORMAT_R16G16B16A16_SNORM,
                             RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Snorm, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R16G16B16A16Sint,
+                            DXGI_FORMAT_R16G16B16A16_SINT,
                             RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Sint, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R10G10B10A2Typeless,
+                            DXGI_FORMAT_R10G10B10A2_TYPELESS,
                             RgbaPixFmt.NewRgba(10, 10, 10, 2, 0, 0, ValueType.Typeless, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R10G10B10A2Unorm,
+                            DXGI_FORMAT_R10G10B10A2_UNORM,
                             RgbaPixFmt.NewRgba(10, 10, 10, 2, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R10G10B10A2Uint,
+                            DXGI_FORMAT_R10G10B10A2_UINT,
                             RgbaPixFmt.NewRgba(10, 10, 10, 2, 0, 0, ValueType.Uint, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R8G8B8A8Typeless,
+                            DXGI_FORMAT_R8G8B8A8_TYPELESS,
                             RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Typeless, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R8G8B8A8Unorm,
+                            DXGI_FORMAT_R8G8B8A8_UNORM,
                             RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R8G8B8A8UnormSrgb,
+                            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
                             RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.UnormSrgb, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R8G8B8A8Uint,
+                            DXGI_FORMAT_R8G8B8A8_UINT,
                             RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Uint, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R8G8B8A8Snorm,
+                            DXGI_FORMAT_R8G8B8A8_SNORM,
                             RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Snorm, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.R8G8B8A8Sint,
+                            DXGI_FORMAT_R8G8B8A8_SINT,
                             RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Sint, AlphaType.Premultiplied)
                         },
-                        {DxgiFormat.A8Unorm, RgbaPixFmt.NewA(8, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)}, {
-                            DxgiFormat.B5G5R5A1Unorm,
+                        { DXGI_FORMAT_A8_UNORM, RgbaPixFmt.NewA(8, 0, 0, ValueType.Unorm, AlphaType.Premultiplied) }, {
+                            DXGI_FORMAT_B5G5R5A1_UNORM,
                             RgbaPixFmt.NewBgra(5, 5, 5, 1, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.B8G8R8A8Unorm,
+                            DXGI_FORMAT_B8G8R8A8_UNORM,
                             RgbaPixFmt.NewBgra(8, 8, 8, 8, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.B8G8R8A8Typeless,
+                            DXGI_FORMAT_B8G8R8A8_TYPELESS,
                             RgbaPixFmt.NewBgra(8, 8, 8, 8, 0, 0, ValueType.Typeless, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.B8G8R8A8UnormSrgb,
+                            DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
                             RgbaPixFmt.NewBgra(8, 8, 8, 8, 0, 0, ValueType.UnormSrgb, AlphaType.Premultiplied)
                         }, {
-                            DxgiFormat.B4G4R4A4Unorm,
+                            DXGI_FORMAT_B4G4R4A4_UNORM,
                             RgbaPixFmt.NewBgra(4, 4, 4, 4, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)
                         },
-                        {DxgiFormat.Bc1Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Premultiplied, 1)},
-                        {DxgiFormat.Bc1Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 1)},
-                        {DxgiFormat.Bc1UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Premultiplied, 1)},
-                        {DxgiFormat.Bc2Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Premultiplied, 2)},
-                        {DxgiFormat.Bc2Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 2)},
-                        {DxgiFormat.Bc2UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Premultiplied, 2)},
-                        {DxgiFormat.Bc3Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Premultiplied, 3)},
-                        {DxgiFormat.Bc3Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 3)},
-                        {DxgiFormat.Bc3UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Premultiplied, 3)},
-                        {DxgiFormat.Bc4Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Premultiplied, 4)},
-                        {DxgiFormat.Bc4Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 4)},
-                        {DxgiFormat.Bc4Snorm, new BcPixFmt(ValueType.Snorm, AlphaType.Premultiplied, 4)},
-                        {DxgiFormat.Bc5Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Premultiplied, 5)},
-                        {DxgiFormat.Bc5Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 5)},
-                        {DxgiFormat.Bc5Snorm, new BcPixFmt(ValueType.Snorm, AlphaType.Premultiplied, 5)},
-                        {DxgiFormat.Bc6HTypeless, new BcPixFmt(ValueType.Typeless, AlphaType.Premultiplied, 6)},
-                        {DxgiFormat.Bc6HUf16, new BcPixFmt(ValueType.Uf16, AlphaType.Premultiplied, 6)},
-                        {DxgiFormat.Bc6HSf16, new BcPixFmt(ValueType.Sf16, AlphaType.Premultiplied, 6)},
-                        {DxgiFormat.Bc7Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Premultiplied, 7)},
-                        {DxgiFormat.Bc7Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 7)},
-                        {DxgiFormat.Bc7UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Premultiplied, 7)},
+                        { DXGI_FORMAT_BC1_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Premultiplied, 1) },
+                        { DXGI_FORMAT_BC1_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 1) },
+                        { DXGI_FORMAT_BC1_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Premultiplied, 1) },
+                        { DXGI_FORMAT_BC2_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Premultiplied, 2) },
+                        { DXGI_FORMAT_BC2_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 2) },
+                        { DXGI_FORMAT_BC2_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Premultiplied, 2) },
+                        { DXGI_FORMAT_BC3_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Premultiplied, 3) },
+                        { DXGI_FORMAT_BC3_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 3) },
+                        { DXGI_FORMAT_BC3_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Premultiplied, 3) },
+                        { DXGI_FORMAT_BC4_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Premultiplied, 4) },
+                        { DXGI_FORMAT_BC4_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 4) },
+                        { DXGI_FORMAT_BC4_SNORM, new BcPixFmt(ValueType.Snorm, AlphaType.Premultiplied, 4) },
+                        { DXGI_FORMAT_BC5_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Premultiplied, 5) },
+                        { DXGI_FORMAT_BC5_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 5) },
+                        { DXGI_FORMAT_BC5_SNORM, new BcPixFmt(ValueType.Snorm, AlphaType.Premultiplied, 5) },
+                        { DXGI_FORMAT_BC6H_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Premultiplied, 6) },
+                        { DXGI_FORMAT_BC6H_UF16, new BcPixFmt(ValueType.Uf16, AlphaType.Premultiplied, 6) },
+                        { DXGI_FORMAT_BC6H_SF16, new BcPixFmt(ValueType.Sf16, AlphaType.Premultiplied, 6) },
+                        { DXGI_FORMAT_BC7_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Premultiplied, 7) },
+                        { DXGI_FORMAT_BC7_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Premultiplied, 7) },
+                        { DXGI_FORMAT_BC7_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Premultiplied, 7) },
                     }
                 }, {
-                    AlphaType.Custom, new Dictionary<DxgiFormat, IPixFmt> {
-                        {DxgiFormat.B8G8R8X8Unorm, RgbaPixFmt.NewBgr(8, 8, 8, 8, 0, ValueType.Unorm, AlphaType.Custom)}, {
-                            DxgiFormat.B8G8R8X8Typeless,
+                    AlphaType.Custom, new Dictionary<DXGI_FORMAT, IPixFmt> {
+                        {
+                            DXGI_FORMAT_B8G8R8X8_UNORM,
+                            RgbaPixFmt.NewBgr(8, 8, 8, 8, 0, ValueType.Unorm, AlphaType.Custom)
+                        }, {
+                            DXGI_FORMAT_B8G8R8X8_TYPELESS,
                             RgbaPixFmt.NewBgr(8, 8, 8, 8, 0, ValueType.Typeless, AlphaType.Custom)
                         }, {
-                            DxgiFormat.B8G8R8X8UnormSrgb,
+                            DXGI_FORMAT_B8G8R8X8_UNORM_SRGB,
                             RgbaPixFmt.NewBgr(8, 8, 8, 8, 0, ValueType.UnormSrgb, AlphaType.Custom)
                         },
-                        {DxgiFormat.Bc1Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Custom, 1)},
-                        {DxgiFormat.Bc1Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Custom, 1)},
-                        {DxgiFormat.Bc1UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Custom, 1)},
-                        {DxgiFormat.Bc2Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Custom, 2)},
-                        {DxgiFormat.Bc2Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Custom, 2)},
-                        {DxgiFormat.Bc2UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Custom, 2)},
-                        {DxgiFormat.Bc3Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Custom, 3)},
-                        {DxgiFormat.Bc3Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Custom, 3)},
-                        {DxgiFormat.Bc3UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Custom, 3)},
-                        {DxgiFormat.Bc4Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Custom, 4)},
-                        {DxgiFormat.Bc4Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Custom, 4)},
-                        {DxgiFormat.Bc4Snorm, new BcPixFmt(ValueType.Snorm, AlphaType.Custom, 4)},
-                        {DxgiFormat.Bc5Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Custom, 5)},
-                        {DxgiFormat.Bc5Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Custom, 5)},
-                        {DxgiFormat.Bc5Snorm, new BcPixFmt(ValueType.Snorm, AlphaType.Custom, 5)},
-                        {DxgiFormat.Bc6HTypeless, new BcPixFmt(ValueType.Typeless, AlphaType.Custom, 6)},
-                        {DxgiFormat.Bc6HUf16, new BcPixFmt(ValueType.Uf16, AlphaType.Custom, 6)},
-                        {DxgiFormat.Bc6HSf16, new BcPixFmt(ValueType.Sf16, AlphaType.Custom, 6)},
-                        {DxgiFormat.Bc7Typeless, new BcPixFmt(ValueType.Typeless, AlphaType.Custom, 7)},
-                        {DxgiFormat.Bc7Unorm, new BcPixFmt(ValueType.Unorm, AlphaType.Custom, 7)},
-                        {DxgiFormat.Bc7UnormSrgb, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Custom, 7)},
+                        { DXGI_FORMAT_BC1_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Custom, 1) },
+                        { DXGI_FORMAT_BC1_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Custom, 1) },
+                        { DXGI_FORMAT_BC1_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Custom, 1) },
+                        { DXGI_FORMAT_BC2_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Custom, 2) },
+                        { DXGI_FORMAT_BC2_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Custom, 2) },
+                        { DXGI_FORMAT_BC2_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Custom, 2) },
+                        { DXGI_FORMAT_BC3_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Custom, 3) },
+                        { DXGI_FORMAT_BC3_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Custom, 3) },
+                        { DXGI_FORMAT_BC3_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Custom, 3) },
+                        { DXGI_FORMAT_BC4_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Custom, 4) },
+                        { DXGI_FORMAT_BC4_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Custom, 4) },
+                        { DXGI_FORMAT_BC4_SNORM, new BcPixFmt(ValueType.Snorm, AlphaType.Custom, 4) },
+                        { DXGI_FORMAT_BC5_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Custom, 5) },
+                        { DXGI_FORMAT_BC5_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Custom, 5) },
+                        { DXGI_FORMAT_BC5_SNORM, new BcPixFmt(ValueType.Snorm, AlphaType.Custom, 5) },
+                        { DXGI_FORMAT_BC6H_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Custom, 6) },
+                        { DXGI_FORMAT_BC6H_UF16, new BcPixFmt(ValueType.Uf16, AlphaType.Custom, 6) },
+                        { DXGI_FORMAT_BC6H_SF16, new BcPixFmt(ValueType.Sf16, AlphaType.Custom, 6) },
+                        { DXGI_FORMAT_BC7_TYPELESS, new BcPixFmt(ValueType.Typeless, AlphaType.Custom, 7) },
+                        { DXGI_FORMAT_BC7_UNORM, new BcPixFmt(ValueType.Unorm, AlphaType.Custom, 7) },
+                        { DXGI_FORMAT_BC7_UNORM_SRGB, new BcPixFmt(ValueType.UnormSrgb, AlphaType.Custom, 7) },
                     }
-                }
+                },
             };
 
         // https://learn.microsoft.com/en-us/windows/win32/wic/-wic-codec-native-pixel-formats#packed-bit-pixel-formats
@@ -282,110 +303,110 @@ public static class PixFmtResolver {
         WicToPixelFormat = new Dictionary<Guid, IPixFmt> {
             // Packed Bit Pixel Formats
             {
-                WicPixelFormat.GUID_WICPixelFormat16bppBGR555,
+                GUID.GUID_WICPixelFormat16bppBGR555,
                 RgbaPixFmt.NewBgr(5, 5, 5, 1, 0, ValueType.Unorm, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat16bppBGR565,
+                GUID.GUID_WICPixelFormat16bppBGR565,
                 RgbaPixFmt.NewBgr(5, 6, 5, 0, 0, ValueType.Unorm, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat16bppBGRA5551,
+                GUID.GUID_WICPixelFormat16bppBGRA5551,
                 RgbaPixFmt.NewBgra(5, 5, 5, 1, 0, 0, ValueType.Unorm, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat32bppBGR101010,
+                GUID.GUID_WICPixelFormat32bppBGR101010,
                 RgbaPixFmt.NewBgr(10, 10, 10, 2, 0, ValueType.Unorm, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat32bppRGBA1010102,
+                GUID.GUID_WICPixelFormat32bppRGBA1010102,
                 RgbaPixFmt.NewRgba(10, 10, 10, 2, 0, 0, ValueType.Unorm, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat32bppR10G10B10A2,
+                GUID.GUID_WICPixelFormat32bppR10G10B10A2,
                 RgbaPixFmt.NewBgra(10, 10, 10, 2, 0, 0, ValueType.Unorm, AlphaType.None)
             },
 
             // Grayscale Pixel Formats
-            {WicPixelFormat.GUID_WICPixelFormatBlackWhite, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 1))},
-            {WicPixelFormat.GUID_WICPixelFormat2bppGray, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 2))},
-            {WicPixelFormat.GUID_WICPixelFormat4bppGray, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 4))},
-            {WicPixelFormat.GUID_WICPixelFormat8bppGray, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 8))},
-            {WicPixelFormat.GUID_WICPixelFormat16bppGray, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 16))}, {
-                WicPixelFormat.GUID_WICPixelFormat16bppGrayHalf,
+            { GUID.GUID_WICPixelFormatBlackWhite, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 1)) },
+            { GUID.GUID_WICPixelFormat2bppGray, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 2)) },
+            { GUID.GUID_WICPixelFormat4bppGray, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 4)) },
+            { GUID.GUID_WICPixelFormat8bppGray, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 8)) },
+            { GUID.GUID_WICPixelFormat16bppGray, new LumiPixFmt(AlphaType.None, new(ValueType.Unorm, 0, 16)) }, {
+                GUID.GUID_WICPixelFormat16bppGrayHalf,
                 new LumiPixFmt(AlphaType.None, new(ValueType.Half, 0, 16))
             }, {
-                WicPixelFormat.GUID_WICPixelFormat32bppGrayFloat,
+                GUID.GUID_WICPixelFormat32bppGrayFloat,
                 new LumiPixFmt(AlphaType.None, new(ValueType.Float, 0, 32))
             },
 
             // RGB/BGR Pixel formats
             {
-                WicPixelFormat.GUID_WICPixelFormat24bppRGB,
+                GUID.GUID_WICPixelFormat24bppRGB,
                 RgbaPixFmt.NewRgb(8, 8, 8, 0, 0, ValueType.Unorm, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat24bppBGR,
+                GUID.GUID_WICPixelFormat24bppBGR,
                 RgbaPixFmt.NewBgr(8, 8, 8, 0, 0, ValueType.Unorm, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat32bppBGR,
+                GUID.GUID_WICPixelFormat32bppBGR,
                 RgbaPixFmt.NewBgr(8, 8, 8, 8, 0, ValueType.Unorm, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat32bppRGBA,
+                GUID.GUID_WICPixelFormat32bppRGBA,
                 RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Unorm, AlphaType.Straight)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat32bppBGRA,
+                GUID.GUID_WICPixelFormat32bppBGRA,
                 RgbaPixFmt.NewBgra(8, 8, 8, 8, 0, 0, ValueType.Unorm, AlphaType.Straight)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat32bppPRGBA,
+                GUID.GUID_WICPixelFormat32bppPRGBA,
                 RgbaPixFmt.NewRgba(8, 8, 8, 8, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat32bppPBGRA,
+                GUID.GUID_WICPixelFormat32bppPBGRA,
                 RgbaPixFmt.NewBgra(8, 8, 8, 8, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat48bppRGB,
+                GUID.GUID_WICPixelFormat48bppRGB,
                 RgbaPixFmt.NewRgba(16, 16, 16, 0, 0, 0, ValueType.Unorm, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat48bppBGR,
+                GUID.GUID_WICPixelFormat48bppBGR,
                 RgbaPixFmt.NewBgra(16, 16, 16, 0, 0, 0, ValueType.Unorm, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat48bppRGBHalf,
+                GUID.GUID_WICPixelFormat48bppRGBHalf,
                 RgbaPixFmt.NewRgba(16, 16, 16, 0, 0, 0, ValueType.Half, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat64bppRGBA,
+                GUID.GUID_WICPixelFormat64bppRGBA,
                 RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Unorm, AlphaType.Straight)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat64bppBGRA,
+                GUID.GUID_WICPixelFormat64bppBGRA,
                 RgbaPixFmt.NewBgra(16, 16, 16, 16, 0, 0, ValueType.Unorm, AlphaType.Straight)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat64bppPRGBA,
+                GUID.GUID_WICPixelFormat64bppPRGBA,
                 RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat64bppPBGRA,
+                GUID.GUID_WICPixelFormat64bppPBGRA,
                 RgbaPixFmt.NewBgra(16, 16, 16, 16, 0, 0, ValueType.Unorm, AlphaType.Premultiplied)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat64bppRGBHalf,
+                GUID.GUID_WICPixelFormat64bppRGBHalf,
                 RgbaPixFmt.NewRgb(16, 16, 16, 16, 0, ValueType.Half, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat64bppRGBAHalf,
+                GUID.GUID_WICPixelFormat64bppRGBAHalf,
                 RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Half, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat128bppRGBFloat,
+                GUID.GUID_WICPixelFormat128bppRGBFloat,
                 RgbaPixFmt.NewRgb(32, 32, 32, 32, 0, ValueType.Float, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat128bppRGBAFloat,
+                GUID.GUID_WICPixelFormat128bppRGBAFloat,
                 RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Float, AlphaType.Straight)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat128bppPRGBAFloat,
+                GUID.GUID_WICPixelFormat128bppPRGBAFloat,
                 RgbaPixFmt.NewRgba(32, 32, 32, 32, 0, 0, ValueType.Float, AlphaType.Premultiplied)
             },
 
             // RGB/BGR Pixel formats (Windows 8 & Platform Update for Windows 7)
             {
-                WicPixelFormat.GUID_WICPixelFormat32bppRGB,
+                GUID.GUID_WICPixelFormat32bppRGB,
                 RgbaPixFmt.NewRgb(8, 8, 8, 8, 0, ValueType.Unorm, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat64bppRGB,
+                GUID.GUID_WICPixelFormat64bppRGB,
                 RgbaPixFmt.NewRgb(16, 16, 16, 16, 0, ValueType.Unorm, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat96bppRGBFloat,
+                GUID.GUID_WICPixelFormat96bppRGBFloat,
                 RgbaPixFmt.NewRgb(32, 32, 32, 0, 0, ValueType.Float, AlphaType.None)
             }, {
-                WicPixelFormat.GUID_WICPixelFormat64bppPRGBAHalf,
+                GUID.GUID_WICPixelFormat64bppPRGBAHalf,
                 RgbaPixFmt.NewRgba(16, 16, 16, 16, 0, 0, ValueType.Half, AlphaType.Premultiplied)
             },
         };
@@ -394,7 +415,7 @@ public static class PixFmtResolver {
     public static IPixFmt GetPixelFormat(DdsFourCc fourCc) =>
         FourCcToPixelFormat.TryGetValue(fourCc, out var v) ? v : UnknownPixFmt.Instance;
 
-    public static IPixFmt GetPixelFormat(AlphaType alphaType, DxgiFormat dxgiFormat) =>
+    public static IPixFmt GetPixelFormat(AlphaType alphaType, DXGI_FORMAT dxgiFormat) =>
         DxgiFormatToPixelFormat.TryGetValue(alphaType, out var d1)
             ? d1.TryGetValue(dxgiFormat, out var pf)
                 ? pf
@@ -407,13 +428,14 @@ public static class PixFmtResolver {
     public static DdsFourCc GetFourCc(IPixFmt pf) =>
         FourCcToPixelFormat.FirstOrDefault(x => Equals(x.Value, pf)).Key;
 
-    public static DxgiFormat GetDxgiFormat(IPixFmt pf) =>
+    public static DXGI_FORMAT GetDxgiFormat(IPixFmt pf) =>
         DxgiFormatToPixelFormat.TryGetValue(pf.Alpha, out var d1)
             ? d1.FirstOrDefault(x => Equals(x.Value, pf)).Key
-            : DxgiFormat.Unknown;
+            : DXGI_FORMAT_UNKNOWN;
 
-    public static Guid GetWicPixelFormat(IPixFmt pf) {
+    public static Guid GetWicPixelFormat(IPixFmt pf)
+    {
         var r = WicToPixelFormat.FirstOrDefault(x => Equals(x.Value, pf)).Key;
-        return r == Guid.Empty ? WicPixelFormat.GUID_WICPixelFormatUndefined : r;
+        return r == Guid.Empty ? GUID.GUID_WICPixelFormatUndefined : r;
     }
 }

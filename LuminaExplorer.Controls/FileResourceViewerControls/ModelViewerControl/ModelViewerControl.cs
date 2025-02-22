@@ -28,23 +28,25 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
     private float _animationSpeed = 1f;
     private bool _animationPlaying = true;
 
-    public ModelViewerControl() {
+    public ModelViewerControl()
+    {
         base.BackColor = DefaultBackColor;
-        _cameraManager = new(this);
-        _cameraManager.ViewportChanged += OnCameraManagerOnViewportChanged;
+        this._cameraManager = new(this);
+        this._cameraManager.ViewportChanged += this.OnCameraManagerOnViewportChanged;
     }
 
-    protected override void Dispose(bool disposing) {
+    protected override void Dispose(bool disposing)
+    {
         if (disposing) {
-            _mdlCancel?.Cancel();
-            _mdlCancel = null;
-            _animationCancel?.Cancel();
-            _animationCancel = null;
-            _mdlFileTask = null;
-            _ = SafeDispose.OneAsync(ref _cameraManager!);
-            _ = SafeDispose.OneAsync(ref _customRendererTask!);
-            _ = SafeDispose.OneAsync(ref _gameShaderRendererTask!);
-            _ = SafeDispose.OneAsync(ref _customRendererTask!);
+            this._mdlCancel?.Cancel();
+            this._mdlCancel = null;
+            this._animationCancel?.Cancel();
+            this._animationCancel = null;
+            this._mdlFileTask = null;
+            _ = SafeDispose.OneAsync(ref this._cameraManager!);
+            _ = SafeDispose.OneAsync(ref this._customRendererTask!);
+            _ = SafeDispose.OneAsync(ref this._gameShaderRendererTask!);
+            _ = SafeDispose.OneAsync(ref this._customRendererTask!);
         }
 
         base.Dispose(disposing);
@@ -60,82 +62,90 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
 
     public IVirtualFolder? VfsRoot { get; private set; }
 
-    public ICamera Camera => _cameraManager.Camera;
+    public ICamera Camera => this._cameraManager.Camera;
 
-    public ObjectCentricCamera ObjectCentricCamera => _cameraManager.ObjectCentricCamera;
+    public ObjectCentricCamera ObjectCentricCamera => this._cameraManager.ObjectCentricCamera;
 
-    public Task<MdlFile>? ModelTask => TryGetRenderer(out var renderer) ? renderer.ModelTask : null;
+    public Task<MdlFile>? ModelTask => this.TryGetRenderer(out var renderer) ? renderer.ModelTask : null;
 
-    public Task<SklbFile[]>? SkeletonTask => TryGetRenderer(out var renderer) ? renderer.SkeletonTask : null;
+    public Task<SklbFile[]>? SkeletonTask => this.TryGetRenderer(out var renderer) ? renderer.SkeletonTask : null;
 
-    public void SetModel(IVirtualFileSystem vfs, IVirtualFolder rootFolder, Task<MdlFile> mdlFileTask) {
-        if (_mdlFileTask == mdlFileTask)
+    public void SetModel(IVirtualFileSystem vfs, IVirtualFolder rootFolder, Task<MdlFile> mdlFileTask)
+    {
+        if (this._mdlFileTask == mdlFileTask)
             return;
 
-        _mdlCancel?.Cancel();
-        var cts = _mdlCancel = new();
+        this._mdlCancel?.Cancel();
+        var cts = this._mdlCancel = new();
 
-        Vfs = vfs;
-        VfsRoot = rootFolder;
-        _mdlFileTask = mdlFileTask;
+        this.Vfs = vfs;
+        this.VfsRoot = rootFolder;
+        this._mdlFileTask = mdlFileTask;
 
-        ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(GetTypedFileAsync<EstFile>, GetTypedFileAsync<PbdFile>);
+        this.ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(
+            this.GetTypedFileAsync<EstFile>,
+            this.GetTypedFileAsync<PbdFile>);
         //*
-        _ = TryGetCustomRenderer(out _, true);
-        _activeRendererTask = _customRendererTask?.Task.ContinueWith(r => (BaseMdlRenderer) r.Result, cts.Token);
+        _ = this.TryGetCustomRenderer(out _, true);
+        this._activeRendererTask =
+            this._customRendererTask?.Task.ContinueWith(r => (BaseMdlRenderer) r.Result, cts.Token);
         /*/
         _ = TryGetGameShaderRenderer(out _, true);
         _activeRendererTask = _gameShaderRendererTask?.Task.ContinueWith(r => (MdlRenderer) r.Result, cts.Token);
         //*/
 
-        _activeRendererTask!.ContinueWith(r => {
-            if (r.IsCompletedSuccessfully)
-                r.Result.ModelTask = _mdlFileTask;
-            Invalidate();
-        }, cts.Token, TaskContinuationOptions.None, TaskScheduler.FromCurrentSynchronizationContext());
+        this._activeRendererTask!.ContinueWith(
+            r => {
+                if (r.IsCompletedSuccessfully)
+                    r.Result.ModelTask = this._mdlFileTask;
+                this.Invalidate();
+            },
+            cts.Token,
+            TaskContinuationOptions.None,
+            TaskScheduler.FromCurrentSynchronizationContext());
     }
 
     public bool AnimationPlaying {
-        get => _animationPlaying;
+        get => this._animationPlaying;
         set {
-            if (_animationPlaying == value)
+            if (this._animationPlaying == value)
                 return;
-            _animationPlaying = value;
-            AnimationPlayingChanged?.Invoke(this, EventArgs.Empty);
+            this._animationPlaying = value;
+            this.AnimationPlayingChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
     public float AnimationSpeed {
-        get => _animationSpeed;
+        get => this._animationSpeed;
         set {
-            if (Equals(_animationSpeed, value))
+            if (Equals(this._animationSpeed, value))
                 return;
-            _animationSpeed = value;
-            AnimationSpeedChanged?.Invoke(this, EventArgs.Empty);
+            this._animationSpeed = value;
+            this.AnimationSpeedChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
     public Task<IAnimation>[]? Animations {
-        get => _animationTasks;
+        get => this._animationTasks;
         set {
-            if (value == _animationTasks)
+            if (value == this._animationTasks)
                 return;
 
-            _animationCancel?.Cancel();
-            _animationCancel = null;
+            this._animationCancel?.Cancel();
+            this._animationCancel = null;
             if (value is null)
                 return;
 
-            _ = TryGetCustomRenderer(out _, true);
-            var cts = _animationCancel = new();
-            _animationTasks = value;
-            _activeRendererTask!.ContinueWith(
+            _ = this.TryGetCustomRenderer(out _, true);
+            var cts = this._animationCancel = new();
+            this._animationTasks = value;
+            this._activeRendererTask!.ContinueWith(
                 r => {
-                    if (!r.IsCompletedSuccessfully || _animationTasks != value)
+                    if (!r.IsCompletedSuccessfully || this._animationTasks != value)
                         return;
 
                     r.Result.AnimationsTask = value;
-                    Invalidate();
+                    this.Invalidate();
                 },
                 cts.Token,
                 TaskContinuationOptions.None,
@@ -145,10 +155,12 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
 
     public Task<ModelInfoResolver>? ModelInfoResolverTask { get; set; }
 
-    protected override void OnPaintBackground(PaintEventArgs pevent) { }
+    protected override void OnPaintBackground(PaintEventArgs pevent)
+    { }
 
-    protected override void OnPaint(PaintEventArgs e) {
-        if (!TryGetRenderer(out var renderer)) {
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        if (!this.TryGetRenderer(out var renderer)) {
             base.OnPaintBackground(e);
             return;
         }
@@ -156,19 +168,21 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         renderer.Draw(e);
     }
 
-    private void OnCameraManagerOnViewportChanged() {
-        ViewportChanged?.Invoke(this, EventArgs.Empty);
-        Invalidate();
+    private void OnCameraManagerOnViewportChanged()
+    {
+        this.ViewportChanged?.Invoke(this, EventArgs.Empty);
+        this.Invalidate();
     }
 
-    private bool TryGetRenderer([MaybeNullWhen(false)] out BaseMdlRenderer renderer) {
-        if (_activeRendererTask is null) {
+    private bool TryGetRenderer([MaybeNullWhen(false)] out BaseMdlRenderer renderer)
+    {
+        if (this._activeRendererTask is null) {
             renderer = null!;
             return false;
         }
 
-        if (_activeRendererTask?.IsCompletedSuccessfully is true) {
-            renderer = _activeRendererTask.Result;
+        if (this._activeRendererTask?.IsCompletedSuccessfully is true) {
+            renderer = this._activeRendererTask.Result;
             return true;
         }
 
@@ -178,9 +192,10 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
 
     public bool TryGetCustomRenderer(
         [MaybeNullWhen(false)] out CustomMdlRenderer renderer,
-        bool startInitializing = false) {
-        if (_customRendererTask?.IsCompletedSuccessfully is true) {
-            renderer = _customRendererTask.Result;
+        bool startInitializing = false)
+    {
+        if (this._customRendererTask?.IsCompletedSuccessfully is true) {
+            renderer = this._customRendererTask.Result;
             return true;
         }
 
@@ -188,21 +203,25 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         if (!startInitializing)
             return false;
 
-        _customRendererTask ??= new(Task
-            .Run(() => new CustomMdlRenderer(this))
-            .ContinueWith(r => {
-                if (r.IsCompletedSuccessfully)
-                    r.Result.UiThreadInitialize();
-                return r.Result;
-            }, UiTaskScheduler));
+        this._customRendererTask ??= new(
+            Task
+                .Run(() => new CustomMdlRenderer(this))
+                .ContinueWith(
+                    r => {
+                        if (r.IsCompletedSuccessfully)
+                            r.Result.UiThreadInitialize();
+                        return r.Result;
+                    },
+                    this.UiTaskScheduler));
         return false;
     }
 
     public bool TryGetGameShaderRenderer(
         [MaybeNullWhen(false)] out GamePixelShaderMdlRenderer renderer,
-        bool startInitializing = false) {
-        if (_gameShaderRendererTask?.IsCompletedSuccessfully is true) {
-            renderer = _gameShaderRendererTask.Result;
+        bool startInitializing = false)
+    {
+        if (this._gameShaderRendererTask?.IsCompletedSuccessfully is true) {
+            renderer = this._gameShaderRendererTask.Result;
             return true;
         }
 
@@ -210,26 +229,32 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         if (!startInitializing)
             return false;
 
-        _gameShaderRendererTask ??= new(Task
-            .Run(() => new GamePixelShaderMdlRenderer(this))
-            .ContinueWith(r => {
-                if (r.IsCompletedSuccessfully)
-                    r.Result.UiThreadInitialize();
-                return r.Result;
-            }, UiTaskScheduler));
+        this._gameShaderRendererTask ??= new(
+            Task
+                .Run(() => new GamePixelShaderMdlRenderer(this))
+                .ContinueWith(
+                    r => {
+                        if (r.IsCompletedSuccessfully)
+                            r.Result.UiThreadInitialize();
+                        return r.Result;
+                    },
+                    this.UiTaskScheduler));
         return false;
     }
 
-    internal Task<T?> GetTypedFileAsync<T>(string path) where T : FileResource {
-        if (Vfs is not { } vfs || VfsRoot is not { } vfsRoot || _mdlCancel?.Token is not { } cts)
+    internal Task<T?> GetTypedFileAsync<T>(string path) where T : FileResource
+    {
+        if (this.Vfs is not { } vfs || this.VfsRoot is not { } vfsRoot || this._mdlCancel?.Token is not { } cts)
             return Task.FromResult((T?) null);
-        return Task.Factory.StartNew(async () => {
-            var file = await vfs.LocateFile(vfsRoot, path);
-            if (file is null)
-                return null;
+        return Task.Factory.StartNew(
+            async () => {
+                var file = await vfs.LocateFile(vfsRoot, path);
+                if (file is null)
+                    return null;
 
-            using var lookup = vfs.GetLookup(file);
-            return await lookup.AsFileResource<T>(cts);
-        }, cts).Unwrap();
+                using var lookup = vfs.GetLookup(file);
+                return await lookup.AsFileResource<T>(cts);
+            },
+            cts).Unwrap();
     }
 }

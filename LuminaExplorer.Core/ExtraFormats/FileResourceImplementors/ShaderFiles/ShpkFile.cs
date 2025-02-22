@@ -4,84 +4,101 @@ using System.Linq;
 using System.Text;
 using Lumina.Data;
 using Lumina.Data.Attributes;
+using Lumina.Misc;
 
 namespace LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 
 [FileExtension(".shpk")]
 public class ShpkFile : FileResource {
     public ShpkHeader Header;
-    public ShaderEntry[] VertexShaderEntries = null!;
-    public ShaderEntry[] PixelShaderEntries = null!;
-    public ShaderMaterialParam[] MaterialParams = null!;
-    public ShaderInput[] Constants = null!;
-    public ShaderInput[] Samplers = null!;
-    public ShaderInput[] Uavs = null!;
-    public ShaderKey[] SystemKeys = null!;
-    public ShaderKey[] SceneKeys = null!;
-    public ShaderKey[] MaterialKeys = null!;
-    public ShaderKey[] SubViewKeys = null!;
-    public ShaderNode[] Nodes = null!;
-    public ShaderItem[] Items = null!;
+    public ShaderEntry[] VertexShaderEntries = [];
+    public ShaderEntry[] PixelShaderEntries = [];
+    public ShaderMaterialParam[] MaterialParams = [];
+    public byte[] MaterialParamsDefaults = [];
+    public ShaderInput[] Constants = [];
+    public ShaderInput[] Samplers = [];
+    public ShaderInput[] Textures = [];
+    public ShaderInput[] Uavs = [];
+    public ShaderKey[] SystemKeys = [];
+    public ShaderKey[] SceneKeys = [];
+    public ShaderKey[] MaterialKeys = [];
+    public ShaderKey[] SubViewKeys = [];
+    public ShaderNode[] Nodes = [];
+    public ShaderNodeAlias[] NodeAliases = [];
 
-    public override void LoadFile() {
-        Header = Reader.ReadStructure<ShpkHeader>();
-        if (Header.Magic != ShpkHeader.MagicValue)
+    public override void LoadFile()
+    {
+        this.Header = this.Reader.ReadStructure<ShpkHeader>();
+        if (this.Header.Magic != ShpkHeader.MagicValue)
             throw new InvalidDataException();
-        VertexShaderEntries = Enumerable.Range(0, (int) Header.VertexShaderCount)
+        this.VertexShaderEntries = Enumerable.Range(0, (int) this.Header.VertexShaderCount)
             .Select(_ => new ShaderEntry(this, ShaderType.Vertex)).ToArray();
-        PixelShaderEntries = Enumerable.Range(0, (int) Header.PixelShaderCount)
+        this.PixelShaderEntries = Enumerable.Range(0, (int) this.Header.PixelShaderCount)
             .Select(_ => new ShaderEntry(this, ShaderType.Pixel)).ToArray();
 
-        MaterialParams = Reader.ReadStructuresAsArray<ShaderMaterialParam>((int) Header.MaterialParamCount);
-        Constants = Reader.ReadStructuresAsArray<ShaderInput>((int) Header.ConstantCount);
-        Samplers = Reader.ReadStructuresAsArray<ShaderInput>((int) Header.SamplerCount);
-        Uavs = Reader.ReadStructuresAsArray<ShaderInput>((int) Header.UavCount);
-        SystemKeys = Reader.ReadStructuresAsArray<ShaderKey>((int) Header.SystemKeyCount);
-        SceneKeys = Reader.ReadStructuresAsArray<ShaderKey>((int) Header.SceneKeyCount);
-        MaterialKeys = Reader.ReadStructuresAsArray<ShaderKey>((int) Header.MaterialKeyCount);
-        SubViewKeys = new[] {
-            new ShaderKey {Id = 1, DefaultValue = Reader.ReadUInt32()},
-            new ShaderKey {Id = 2, DefaultValue = Reader.ReadUInt32()},
-        };
-        Nodes = new ShaderNode[Header.NodeCount];
-        for (var i = 0; i < Nodes.Length; i++) {
-            Nodes[i].Id = Reader.ReadUInt32();
-            var passCount = Reader.ReadUInt32();
-            Nodes[i].PassIndices = Reader.ReadBytes(16);
-            Nodes[i].SystemKeys = Reader.ReadStructuresAsArray<uint>(SystemKeys.Length);
-            Nodes[i].SceneKeys = Reader.ReadStructuresAsArray<uint>(SceneKeys.Length);
-            Nodes[i].MaterialKeys = Reader.ReadStructuresAsArray<uint>(MaterialKeys.Length);
-            Nodes[i].SubViewKeys = Reader.ReadStructuresAsArray<uint>(SubViewKeys.Length);
-            Nodes[i].Passes = Reader.ReadStructuresAsArray<ShaderNodePass>((int) passCount);
+        this.MaterialParams = this.Reader.ReadStructuresAsArray<ShaderMaterialParam>(this.Header.MaterialParamCount);
+        this.MaterialParamsDefaults = this.Header.HasMaterialParamDefaults != 0
+            ? this.Reader.ReadBytes((int) this.Header.MaterialParamSize)
+            : [];
+
+        this.Constants = this.Reader.ReadStructuresAsArray<ShaderInput>((int) this.Header.ConstantCount);
+        this.Samplers = this.Reader.ReadStructuresAsArray<ShaderInput>(this.Header.SamplerCount);
+        this.Textures = this.Reader.ReadStructuresAsArray<ShaderInput>(this.Header.TextureCount);
+        this.Uavs = this.Reader.ReadStructuresAsArray<ShaderInput>((int) this.Header.UavCount);
+
+        this.SystemKeys = this.Reader.ReadStructuresAsArray<ShaderKey>((int) this.Header.SystemKeyCount);
+        this.SceneKeys = this.Reader.ReadStructuresAsArray<ShaderKey>((int) this.Header.SceneKeyCount);
+        this.MaterialKeys = this.Reader.ReadStructuresAsArray<ShaderKey>((int) this.Header.MaterialKeyCount);
+
+        this.SubViewKeys = [
+            new() { Id = 1, DefaultValue = this.Reader.ReadUInt32() },
+            new() { Id = 2, DefaultValue = this.Reader.ReadUInt32() },
+        ];
+
+        this.Nodes = new ShaderNode[this.Header.NodeCount];
+        for (var i = 0; i < this.Nodes.Length; i++) {
+            this.Nodes[i].Id = this.Reader.ReadUInt32();
+            var passCount = this.Reader.ReadUInt32();
+            this.Nodes[i].PassIndices = this.Reader.ReadBytes(16);
+            this.Nodes[i].SystemKeys = this.Reader.ReadStructuresAsArray<uint>(this.SystemKeys.Length);
+            this.Nodes[i].SceneKeys = this.Reader.ReadStructuresAsArray<uint>(this.SceneKeys.Length);
+            this.Nodes[i].MaterialKeys = this.Reader.ReadStructuresAsArray<uint>(this.MaterialKeys.Length);
+            this.Nodes[i].SubViewKeys = this.Reader.ReadStructuresAsArray<uint>(this.SubViewKeys.Length);
+            this.Nodes[i].Passes = this.Reader.ReadStructuresAsArray<ShaderNodePass>((int) passCount);
         }
 
-        Items = Reader.ReadStructuresAsArray<ShaderItem>((int) Header.ItemCount);
+        this.NodeAliases = this.Reader.ReadStructuresAsArray<ShaderNodeAlias>((int) this.Header.NodeAliasCount);
     }
-    
+
     public class ShaderEntry : IShaderEntry {
         private readonly ShpkFile _file;
 
-        public ShaderEntry(ShpkFile file, ShaderType shaderType) {
-            _file = file;
-            Header = _file.Reader.ReadStructure<ShaderHeader>();
-            InputTables = _file.Reader.ReadStructuresAsArray<ShaderInput>(Header.NumInputs);
-            InputNames = InputTables.Select(x => Encoding.UTF8.GetString(
-                _file.Data,
-                (int) (_file.Header.InputStringBlockOffset + x.InputStringOffset),
-                (int) x.InputStringSize)).ToArray();
-            ShaderType = shaderType;
+        public ShaderEntry(ShpkFile file, ShaderType shaderType)
+        {
+            this._file = file;
+            this.Header = this._file.Reader.ReadStructure<ShaderHeader>();
+            this.InputTables = this._file.Reader.ReadStructuresAsArray<ShaderInput>(this.Header.NumInputs);
+            this.InputNames = this.InputTables.Select(
+                x => Encoding.UTF8.GetString(
+                    this._file.Data,
+                    (int) (this._file.Header.StringsOffset + x.InputStringOffset),
+                    x.InputStringSize)).ToArray();
+            this.ShaderType = shaderType;
         }
 
         public ShaderHeader Header { get; set; }
         public ShaderInput[] InputTables { get; set; }
         public string[] InputNames { get; set; }
 
-        public ReadOnlySpan<byte> ByteCode => _file.DataSpan.Slice(
-            (int) (_file.Header.ShaderBytecodeBlockOffset + Header.BytecodeOffset),
-            (int) Header.BytecodeSize);
+        public ReadOnlySpan<byte> ByteCode =>
+            this._file.DataSpan.Slice(
+                (int) (this._file.Header.BlobOffset + this.Header.BlobOffset),
+                (int) this.Header.BlobSize);
+
+        public uint ByteCodeCrc32 => Crc32.Get(this.ByteCode);
 
         public ShaderType ShaderType { get; }
 
-        public override string ToString() => Header.ToString();
+        public override string ToString() => this.Header.ToString();
     }
 }

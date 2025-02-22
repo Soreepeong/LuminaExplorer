@@ -12,20 +12,22 @@ public static class BinaryReaderExtensions {
     #region Utilities for chaining calls
 
     public static T WithSeek<T>(this T reader, long offset, SeekOrigin origin = SeekOrigin.Begin)
-        where T : BinaryReader {
+        where T : BinaryReader
+    {
         var position = reader.BaseStream.Position;
         var newOffset = origin switch {
             SeekOrigin.Begin => offset,
             SeekOrigin.Current => position + offset,
             SeekOrigin.End => position + offset,
-            _ => throw new ArgumentOutOfRangeException(nameof(origin), origin, null)
+            _ => throw new ArgumentOutOfRangeException(nameof(origin), origin, null),
         };
         if (position != newOffset)
             reader.BaseStream.Position = newOffset;
         return reader;
     }
 
-    public static T WithAlign<T>(this T reader, int unit) where T : BinaryReader {
+    public static T WithAlign<T>(this T reader, int unit) where T : BinaryReader
+    {
         reader.BaseStream.Position = (reader.BaseStream.Position + unit - 1) / unit * unit;
         return reader;
     }
@@ -57,7 +59,8 @@ public static class BinaryReaderExtensions {
 
     #region Utilities for reading extra types
 
-    public static unsafe T ReadEnum<T>(this BinaryReader reader) where T : unmanaged, Enum {
+    public static unsafe T ReadEnum<T>(this BinaryReader reader) where T : unmanaged, Enum
+    {
         switch (Marshal.SizeOf(Enum.GetUnderlyingType(typeof(T)))) {
             case 1:
                 var b1 = reader.ReadByte();
@@ -76,7 +79,8 @@ public static class BinaryReaderExtensions {
         }
     }
 
-    public static string ReadCString(this BinaryReader reader) {
+    public static string ReadCString(this BinaryReader reader)
+    {
         var len = 0;
         while (reader.ReadByte() != 0)
             len++;
@@ -87,7 +91,8 @@ public static class BinaryReaderExtensions {
         return Encoding.UTF8.GetString(bytes, 0, len);
     }
 
-    public static string ReadFString(this BinaryReader reader, int length) {
+    public static string ReadFString(this BinaryReader reader, int length)
+    {
         var b = reader.ReadBytes(length);
         var n = Array.IndexOf(b, (byte) 0);
         return Encoding.UTF8.GetString(b, 0, n >= 0 ? n : b.Length);
@@ -99,7 +104,8 @@ public static class BinaryReaderExtensions {
     public static Quaternion ReadSingleQuaternion(this BinaryReader reader) =>
         new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
 
-    public static Quaternion ReadHk32BitQuaternion(this BinaryReader reader) {
+    public static Quaternion ReadHk32BitQuaternion(this BinaryReader reader)
+    {
         const float piDiv2 = MathF.PI / 2;
         const float piDiv4 = MathF.PI / 4;
         const float phiFrac = piDiv2 / 511f;
@@ -130,7 +136,8 @@ public static class BinaryReaderExtensions {
             r * (0 == (cVal & 0x80000000) ? 1 : -1));
     }
 
-    public static Quaternion ReadHk40BitQuaternion(this BinaryReader reader) {
+    public static Quaternion ReadHk40BitQuaternion(this BinaryReader reader)
+    {
         /*
          * 40 bit Quaternion structure
          * - 12 bit x signed integer
@@ -169,7 +176,8 @@ public static class BinaryReaderExtensions {
         return new(tmp[0], tmp[1], tmp[2], tmp[3]);
     }
 
-    public static Quaternion ReadHk48BitQuaternion(this BinaryReader reader) {
+    public static Quaternion ReadHk48BitQuaternion(this BinaryReader reader)
+    {
         const int mask = 0x7FFF;
 
         var x = reader.ReadUInt16();

@@ -24,54 +24,58 @@ public sealed class TextureSqpackFileStream : BaseSqpackFileStream {
     private byte[]? _blockBuffer;
 
     public TextureSqpackFileStream(string datPath, PlatformId platformId, long baseOffset, SqPackFileInfo info)
-        : base(platformId, info.RawFileSize) => _offsetManager = new(datPath, platformId, baseOffset, info);
+        : base(platformId, info.RawFileSize) =>
+        this._offsetManager = new(datPath, platformId, baseOffset, info);
 
     public TextureSqpackFileStream(TextureSqpackFileStream cloneFrom)
-        : base(cloneFrom.PlatformId, (uint) cloneFrom.Length) => _offsetManager = cloneFrom._offsetManager;
+        : base(cloneFrom.PlatformId, (uint) cloneFrom.Length) =>
+        this._offsetManager = cloneFrom._offsetManager;
 
-    ~TextureSqpackFileStream() {
-        Dispose(false);
+    ~TextureSqpackFileStream()
+    {
+        this.Dispose(false);
     }
 
     public override async Task<int>
-        ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) {
+        ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
         if (count == 0)
             return 0;
 
         var totalRead = 0;
 
         // 0. Header
-        if (PositionUint < _offsetManager.HeaderBytes.Length) {
-            var consumed = (int) PositionUint;
-            var remaining = _offsetManager.HeaderBytes.Length - consumed;
+        if (this.PositionUint < this._offsetManager.HeaderBytes.Length) {
+            var consumed = (int) this.PositionUint;
+            var remaining = this._offsetManager.HeaderBytes.Length - consumed;
             var available = Math.Min(count, remaining);
-            Array.Copy(_offsetManager.HeaderBytes, consumed, buffer, consumed, available);
+            Array.Copy(this._offsetManager.HeaderBytes, consumed, buffer, consumed, available);
             offset += available;
             count -= available;
-            PositionUint += (uint) available;
+            this.PositionUint += (uint) available;
             totalRead += available;
             if (count == 0)
                 return totalRead;
         }
 
         // 1. Drain previous read
-        if (_blockBuffer is not null) {
-            var blockGroup = _offsetManager.Lods[_bufferLodIndex];
-            if (blockGroup.RequestOffsets[_bufferBlockIndex] <= PositionUint &&
-                PositionUint < blockGroup.RequestOffsets[_bufferBlockIndex + 1]) {
-                var bufferConsumed = (int) (Position - blockGroup.RequestOffsets[_bufferBlockIndex]);
-                var bufferRemaining = (int) (blockGroup.RequestOffsets[_bufferBlockIndex + 1] - Position);
-                if (bufferConsumed < blockGroup.Sizes[_bufferBlockIndex] && bufferRemaining > 0) {
+        if (this._blockBuffer is not null) {
+            var blockGroup = this._offsetManager.Lods[this._bufferLodIndex];
+            if (blockGroup.RequestOffsets[this._bufferBlockIndex] <= this.PositionUint &&
+                this.PositionUint < blockGroup.RequestOffsets[this._bufferBlockIndex + 1]) {
+                var bufferConsumed = (int) (this.Position - blockGroup.RequestOffsets[this._bufferBlockIndex]);
+                var bufferRemaining = (int) (blockGroup.RequestOffsets[this._bufferBlockIndex + 1] - this.Position);
+                if (bufferConsumed < blockGroup.Sizes[this._bufferBlockIndex] && bufferRemaining > 0) {
                     var available = Math.Min(bufferRemaining, count);
-                    Array.Copy(_blockBuffer, bufferConsumed, buffer, offset, available);
+                    Array.Copy(this._blockBuffer, bufferConsumed, buffer, offset, available);
                     offset += available;
                     count -= available;
-                    Position += available;
+                    this.Position += available;
                     totalRead += available;
                     if (available == bufferRemaining) {
-                        _bufferBlockIndex = _bufferLodIndex = -1;
-                        _bufferValidSize = 0;
-                        ArrayPool<byte>.Shared.Return(ref _blockBuffer);
+                        this._bufferBlockIndex = this._bufferLodIndex = -1;
+                        this._bufferValidSize = 0;
+                        ArrayPool<byte>.Shared.Return(ref this._blockBuffer);
                     }
 
                     if (count == 0)
@@ -84,21 +88,21 @@ public sealed class TextureSqpackFileStream : BaseSqpackFileStream {
         byte[]? readBuffer = null;
         try {
             // There will never be more than 16 mipmaps (width and height are u16 values,) so just count it.
-            for (var i = 0; i < _offsetManager.NumLods && count > 0; i++) {
+            for (var i = 0; i < this._offsetManager.NumLods && count > 0; i++) {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var lod = _offsetManager.Lods[i];
+                var lod = this._offsetManager.Lods[i];
 
-                if (PositionUint >= lod.RequestOffsets[0] + lod.Summary.DecompressedSize)
+                if (this.PositionUint >= lod.RequestOffsets[0] + lod.Summary.DecompressedSize)
                     continue;
 
                 // There can be many subblocks on the other hand.
-                var j = Array.BinarySearch(lod.RequestOffsets, 0, lod.RequestOffsets.Length - 1, PositionUint);
+                var j = Array.BinarySearch(lod.RequestOffsets, 0, lod.RequestOffsets.Length - 1, this.PositionUint);
                 if (j < 0)
                     j = ~j - 1;
 
                 if (j == -1) {
-                    totalRead += ReadImplPadTo(buffer, ref offset, ref count, lod.RequestOffsets[0]);
+                    totalRead += this.ReadImplPadTo(buffer, ref offset, ref count, lod.RequestOffsets[0]);
                     if (count == 0)
                         break;
                     j = 0;
@@ -106,12 +110,12 @@ public sealed class TextureSqpackFileStream : BaseSqpackFileStream {
 
                 for (; j < lod.Summary.BlockCount; j++) {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (lod.RequestOffsets[j + 1] <= PositionUint && lod.RequestOffsets[j] != uint.MaxValue)
+                    if (lod.RequestOffsets[j + 1] <= this.PositionUint && lod.RequestOffsets[j] != uint.MaxValue)
                         continue;
 
                     readBuffer = ArrayPool<byte>.Shared.RentAsNecessary(readBuffer, 16384);
-                    await (_reader ??= _offsetManager.CreateNewReader())
-                        .WithSeek(_offsetManager.BaseOffset + lod.Offsets[j])
+                    await (this._reader ??= this._offsetManager.CreateNewReader())
+                        .WithSeek(this._offsetManager.BaseOffset + lod.Offsets[j])
                         .BaseStream.ReadExactlyAsync(new(readBuffer, 0, lod.Sizes[j]), cancellationToken);
 
                     DatBlockHeader dbh;
@@ -123,41 +127,44 @@ public sealed class TextureSqpackFileStream : BaseSqpackFileStream {
                     lod.DecompressedSizes[j] = checked((ushort) dbh.DecompressedSize);
                     lod.RequestOffsets[j + 1] = lod.RequestOffsets[j] + lod.DecompressedSizes[j];
 
-                    if (lod.RequestOffsets[j + 1] <= PositionUint)
+                    if (lod.RequestOffsets[j + 1] <= this.PositionUint)
                         continue;
 
-                    var bufferConsumed = PositionUint - lod.RequestOffsets[j];
-                    var bufferRemaining = lod.RequestOffsets[j + 1] - PositionUint;
+                    var bufferConsumed = this.PositionUint - lod.RequestOffsets[j];
+                    var bufferRemaining = lod.RequestOffsets[j + 1] - this.PositionUint;
 
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    _blockBuffer = ArrayPool<byte>.Shared.RentAsNecessary(_blockBuffer, (int) dbh.DecompressedSize);
+                    this._blockBuffer = ArrayPool<byte>.Shared.RentAsNecessary(
+                        this._blockBuffer,
+                        (int) dbh.DecompressedSize);
                     if (dbh.IsCompressed) {
                         unsafe {
                             fixed (byte* b1 = &readBuffer[Unsafe.SizeOf<DatBlockHeader>()]) {
-                                using var s1 = new DeflateStream(new UnmanagedMemoryStream(b1, dbh.CompressedSize),
+                                using var s1 = new DeflateStream(
+                                    new UnmanagedMemoryStream(b1, dbh.CompressedSize),
                                     CompressionMode.Decompress);
-                                s1.ReadExactly(new(_blockBuffer, 0, (int) dbh.DecompressedSize));
+                                s1.ReadExactly(new(this._blockBuffer, 0, (int) dbh.DecompressedSize));
                             }
                         }
                     } else {
-                        Array.Copy(readBuffer, 0, _blockBuffer, 0, dbh.DecompressedSize);
+                        Array.Copy(readBuffer, 0, this._blockBuffer, 0, dbh.DecompressedSize);
                     }
 
-                    _bufferLodIndex = i;
-                    _bufferBlockIndex = j;
-                    _bufferValidSize = dbh.DecompressedSize;
+                    this._bufferLodIndex = i;
+                    this._bufferBlockIndex = j;
+                    this._bufferValidSize = dbh.DecompressedSize;
 
-                    if (bufferConsumed < _bufferValidSize) {
+                    if (bufferConsumed < this._bufferValidSize) {
                         var available = Math.Min((int) bufferRemaining, count);
-                        Array.Copy(_blockBuffer, bufferConsumed, buffer, offset, available);
+                        Array.Copy(this._blockBuffer, bufferConsumed, buffer, offset, available);
                         offset += available;
                         count -= available;
-                        PositionUint += (uint) available;
+                        this.PositionUint += (uint) available;
                         totalRead += available;
                         if (available == bufferRemaining) {
-                            _bufferLodIndex = _bufferBlockIndex = -1;
-                            _bufferValidSize = 0;
+                            this._bufferLodIndex = this._bufferBlockIndex = -1;
+                            this._bufferValidSize = 0;
                         }
 
                         if (count == 0)
@@ -167,27 +174,29 @@ public sealed class TextureSqpackFileStream : BaseSqpackFileStream {
             }
         } finally {
             ArrayPool<byte>.Shared.Return(ref readBuffer);
-            if (_bufferValidSize == 0)
-                ArrayPool<byte>.Shared.Return(ref _blockBuffer);
+            if (this._bufferValidSize == 0)
+                ArrayPool<byte>.Shared.Return(ref this._blockBuffer);
         }
 
         // 3. Pad.
-        totalRead += ReadImplPadTo(buffer, ref offset, ref count, (uint) Length);
+        totalRead += this.ReadImplPadTo(buffer, ref offset, ref count, (uint) this.Length);
 
         return totalRead;
     }
 
     public override BaseSqpackFileStream Clone(bool keepOpen) => new TextureSqpackFileStream(this);
 
-    protected override void Dispose(bool disposing) {
-        CloseButOpenAgainWhenNecessary();
+    protected override void Dispose(bool disposing)
+    {
+        this.CloseButOpenAgainWhenNecessary();
         base.Dispose(disposing);
     }
 
-    public TexFile.TexHeader TexHeader => _offsetManager.Header;
+    public TexFile.TexHeader TexHeader => this._offsetManager.Header;
 
-    public override void CloseButOpenAgainWhenNecessary() {
-        SafeDispose.One(ref _reader);
+    public override void CloseButOpenAgainWhenNecessary()
+    {
+        SafeDispose.One(ref this._reader);
     }
 
     private class OffsetManager : BaseOffsetManager {
@@ -197,27 +206,27 @@ public sealed class TextureSqpackFileStream : BaseSqpackFileStream {
         public readonly byte[] HeaderBytes;
 
         public unsafe OffsetManager(string datPath, PlatformId platformId, long baseOffset, SqPackFileInfo info)
-            : base(datPath, platformId, baseOffset) {
-            NumLods = (int) info.NumberOfBlocks;
+            : base(datPath, platformId, baseOffset)
+        {
+            this.NumLods = (int) info.NumberOfBlocks;
 
-            using var reader = CreateNewReader();
+            using var reader = this.CreateNewReader();
             var locators = reader
-                .WithSeek(BaseOffset + (uint) Unsafe.SizeOf<SqPackFileInfo>())
-                .ReadStructuresAsArray<LodBlockStruct>(NumLods);
+                .WithSeek(this.BaseOffset + (uint) Unsafe.SizeOf<SqPackFileInfo>())
+                .ReadStructuresAsArray<LodBlockStruct>(this.NumLods);
 
             var texHeaderLength = locators[0].CompressedOffset;
 
-            Lods = new LodBlock[NumLods];
-            for (var i = 0; i < NumLods; i++) {
-                var baseRequestOffset = i == 0 ? texHeaderLength : Lods[i - 1].RequestOffsets[^1];
+            this.Lods = new LodBlock[this.NumLods];
+            for (var i = 0; i < this.NumLods; i++) {
+                var baseRequestOffset = i == 0 ? texHeaderLength : this.Lods[i - 1].RequestOffsets[^1];
                 var blockSizes = reader.ReadStructuresAsArray<ushort>((int) locators[i].BlockCount);
 
-                Lods[i] = new(locators[i], blockSizes, baseRequestOffset, info.Size);
+                this.Lods[i] = new(locators[i], blockSizes, baseRequestOffset, info.Size);
             }
 
-            HeaderBytes = reader.WithSeek(BaseOffset + info.Size).ReadBytes((int) texHeaderLength);
-            fixed (void* p = HeaderBytes)
-                Header = *(TexFile.TexHeader*) p;
+            this.HeaderBytes = reader.WithSeek(this.BaseOffset + info.Size).ReadBytes((int) texHeaderLength);
+            fixed (void* p = this.HeaderBytes) this.Header = *(TexFile.TexHeader*) p;
         }
     }
 
@@ -241,22 +250,22 @@ public sealed class TextureSqpackFileStream : BaseSqpackFileStream {
         public readonly ushort[] Sizes;
         public readonly ushort[] DecompressedSizes;
 
-        public LodBlock(LodBlockStruct locator, ushort[] blockSizes, uint baseRequestOffset, uint headerSize) {
-            Summary = locator;
-            Sizes = blockSizes;
+        public LodBlock(LodBlockStruct locator, ushort[] blockSizes, uint baseRequestOffset, uint headerSize)
+        {
+            this.Summary = locator;
+            this.Sizes = blockSizes;
 
-            RequestOffsets = new uint[locator.BlockCount + 1];
-            Array.Fill(RequestOffsets, uint.MaxValue);
-            RequestOffsets[0] = baseRequestOffset;
-            RequestOffsets[^1] = baseRequestOffset + Summary.DecompressedSize;
+            this.RequestOffsets = new uint[locator.BlockCount + 1];
+            Array.Fill(this.RequestOffsets, uint.MaxValue);
+            this.RequestOffsets[0] = baseRequestOffset;
+            this.RequestOffsets[^1] = baseRequestOffset + this.Summary.DecompressedSize;
 
-            Offsets = new uint[locator.BlockCount];
-            Offsets[0] = headerSize + locator.CompressedOffset;
-            for (var i = 1; i < locator.BlockCount; i++)
-                Offsets[i] = Offsets[i - 1] + Sizes[i - 1];
+            this.Offsets = new uint[locator.BlockCount];
+            this.Offsets[0] = headerSize + locator.CompressedOffset;
+            for (var i = 1; i < locator.BlockCount; i++) this.Offsets[i] = this.Offsets[i - 1] + this.Sizes[i - 1];
 
-            DecompressedSizes = new ushort[locator.BlockCount];
-            Array.Fill(DecompressedSizes, ushort.MaxValue);
+            this.DecompressedSizes = new ushort[locator.BlockCount];
+            Array.Fill(this.DecompressedSizes, ushort.MaxValue);
         }
     }
 #pragma warning restore CS0649

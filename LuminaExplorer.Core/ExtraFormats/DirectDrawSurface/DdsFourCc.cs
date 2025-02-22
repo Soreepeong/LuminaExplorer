@@ -27,7 +27,7 @@ public enum DdsFourCc {
     Bc5U = 0x55354342,
 
     // https://github.com/microsoft/DirectXTK/wiki/DDSTextureLoader
-    
+
     D3dFmtR8G8B8 = 20,
     D3dFmtA8R8G8B8 = 21,
     D3dFmtX8R8G8B8 = 22,

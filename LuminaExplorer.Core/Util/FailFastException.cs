@@ -1,7 +1,7 @@
 ﻿using System;
 
-namespace LuminaExplorer.Core.Util; 
+namespace LuminaExplorer.Core.Util;
 
-public class FailFastException : Exception{
+public class FailFastException : Exception {
     public FailFastException(string? s, Exception? e = null) => Environment.FailFast(s, e);
 }

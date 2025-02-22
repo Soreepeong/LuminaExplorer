@@ -1,11 +1,12 @@
 ﻿using System.Runtime.InteropServices;
+using TerraFX.Interop.DirectX;
 
 namespace LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
 
 [StructLayout(LayoutKind.Sequential)]
 public struct DdsHeaderDxt10 {
     /// <summary>The surface pixel format.</summary>
-    public DxgiFormat DxgiFormat;
+    public DXGI_FORMAT DxgiFormat;
 
     /// <summary>Identifies the type of resource.</summary>
     public DdsHeaderDxt10ResourceDimension ResourceDimension;

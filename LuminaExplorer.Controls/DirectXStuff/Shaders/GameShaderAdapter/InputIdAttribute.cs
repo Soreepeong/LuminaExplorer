@@ -5,12 +5,12 @@ using System.Reflection;
 using JetBrains.Annotations;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 
-namespace LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter; 
+namespace LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter;
 
 [MeansImplicitUse]
 [AttributeUsage(AttributeTargets.Struct)]
 public class InputIdAttribute : Attribute {
-    public InputIdAttribute(InputId id) => Id = id;
+    public InputIdAttribute(InputId id) => this.Id = id;
 
     public InputId Id { get; }
 

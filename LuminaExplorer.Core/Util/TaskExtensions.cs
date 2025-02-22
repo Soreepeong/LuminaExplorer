@@ -4,7 +4,8 @@ using System.Threading.Tasks;
 namespace LuminaExplorer.Core.Util;
 
 public static class TaskExtensions {
-    public static Task AsStarted(this Task t) {
+    public static Task AsStarted(this Task t)
+    {
         if (t.Status is TaskStatus.Created) {
             try {
                 t.Start();
@@ -16,7 +17,8 @@ public static class TaskExtensions {
         return t;
     }
 
-    public static Task<T> AsStarted<T>(this Task<T> t) {
+    public static Task<T> AsStarted<T>(this Task<T> t)
+    {
         if (t.Status is TaskStatus.Created) {
             try {
                 t.Start();

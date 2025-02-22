@@ -8,33 +8,35 @@ using Lumina.Data.Files;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.BitmapSource;
 using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
 using LuminaExplorer.Core.Util;
-using WicNet;
 
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
 
 public partial class MultiBitmapViewerControl {
-    public IBitmapSource? PreviousBitmapSource => _bitmapSourceTaskPrevious?.IsCompletedSuccessfully is true
-        ? _bitmapSourceTaskPrevious.Result
-        : null;
+    public IBitmapSource? PreviousBitmapSource =>
+        this._bitmapSourceTaskPrevious?.IsCompletedSuccessfully is true
+            ? this._bitmapSourceTaskPrevious.Result
+            : null;
 
-    public IBitmapSource? CurrentBitmapSource => _bitmapSourceTaskCurrent?.IsCompletedSuccessfully is true
-        ? _bitmapSourceTaskCurrent.Result
-        : null;
+    public IBitmapSource? CurrentBitmapSource =>
+        this._bitmapSourceTaskCurrent?.IsCompletedSuccessfully is true
+            ? this._bitmapSourceTaskCurrent.Result
+            : null;
 
-    public IBitmapSource? BitmapSource => CurrentBitmapSource ?? PreviousBitmapSource;
+    public IBitmapSource? BitmapSource => this.CurrentBitmapSource ?? this.PreviousBitmapSource;
 
     public override Size GetPreferredSize(Size proposedSize) =>
         Size.Add(
-            _bitmapSourceTaskCurrent?.IsCompletedSuccessfully is true
-                ? _bitmapSourceTaskCurrent.Result.Layout.GridSize
+            this._bitmapSourceTaskCurrent?.IsCompletedSuccessfully is true
+                ? this._bitmapSourceTaskCurrent.Result.Layout.GridSize
                 : base.GetPreferredSize(proposedSize),
-            new(Margin.Horizontal, Margin.Vertical));
+            new(this.Margin.Horizontal, this.Margin.Vertical));
 
-    public override async Task<Size> GetPreferredSizeAsync(Size proposedSize) {
+    public override async Task<Size> GetPreferredSizeAsync(Size proposedSize)
+    {
         Size? size = null;
-        if (_bitmapSourceTaskCurrent is not null) {
+        if (this._bitmapSourceTaskCurrent is not null) {
             try {
-                size = (await _bitmapSourceTaskCurrent.ConfigureAwait(false)).Layout.GridSize;
+                size = (await this._bitmapSourceTaskCurrent.ConfigureAwait(false)).Layout.GridSize;
             } catch (Exception) {
                 // pass
             }
@@ -42,173 +44,187 @@ public partial class MultiBitmapViewerControl {
 
         size ??= await base.GetPreferredSizeAsync(proposedSize);
 
-        return Size.Add(size.Value, new(Margin.Horizontal, Margin.Vertical));
+        return Size.Add(size.Value, new(this.Margin.Horizontal, this.Margin.Vertical));
     }
 
-    public void ChangeDisplayedMipmap(int imageIndex, int mipmap, bool force = false) {
-        if (_bitmapSourceTaskCurrent is not { } bitmapSource)
+    public void ChangeDisplayedMipmap(int imageIndex, int mipmap, bool force = false)
+    {
+        if (this._bitmapSourceTaskCurrent is not { } bitmapSource)
             return;
 
-        if (!force && _currentMipmap == mipmap && _currentImageIndex == imageIndex)
+        if (!force && this._currentMipmap == mipmap && this._currentImageIndex == imageIndex)
             return;
 
-        _currentMipmap = mipmap;
-        _currentImageIndex = imageIndex;
-        _loadStartTicks = Environment.TickCount64;
-        _timer.Enabled = true;
-        _timer.Interval = 1;
-        MouseActivity.Enabled = false;
+        this._currentMipmap = mipmap;
+        this._currentImageIndex = imageIndex;
+        this._loadStartTicks = Environment.TickCount64;
+        this._timer.Enabled = true;
+        this._timer.Interval = 1;
+        this.MouseActivity.Enabled = false;
 
-        ClearDisplayInformationCache();
-        bitmapSource.Task.ContinueWith(result => {
-            if (!result.IsCompletedSuccessfully ||
-                bitmapSource != _bitmapSourceTaskCurrent ||
-                _currentMipmap != mipmap ||
-                _currentImageIndex != imageIndex) {
-                if (_bitmapSourceTaskPrevious is not null) {
-                    if (TryGetRenderers(out var renderers))
-                        foreach (var r in renderers)
-                            r.PreviousSourceTask = null;
-                    SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
+        this.ClearDisplayInformationCache();
+        bitmapSource.Task.ContinueWith(
+            result => {
+                if (!result.IsCompletedSuccessfully ||
+                    bitmapSource != this._bitmapSourceTaskCurrent || this._currentMipmap != mipmap ||
+                    this._currentImageIndex != imageIndex) {
+                    if (this._bitmapSourceTaskPrevious is not null) {
+                        if (this.TryGetRenderers(out var renderers))
+                            foreach (var r in renderers)
+                                r.PreviousSourceTask = null;
+                        SafeDispose.OneAsync(ref this._bitmapSourceTaskPrevious);
+                    }
+
+                    return;
                 }
 
-                return;
-            }
+                result.Result.UpdateSelection(imageIndex, mipmap);
+            },
+            this.UiTaskScheduler);
 
-            result.Result.UpdateSelection(imageIndex, mipmap);
-        }, UiTaskScheduler);
-
-        Invalidate();
+        this.Invalidate();
     }
 
-    public void SetFile(FileInfo fileInfo) {
+    public void SetFile(FileInfo fileInfo)
+    {
         switch (fileInfo.Extension.ToLowerInvariant()) {
             case ".dds":
-                SetFile(new DdsFile(fileInfo.Name, fileInfo.OpenRead()));
+                this.SetFile(new DdsFile(fileInfo.Name, fileInfo.OpenRead()));
                 break;
             case ".tex":
             case ".atex":
-                SetFile(TexBitmapSource.FromFile(fileInfo));
+                this.SetFile(TexBitmapSource.FromFile(fileInfo));
                 break;
             default:
-                SetFile(fileInfo.FullName, fileInfo.Length, fileInfo.OpenRead());
+                this.SetFile(fileInfo.FullName, fileInfo.Length, fileInfo.OpenRead());
                 break;
         }
     }
 
-    public void SetFile(DdsFile fileResource) => SetFile(new DdsBitmapSource(fileResource));
+    public void SetFile(DdsFile fileResource) => this.SetFile(new DdsBitmapSource(fileResource));
 
-    public void SetFile(TexFile fileResource) => SetFile(new TexBitmapSource(fileResource));
+    public void SetFile(TexFile fileResource) => this.SetFile(new TexBitmapSource(fileResource));
 
-    public void SetFile(string name, long size, Stream stream) => 
-        SetFile(Task.Run(() => (IBitmapSource) new PlainBitmapSource(name, size, stream, _sliceSpacing)));
+    public void SetFile(string name, long size, Stream stream) => this.SetFile(
+        Task.Run(() => (IBitmapSource) new PlainBitmapSource(name, size, stream, this._sliceSpacing)));
 
-    public void SetFile(string name, byte[] rawData) => SetFile(name, rawData.Length, new MemoryStream(rawData, false));
+    public void SetFile(string name, byte[] rawData) =>
+        this.SetFile(name, rawData.Length, new MemoryStream(rawData, false));
 
-    public void SetFile(FileResource fileResource) {
+    public void SetFile(FileResource fileResource)
+    {
         if (fileResource is TexFile texFile) {
-            SetFile(texFile);
+            this.SetFile(texFile);
             return;
         }
 
         switch (Path.GetExtension(fileResource.FilePath.Path).ToLowerInvariant()) {
             case ".dds":
-                SetFile(new DdsBitmapSource(new(fileResource.FilePath.Path, fileResource.Data)));
+                this.SetFile(new DdsBitmapSource(new(fileResource.FilePath.Path, fileResource.Data)));
                 break;
             default:
-                SetFile(fileResource.FilePath.Path, fileResource.Data);
+                this.SetFile(fileResource.FilePath.Path, fileResource.Data);
                 break;
         }
     }
 
-    public void SetFile(IBitmapSource bitmapSource) {
-        bitmapSource.SliceSpacing = _sliceSpacing;
-        SetFile(Task.FromResult(bitmapSource));
+    public void SetFile(IBitmapSource bitmapSource)
+    {
+        bitmapSource.SliceSpacing = this._sliceSpacing;
+        this.SetFile(Task.FromResult(bitmapSource));
     }
 
-    public void SetFile(Task<IBitmapSource> sourceTask) {
-        ClearFileImpl();
+    public void SetFile(Task<IBitmapSource> sourceTask)
+    {
+        this.ClearFileImpl();
 
-        if (_bitmapSourceTaskCurrent is not null) {
-            if (IsCurrentBitmapSourceReadyOnRenderer()) {
-                if (TryGetRenderers(out var renderers))
-                    renderers.FirstOrDefault()?.UpdateBitmapSource(_bitmapSourceTaskCurrent?.Task, null);
+        if (this._bitmapSourceTaskCurrent is not null) {
+            if (this.IsCurrentBitmapSourceReadyOnRenderer()) {
+                if (this.TryGetRenderers(out var renderers))
+                    renderers.FirstOrDefault()?.UpdateBitmapSource(this._bitmapSourceTaskCurrent?.Task, null);
 
-                SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
-                _bitmapSourceTaskPrevious = _bitmapSourceTaskCurrent;
-                _bitmapSourceTaskCurrent = null;
+                SafeDispose.OneAsync(ref this._bitmapSourceTaskPrevious);
+                this._bitmapSourceTaskPrevious = this._bitmapSourceTaskCurrent;
+                this._bitmapSourceTaskCurrent = null;
             } else {
-                if (TryGetRenderers(out var renderers))
-                    renderers.FirstOrDefault()?.UpdateBitmapSource(_bitmapSourceTaskPrevious?.Task, null);
-                SafeDispose.OneAsync(ref _bitmapSourceTaskCurrent);
+                if (this.TryGetRenderers(out var renderers))
+                    renderers.FirstOrDefault()?.UpdateBitmapSource(this._bitmapSourceTaskPrevious?.Task, null);
+                SafeDispose.OneAsync(ref this._bitmapSourceTaskCurrent);
             }
         }
 
-        var sourceTaskCurrent = _bitmapSourceTaskCurrent = new(sourceTask);
+        var sourceTaskCurrent = this._bitmapSourceTaskCurrent = new(sourceTask);
 
         {
-            if (TryGetRenderers(out var renderers, true)) {
+            if (this.TryGetRenderers(out var renderers, true)) {
                 renderers.FirstOrDefault()?.UpdateBitmapSource(
-                    _bitmapSourceTaskPrevious?.Task, _bitmapSourceTaskCurrent?.Task);
+                    this._bitmapSourceTaskPrevious?.Task,
+                    this._bitmapSourceTaskCurrent?.Task);
             } else {
-                _renderers!.ContinueWith(result => {
-                    if (sourceTaskCurrent != _bitmapSourceTaskCurrent || !result.IsCompletedSuccessfully)
-                        return;
+                this._renderers!.ContinueWith(
+                    result => {
+                        if (sourceTaskCurrent != this._bitmapSourceTaskCurrent || !result.IsCompletedSuccessfully)
+                            return;
 
-                    result.Result.FirstOrDefault()?.UpdateBitmapSource(
-                        _bitmapSourceTaskPrevious?.Task, _bitmapSourceTaskCurrent?.Task);
-                }, UiTaskScheduler);
+                        result.Result.FirstOrDefault()?.UpdateBitmapSource(
+                            this._bitmapSourceTaskPrevious?.Task,
+                            this._bitmapSourceTaskCurrent?.Task);
+                    },
+                    this.UiTaskScheduler);
             }
         }
 
-        ChangeDisplayedMipmap(0, 0);
+        this.ChangeDisplayedMipmap(0, 0);
     }
 
-    public void ClearFile(bool keepContentsDisplayed = false) {
-        ClearFileImpl();
+    public void ClearFile(bool keepContentsDisplayed = false)
+    {
+        this.ClearFileImpl();
 
         if (keepContentsDisplayed) {
-            if (_bitmapSourceTaskCurrent is not null) {
-                if (IsCurrentBitmapSourceReadyOnRenderer()) {
-                    if (TryGetRenderers(out var renderers))
-                        renderers.FirstOrDefault()?.UpdateBitmapSource(_bitmapSourceTaskCurrent?.Task, null);
+            if (this._bitmapSourceTaskCurrent is not null) {
+                if (this.IsCurrentBitmapSourceReadyOnRenderer()) {
+                    if (this.TryGetRenderers(out var renderers))
+                        renderers.FirstOrDefault()?.UpdateBitmapSource(this._bitmapSourceTaskCurrent?.Task, null);
 
-                    SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
-                    _bitmapSourceTaskPrevious = _bitmapSourceTaskCurrent;
-                    _bitmapSourceTaskCurrent = null;
+                    SafeDispose.OneAsync(ref this._bitmapSourceTaskPrevious);
+                    this._bitmapSourceTaskPrevious = this._bitmapSourceTaskCurrent;
+                    this._bitmapSourceTaskCurrent = null;
                 } else {
-                    if (TryGetRenderers(out var renderers))
-                        renderers.FirstOrDefault()?.UpdateBitmapSource(_bitmapSourceTaskPrevious?.Task, null);
-                    SafeDispose.OneAsync(ref _bitmapSourceTaskCurrent);
+                    if (this.TryGetRenderers(out var renderers))
+                        renderers.FirstOrDefault()?.UpdateBitmapSource(this._bitmapSourceTaskPrevious?.Task, null);
+                    SafeDispose.OneAsync(ref this._bitmapSourceTaskCurrent);
                 }
             }
         } else {
-            if (TryGetRenderers(out var renderers))
+            if (this.TryGetRenderers(out var renderers))
                 renderers.FirstOrDefault()?.UpdateBitmapSource(null, null);
 
-            SafeDispose.OneAsync(ref _bitmapSourceTaskPrevious);
-            SafeDispose.OneAsync(ref _bitmapSourceTaskCurrent);
-            Viewport.Reset(Size.Empty, 0f);
+            SafeDispose.OneAsync(ref this._bitmapSourceTaskPrevious);
+            SafeDispose.OneAsync(ref this._bitmapSourceTaskCurrent);
+            this.Viewport.Reset(Size.Empty, 0f);
         }
     }
 
-    private void ClearDisplayInformationCache() {
-        _autoDescriptionCached = null;
-        if (TryGetRenderers(out var renderers))
+    private void ClearDisplayInformationCache()
+    {
+        this._autoDescriptionCached = null;
+        if (this.TryGetRenderers(out var renderers))
             foreach (var r in renderers)
                 r.AutoDescriptionRectangle = null;
     }
 
-    private void ClearFileImpl() {
-        MouseActivity.Enabled = false;
-        _loadStartTicks = long.MaxValue;
-        ClearDisplayInformationCache();
-        _currentMipmap = -1;
+    private void ClearFileImpl()
+    {
+        this.MouseActivity.Enabled = false;
+        this._loadStartTicks = long.MaxValue;
+        this.ClearDisplayInformationCache();
+        this._currentMipmap = -1;
     }
 
     private bool IsCurrentBitmapSourceReadyOnRenderer() =>
-        _bitmapSourceTaskCurrent is {IsCompletedSuccessfully: true} sourceTask &&
-        TryGetRenderers(out var renderers) &&
+        this._bitmapSourceTaskCurrent is { IsCompletedSuccessfully: true } sourceTask &&
+        this.TryGetRenderers(out var renderers) &&
         renderers.Any(r => r.LastException is null && r.IsAnyVisibleSliceReadyForDrawing(sourceTask.Task));
 
     public static bool MaySupportFileResource(FileResource fileResource) =>
@@ -224,6 +240,6 @@ public partial class MultiBitmapViewerControl {
         ".dds" => true,
 
         // PlainBitmapSource
-        { } y => WicImagingComponent.DecoderFileExtensions.Any(x => x.ToLowerInvariant() == y),
+        { } y => ImagingExtensions.ThumbnailSupportedExtensions.Contains(y),
     };
 }

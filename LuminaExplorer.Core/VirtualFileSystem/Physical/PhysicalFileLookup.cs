@@ -12,41 +12,44 @@ using LuminaExplorer.Core.Util;
 namespace LuminaExplorer.Core.VirtualFileSystem.Physical;
 
 public sealed partial class PhysicalFileLookup : IVirtualFileLookup {
-    public PhysicalFileLookup(PhysicalFile physicalFile) {
-        FileTyped = physicalFile;
+    public PhysicalFileLookup(PhysicalFile physicalFile)
+    {
+        this.FileTyped = physicalFile;
 
         try {
-            Size = FileTyped.FileInfo.Length;
+            this.Size = this.FileTyped.FileInfo.Length;
         } catch (Exception) {
-            Size = 0;
+            this.Size = 0;
         }
 
-        Type = FileTyped.FileInfo.Extension.ToLowerInvariant() switch {
-            _ when Size == 0 => FileType.Empty,
+        this.Type = this.FileTyped.FileInfo.Extension.ToLowerInvariant() switch {
+            _ when this.Size == 0 => FileType.Empty,
             ".tex" => FileType.Texture,
             ".mdl" => FileType.Model,
             _ => FileType.Standard,
         };
 
         if (GetDiskFreeSpaceW(
-                FileTyped.FileInfo.Directory!.Root.FullName,
+                this.FileTyped.FileInfo.Directory!.Root.FullName,
                 out var sectorsPerCluster,
-                out var bytesPerSector, out _,
+                out var bytesPerSector,
+                out _,
                 out _) != 0) {
             var clusterSize = sectorsPerCluster * bytesPerSector;
-            var low = GetCompressedFileSizeW(FileTyped.FileInfo.FullName, out var high);
+            var low = GetCompressedFileSizeW(this.FileTyped.FileInfo.FullName, out var high);
             if (low != 0xFFFFFFFFu || Marshal.GetLastWin32Error() == 0) {
                 var size = (long) high << 32 | low;
-                ReservedBytes = OccupiedBytes = ((size + clusterSize - 1) / clusterSize) * clusterSize;
+                this.ReservedBytes = this.OccupiedBytes = ((size + clusterSize - 1) / clusterSize) * clusterSize;
             }
         }
     }
 
-    public void Dispose() { }
+    public void Dispose()
+    { }
 
     public PhysicalFile FileTyped { get; }
 
-    public IVirtualFile File => FileTyped;
+    public IVirtualFile File => this.FileTyped;
 
     public FileType Type { get; }
 
@@ -56,23 +59,24 @@ public sealed partial class PhysicalFileLookup : IVirtualFileLookup {
 
     public long OccupiedBytes { get; }
 
-    public Stream CreateStream() => FileTyped.FileInfo.OpenRead();
+    public Stream CreateStream() => this.FileTyped.FileInfo.OpenRead();
 
     public Task<byte[]> ReadAll(CancellationToken cancellationToken = default) =>
-        System.IO.File.ReadAllBytesAsync(FileTyped.FileInfo.FullName, cancellationToken);
+        System.IO.File.ReadAllBytesAsync(this.FileTyped.FileInfo.FullName, cancellationToken);
 
-    private FileResource AsFileResourceImpl(LuminaBinaryReader reader, byte[] buffer, Type type) {
+    private FileResource AsFileResourceImpl(LuminaBinaryReader reader, byte[] buffer, Type type)
+    {
         const BindingFlags bindingFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
         if (!type.IsAssignableTo(typeof(FileResource)))
             throw new ArgumentException(null, nameof(type));
 
         var file = (FileResource) Activator.CreateInstance(type)!;
         var luminaFileInfo = new LuminaFileInfo {
-            Type = Type,
+            Type = this.Type,
         };
 
         var pfp = new ParsedFilePath();
-        typeof(ParsedFilePath).GetProperty("Path", bindingFlags)!.SetValue(pfp, FileTyped.FileInfo.FullName);
+        typeof(ParsedFilePath).GetProperty("Path", bindingFlags)!.SetValue(pfp, this.FileTyped.FileInfo.FullName);
 
         typeof(FileResource).GetProperty("FileInfo", bindingFlags)!.SetValue(file, luminaFileInfo);
         typeof(FileResource).GetProperty("FilePath", bindingFlags)!.SetValue(file, pfp);
@@ -84,17 +88,19 @@ public sealed partial class PhysicalFileLookup : IVirtualFileLookup {
 
     public Task<T> AsFileResource<T>(CancellationToken cancellationToken = default) where T : FileResource =>
         Task.Factory.StartNew(
-            () => ReadAll(cancellationToken)
-                .ContinueWith(buffer => {
-                    var reader = new LuminaBinaryReader(buffer.Result);
-                    try {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        return (T) AsFileResourceImpl(reader.WithSeek(0), buffer.Result, typeof(T));
-                    } catch (Exception) {
-                        reader.Dispose();
-                        throw;
-                    }
-                }, cancellationToken),
+            () => this.ReadAll(cancellationToken)
+                .ContinueWith(
+                    buffer => {
+                        var reader = new LuminaBinaryReader(buffer.Result);
+                        try {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            return (T) this.AsFileResourceImpl(reader.WithSeek(0), buffer.Result, typeof(T));
+                        } catch (Exception) {
+                            reader.Dispose();
+                            throw;
+                        }
+                    },
+                    cancellationToken),
             cancellationToken,
             TaskCreationOptions.None,
             TaskScheduler.Default
@@ -102,23 +108,25 @@ public sealed partial class PhysicalFileLookup : IVirtualFileLookup {
 
     public Task<FileResource> AsFileResource(CancellationToken cancellationToken = default) =>
         Task.Factory.StartNew(
-            () => ReadAll(cancellationToken)
-                .ContinueWith(buffer => {
-                    var reader = new LuminaBinaryReader(buffer.Result);
-                    var possibleTypes = IVirtualFileLookup.FindPossibleTypes(this, reader);
+            () => this.ReadAll(cancellationToken)
+                .ContinueWith(
+                    buffer => {
+                        var reader = new LuminaBinaryReader(buffer.Result);
+                        var possibleTypes = IVirtualFileLookup.FindPossibleTypes(this, reader);
 
-                    foreach (var f in possibleTypes) {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        try {
-                            return AsFileResourceImpl(reader.WithSeek(0), buffer.Result, f);
-                        } catch (Exception) {
-                            // pass 
+                        foreach (var f in possibleTypes) {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            try {
+                                return this.AsFileResourceImpl(reader.WithSeek(0), buffer.Result, f);
+                            } catch (Exception) {
+                                // pass 
+                            }
                         }
-                    }
 
-                    cancellationToken.ThrowIfCancellationRequested();
-                    return AsFileResourceImpl(reader.WithSeek(0), buffer.Result, typeof(FileResource));
-                }, cancellationToken),
+                        cancellationToken.ThrowIfCancellationRequested();
+                        return this.AsFileResourceImpl(reader.WithSeek(0), buffer.Result, typeof(FileResource));
+                    },
+                    cancellationToken),
             cancellationToken,
             TaskCreationOptions.None,
             TaskScheduler.Default

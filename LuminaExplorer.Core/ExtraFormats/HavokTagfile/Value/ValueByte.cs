@@ -7,11 +7,12 @@ namespace LuminaExplorer.Core.ExtraFormats.HavokTagfile.Value;
 public class ValueByte : IValue {
     public readonly byte Value;
 
-    public ValueByte(byte value) {
-        Value = value;
+    public ValueByte(byte value)
+    {
+        this.Value = value;
     }
 
-    public override string ToString() => $"{Value}";
+    public override string ToString() => $"{this.Value}";
 
     public static implicit operator byte(ValueByte d) => d.Value;
 

@@ -3,7 +3,8 @@
 namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 
 public static class GridLayoutExtensions {
-    public static RectangleF ScaleOf(this IGridLayout layout, int cellIndex) {
+    public static RectangleF ScaleOf(this IGridLayout layout, int cellIndex)
+    {
         var k = layout.RectOf(cellIndex);
         var gridSize = layout.GridSize;
         return new(
@@ -13,7 +14,8 @@ public static class GridLayoutExtensions {
             1f * k.Height / gridSize.Height);
     }
 
-    public static RectangleF RectOf(this IGridLayout layout, int cellIndex, RectangleF actualGridRect) {
+    public static RectangleF RectOf(this IGridLayout layout, int cellIndex, RectangleF actualGridRect)
+    {
         var scaledRect = layout.ScaleOf(cellIndex);
         return new(
             actualGridRect.X + scaledRect.Left * actualGridRect.Width,
