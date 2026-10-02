@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -27,7 +28,7 @@ public partial class TextureViewer : Form {
     private static readonly Guid TextureViewerSaveToGuid = Guid.Parse("5793cbbc-ae79-4d14-8825-9de07d583848");
 
     private readonly MouseActivityTracker _panelMouseTracker;
-    private int _unconstrainedPanelWidth = 240;
+    private int _unconstrainedPanelWidth;
 
     private readonly CancellationTokenSource _closeToken = new();
 
@@ -48,6 +49,8 @@ public partial class TextureViewer : Form {
     public TextureViewer()
     {
         this.InitializeComponent();
+        this.InitializeMenu();
+        this._unconstrainedPanelWidth = this.LogicalToDeviceUnits(240);
 
         this._panelMouseTracker = new(this.PropertyPanel);
         this._panelMouseTracker.UseLeftDrag = true;
@@ -67,6 +70,7 @@ public partial class TextureViewer : Form {
 
     private void MouseActivityOnMiddleClick(Point cursor) => this.IsFullScreen = !this.IsFullScreen;
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool IsFullScreen {
         get => this._isFullScreen;
         set {
@@ -102,87 +106,91 @@ public partial class TextureViewer : Form {
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         switch (keyData) {
-            case Keys.S | Keys.Control: {
-                if (this.TexViewer.CurrentBitmapSource is { } source &&
-                    this.TexViewer.BitmapSource?.FileName is { } fileName) {
-                    using var sfd = new SaveFileDialog();
-                    sfd.OverwritePrompt = true;
-                    sfd.ClientGuid = TextureViewerSaveToGuid;
-                    sfd.Title = $"Save {fileName}";
-                    sfd.AddExtension = true;
-                    sfd.FileName = fileName;
-                    sfd.OverwritePrompt = true;
-                    sfd.Filter =
-                        ".tex file|*.tex" +
-                        "|.dds file|*.dds" +
-                        "|.png file(s)|*.png" +
-                        "|.jpg file(s)|*.jpg" +
-                        "|.bmp file(s)|*.bmp";
-                    sfd.FilterIndex = 1;
-                    if (sfd.ShowDialog() == DialogResult.OK) {
-                        try {
-                            switch (sfd.FilterIndex) {
-                                case 1: {
-                                    using var d = File.Open(sfd.FileName, FileMode.Create, FileAccess.Write);
-                                    source.WriteTexFile(d);
-                                    break;
-                                }
-                                case 2: {
-                                    using var d = File.Open(sfd.FileName, FileMode.Create, FileAccess.Write);
-                                    source.WriteDdsFile(d);
-                                    break;
-                                }
-                                case 3:
-                                case 4:
-                                case 5: {
-                                    for (var i = 0; i < source.ImageCount; i++) {
-                                        for (var j = 0; j < source.NumberOfMipmaps(i); j++) {
-                                            for (var k = 0; k < source.NumSlicesOfMipmap(i, j); k++) {
-                                                using var d = File.Open(
-                                                    Path.Join(
-                                                        Path.GetDirectoryName(sfd.FileName),
-                                                        Path.ChangeExtension(
-                                                            $"{Path.GetFileNameWithoutExtension(sfd.FileName)}.{i}.{j}.{k}._",
-                                                            Path.GetExtension(sfd.FileName))),
-                                                    FileMode.Create,
-                                                    FileAccess.Write);
-                                                var t = source.GetWicBitmapSourceAsync(i, j, k);
-                                                t.Wait();
-
-                                                t.Result.Save(
-                                                    d,
-                                                    sfd.FilterIndex switch {
-                                                        3 => GUID.GUID_ContainerFormatPng,
-                                                        4 => GUID.GUID_ContainerFormatJpeg,
-                                                        5 => GUID.GUID_ContainerFormatBmp,
-                                                        _ => throw new InvalidOperationException(),
-                                                    });
-                                            }
-                                        }
-                                    }
-
-                                    break;
-                                }
-                            }
-                        } catch (Exception e) {
-                            MessageBox.Show(
-                                $"Failed to save.\n\n{e}",
-                                "Error",
-                                MessageBoxButtons.OK,
-                                MessageBoxIcon.Error);
-                        }
-                    }
-                }
-
+            case Keys.S | Keys.Control:
+                this.ShowSaveDialog();
                 return true;
-            }
             default:
                 return base.ProcessCmdKey(ref msg, keyData);
         }
     }
 
+    private void ShowSaveDialog()
+    {
+        if (this.TexViewer.CurrentBitmapSource is { } source &&
+            this.TexViewer.BitmapSource?.FileName is { } fileName) {
+            using var sfd = new SaveFileDialog();
+            sfd.OverwritePrompt = true;
+            sfd.ClientGuid = TextureViewerSaveToGuid;
+            sfd.Title = $"Save {fileName}";
+            sfd.AddExtension = true;
+            sfd.FileName = fileName;
+            sfd.OverwritePrompt = true;
+            sfd.Filter =
+                ".tex file|*.tex" +
+                "|.dds file|*.dds" +
+                "|.png file(s)|*.png" +
+                "|.jpg file(s)|*.jpg" +
+                "|.bmp file(s)|*.bmp";
+            sfd.FilterIndex = 1;
+            if (sfd.ShowDialog() == DialogResult.OK) {
+                try {
+                    switch (sfd.FilterIndex) {
+                        case 1: {
+                            using var d = File.Open(sfd.FileName, FileMode.Create, FileAccess.Write);
+                            source.WriteTexFile(d);
+                            break;
+                        }
+                        case 2: {
+                            using var d = File.Open(sfd.FileName, FileMode.Create, FileAccess.Write);
+                            source.WriteDdsFile(d);
+                            break;
+                        }
+                        case 3:
+                        case 4:
+                        case 5: {
+                            for (var i = 0; i < source.ImageCount; i++) {
+                                for (var j = 0; j < source.NumberOfMipmaps(i); j++) {
+                                    for (var k = 0; k < source.NumSlicesOfMipmap(i, j); k++) {
+                                        using var d = File.Open(
+                                            Path.Join(
+                                                Path.GetDirectoryName(sfd.FileName),
+                                                Path.ChangeExtension(
+                                                    $"{Path.GetFileNameWithoutExtension(sfd.FileName)}.{i}.{j}.{k}._",
+                                                    Path.GetExtension(sfd.FileName))),
+                                            FileMode.Create,
+                                            FileAccess.Write);
+                                        var t = source.GetWicBitmapSourceAsync(i, j, k);
+                                        t.Wait();
+
+                                        t.Result.Save(
+                                            d,
+                                            sfd.FilterIndex switch {
+                                                3 => GUID.GUID_ContainerFormatPng,
+                                                4 => GUID.GUID_ContainerFormatJpeg,
+                                                5 => GUID.GUID_ContainerFormatBmp,
+                                                _ => throw new InvalidOperationException(),
+                                            });
+                                    }
+                                }
+                            }
+
+                            break;
+                        }
+                    }
+                } catch (Exception e) {
+                    MessageBox.Show(
+                        $"Failed to save.\n\n{e}",
+                        "Error",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                }
+            }
+        }
+    }
+
     private void TexViewerOnMouseDown(object? sender, MouseEventArgs e)
     {
+        this._menuKeyPending = false;
         this.TexViewer.Focus();
     }
 
@@ -195,20 +203,36 @@ public partial class TextureViewer : Form {
         }
     }
 
-    private void TexViewerOnNavigateToPrevFile(object? sender, EventArgs eventArgs)
+    private void TexViewerOnNavigateToPrevFile(object? sender, EventArgs eventArgs) => this.NavigateToPrevFile();
+
+    private void TexViewerOnNavigateToNextFile(object? sender, EventArgs eventArgs) => this.NavigateToNextFile();
+
+    private void NavigateToPrevFile() => this.Navigate(() => (this._indexInPlaylist - 1, -1));
+
+    private void NavigateToNextFile() => this.Navigate(() => (this._indexInPlaylist + 1, 1));
+
+    private void NavigateToFirstFile() => this.Navigate(() => (0, 1));
+
+    private void NavigateToLastFile() => this.Navigate(() => (this._playlist.Count - 1, -1));
+
+    private void Navigate(Func<(int Index, int Step)> target)
     {
-        if (this._navigationTask.IsCompleted)
-            this._navigationTask = Task.Run(
-                () => this.FindAndSelectFirstTexFile(this._indexInPlaylist - 1, -1, this._closeToken.Token),
-                this._closeToken.Token);
+        if (!this._navigationTask.IsCompleted)
+            return;
+
+        this._navigationTask = Task.Run(
+            () => {
+                var (index, step) = target();
+                return this.FindAndSelectFirstTexFile(index, step, this._closeToken.Token);
+            },
+            this._closeToken.Token);
     }
 
-    private void TexViewerOnNavigateToNextFile(object? sender, EventArgs eventArgs)
+    private void ToggleFullScreen(string keyName)
     {
-        if (this._navigationTask.IsCompleted)
-            this._navigationTask = Task.Run(
-                () => this.FindAndSelectFirstTexFile(this._indexInPlaylist + 1, 1, this._closeToken.Token),
-                this._closeToken.Token);
+        this.IsFullScreen = !this.IsFullScreen;
+        if (this.IsFullScreen)
+            this.TexViewer.ShowOverlayStringShort($"Press {keyName} key again to exit full screen mode.");
     }
 
     private void TexViewerOnPreviewKeyDown(object? sender, PreviewKeyDownEventArgs e)
@@ -219,9 +243,10 @@ public partial class TextureViewer : Form {
                 e.IsInputKey = true;
                 break;
             case Keys.Enter:
-                this.IsFullScreen = !this.IsFullScreen;
-                if (this.IsFullScreen)
-                    this.TexViewer.ShowOverlayStringShort("Press Enter key again to exit full screen mode.");
+                this.ToggleFullScreen("Enter");
+                break;
+            case Keys.F when e.Modifiers == Keys.None:
+                this.ToggleFullScreen("F");
                 break;
             case Keys.Escape:
                 if (this.IsFullScreen) {
@@ -234,28 +259,16 @@ public partial class TextureViewer : Form {
 
                 break;
             case Keys.PageUp:
-                if (this._navigationTask.IsCompleted)
-                    this._navigationTask = Task.Run(
-                        () => this.FindAndSelectFirstTexFile(this._indexInPlaylist - 1, -1, this._closeToken.Token),
-                        this._closeToken.Token);
+                this.NavigateToPrevFile();
                 break;
             case Keys.PageDown:
-                if (this._navigationTask.IsCompleted)
-                    this._navigationTask = Task.Run(
-                        () => this.FindAndSelectFirstTexFile(this._indexInPlaylist + 1, 1, this._closeToken.Token),
-                        this._closeToken.Token);
+                this.NavigateToNextFile();
                 break;
             case Keys.Home:
-                if (this._navigationTask.IsCompleted)
-                    this._navigationTask = Task.Run(
-                        () => this.FindAndSelectFirstTexFile(0, 1, this._closeToken.Token),
-                        this._closeToken.Token);
+                this.NavigateToFirstFile();
                 break;
             case Keys.End:
-                if (this._navigationTask.IsCompleted)
-                    this._navigationTask = Task.Run(
-                        () => this.FindAndSelectFirstTexFile(this._playlist.Count - 1, -1, this._closeToken.Token),
-                        this._closeToken.Token);
+                this.NavigateToLastFile();
                 break;
         }
     }
@@ -372,6 +385,9 @@ public partial class TextureViewer : Form {
         if (invalidIndices.Any()) {
             if (step > 0) {
                 foreach (var i in Enumerable.Reverse(invalidIndices)) this._playlist.RemoveAt(i);
+
+                // All removed entries were before index; shift it so that it keeps pointing to the found file.
+                index -= invalidIndices.Count;
             } else {
                 foreach (var i in invalidIndices) this._playlist.RemoveAt(i);
             }
@@ -456,14 +472,15 @@ public partial class TextureViewer : Form {
     public void ShowRelativeTo(Control opener)
     {
         var rc = this.TexViewer.GetViewportRectangleSuggestion(opener);
-        if (rc.Width < MinimumDefaultWidth) {
-            rc.X -= (MinimumDefaultWidth - rc.Width) / 2;
-            rc.Width = MinimumDefaultWidth;
+        var minimumSize = this.LogicalToDeviceUnits(new Size(MinimumDefaultWidth, MinimumDefaultHeight));
+        if (rc.Width < minimumSize.Width) {
+            rc.X -= (minimumSize.Width - rc.Width) / 2;
+            rc.Width = minimumSize.Width;
         }
 
-        if (rc.Height < MinimumDefaultHeight) {
-            rc.X -= (MinimumDefaultHeight - rc.Height) / 2;
-            rc.Height = MinimumDefaultHeight;
+        if (rc.Height < minimumSize.Height) {
+            rc.Y -= (minimumSize.Height - rc.Height) / 2;
+            rc.Height = minimumSize.Height;
         }
 
         this.SetBounds(rc.X, rc.Y, rc.Width, rc.Height);
@@ -473,6 +490,7 @@ public partial class TextureViewer : Form {
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         this._closeToken.Cancel();
+        this._texFileLoadCancelTokenSource?.Cancel();
         base.OnFormClosed(e);
     }
 

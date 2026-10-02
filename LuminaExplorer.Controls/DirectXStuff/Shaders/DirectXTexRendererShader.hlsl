@@ -15,6 +15,7 @@ cbuffer g_parameters : register(b0) {
 	float2 g_cellSourceSize;
 	int g_channelFilter;
 	bool g_useAlphaChannel;
+	bool g_replicateRed;
 }
 
 struct VSInput {
@@ -52,6 +53,8 @@ float4 blend_colors(float4 bg, float4 fg) {
 
 float4 main_ps(VSOutput input) : SV_TARGET {
 	float4 fg = g_texture.Sample(g_sampler, input.uv);
+	if (g_replicateRed)
+		fg.yz = fg.xx;
 	float4 color;
 
 	if (g_channelFilter == 4) {

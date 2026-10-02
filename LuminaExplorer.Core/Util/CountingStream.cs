@@ -69,32 +69,39 @@ public sealed class CountingStream : Stream {
     public override Task FlushAsync(CancellationToken cancellationToken) =>
         this._innerStream.FlushAsync(cancellationToken);
 
-    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-        this._innerStream.ReadAsync(buffer, offset, count, cancellationToken).ContinueWith(
-            x => {
-                this.ReadCounter += x.Result;
-                return x.Result;
-            },
-            cancellationToken);
-
-    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) => new(
-        this._innerStream.ReadAsync(buffer, cancellationToken).AsTask().ContinueWith(
-            x => {
-                this.ReadCounter += x.Result;
-                return x.Result;
-            },
-            cancellationToken));
-
-    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    public override async Task<int> ReadAsync(
+        byte[] buffer,
+        int offset,
+        int count,
+        CancellationToken cancellationToken)
     {
-        return this._innerStream.WriteAsync(buffer, offset, count, cancellationToken)
-            .ContinueWith(_ => this.WriteCounter += count, cancellationToken);
+        var n = await this._innerStream.ReadAsync(buffer, offset, count, cancellationToken).ConfigureAwait(false);
+        this.ReadCounter += n;
+        return n;
     }
 
-    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) =>
-        new(
-            this._innerStream.WriteAsync(buffer, cancellationToken).AsTask()
-                .ContinueWith(_ => this.WriteCounter += buffer.Length, cancellationToken));
+    public override async ValueTask<int> ReadAsync(
+        Memory<byte> buffer,
+        CancellationToken cancellationToken = default)
+    {
+        var n = await this._innerStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+        this.ReadCounter += n;
+        return n;
+    }
+
+    public override async Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        await this._innerStream.WriteAsync(buffer, offset, count, cancellationToken).ConfigureAwait(false);
+        this.WriteCounter += count;
+    }
+
+    public override async ValueTask WriteAsync(
+        ReadOnlyMemory<byte> buffer,
+        CancellationToken cancellationToken = default)
+    {
+        await this._innerStream.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
+        this.WriteCounter += buffer.Length;
+    }
 
     public override int Read(Span<byte> buffer)
     {

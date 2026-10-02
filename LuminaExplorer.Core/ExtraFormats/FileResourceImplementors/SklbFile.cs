@@ -22,9 +22,9 @@ public class SklbFile : FileResource {
     public SklbFormat Version;
     public ISklbVersionedHeader VersionedHeader = null!;
     public uint AlphMagic;
-    public AlphEntry[] AlphData = null!;
+    public AlphEntry[] AlphData = [];
     public byte[] HavokData = null!;
-    public Bone[] Bones = null!;
+    public Bone[] Bones = [];
 
     public Node HavokRootNode = null!;
     public readonly Dictionary<Tuple<string, int>, Definition> HavokDefinitions = new();
@@ -35,13 +35,19 @@ public class SklbFile : FileResource {
     {
         try {
             this.Reader.ReadInto(out this.Magic);
+            if (this.Magic != MagicValue)
+                throw new InvalidDataException($"Invalid sklb magic 0x{this.Magic:X08}");
             this.Reader.ReadInto(out this.Version);
 
+            // Versions up to "1200" use 16-bit offsets; later ones use 32-bit offsets.
+            // In both cases, the havok data offset directly follows the alph (layer) offset.
             this.VersionedHeader = this.Version switch {
+                SklbFormat.K0011 => this.Reader.ReadStructure<Sklb0021>(),
+                SklbFormat.K0111 => this.Reader.ReadStructure<Sklb0021>(),
                 SklbFormat.K0021 => this.Reader.ReadStructure<Sklb0021>(),
                 SklbFormat.K0031 => this.Reader.ReadStructure<Sklb0031>(),
-                SklbFormat.K1031 => this.Reader.ReadStructure<Sklb0031>(), // ?
-                _ => throw new NotSupportedException(),
+                SklbFormat.K1031 => this.Reader.ReadStructure<Sklb0031>(),
+                _ => throw new NotSupportedException($"Unsupported sklb version 0x{(uint) this.Version:X08}"),
             };
 
             this.AlphMagic = this.Reader.WithSeek(this.VersionedHeader.AlphOffset).ReadUInt32();
@@ -242,7 +248,12 @@ public class SklbFile : FileResource {
             };
     }
 
+    /// <summary>Version of the SE-specific header (not of the contained havok data).</summary>
+    /// <remarks>Names are the version bytes as stored in file order; e.g. <see cref="K0021"/> is "1200" read as
+    /// a big-endian number.</remarks>
     public enum SklbFormat : uint {
+        K0011 = 0x31313030u,
+        K0111 = 0x31313130u,
         K0021 = 0x31323030u,
         K0031 = 0x31333030u,
         K1031 = 0x31333031u,

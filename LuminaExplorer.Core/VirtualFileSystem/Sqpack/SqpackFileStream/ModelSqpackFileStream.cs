@@ -54,7 +54,7 @@ public sealed class ModelSqpackFileStream : BaseSqpackFileStream {
             var consumed = (int) this.PositionUint;
             var remaining = ModelFileHeaderSize - consumed;
             var available = Math.Min(count, remaining);
-            Array.Copy(this._offsetManager.HeaderBytes, consumed, buffer, consumed, available);
+            Array.Copy(this._offsetManager.HeaderBytes, consumed, buffer, offset, available);
             offset += available;
             count -= available;
             this.PositionUint += (uint) available;
@@ -110,7 +110,7 @@ public sealed class ModelSqpackFileStream : BaseSqpackFileStream {
                     .WithSeek(this._offsetManager.BaseOffset + this._offsetManager.BlockOffsets[i])
                     .BaseStream.ReadExactlyAsync(
                         new(readBuffer, 0, this._offsetManager.BlockSizes[i]),
-                        cancellationToken);
+                        cancellationToken).ConfigureAwait(false);
 
                 DatBlockHeader dbh;
                 unsafe {
@@ -133,7 +133,8 @@ public sealed class ModelSqpackFileStream : BaseSqpackFileStream {
                         }
                     }
                 } else {
-                    Array.Copy(readBuffer, 0, this._blockBuffer, 0, dbh.DecompressedSize);
+                    // Uncompressed data follows the block header, as compressed data does.
+                    Array.Copy(readBuffer, Unsafe.SizeOf<DatBlockHeader>(), this._blockBuffer, 0, dbh.DecompressedSize);
                 }
 
                 this._bufferBlockIndex = i;

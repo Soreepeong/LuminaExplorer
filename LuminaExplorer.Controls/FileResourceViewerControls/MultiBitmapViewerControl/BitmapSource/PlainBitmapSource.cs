@@ -69,7 +69,8 @@ public class PlainBitmapSource : IBitmapSource {
 
         await Task.WhenAll(
             SafeDispose.OneAsync(ref this._wicBitmap),
-            SafeDispose.OneAsync(ref this._bitmap));
+            SafeDispose.OneAsync(ref this._bitmap),
+            SafeDispose.OneAsync(ref this._stream));
 
         this._cancellationTokenSource.Dispose();
 
@@ -196,7 +197,7 @@ public class PlainBitmapSource : IBitmapSource {
         if (mipmap != 0)
             throw new ArgumentOutOfRangeException(nameof(mipmap), mipmap, null);
         if (this._bitmap?.IsCompletedSuccessfully is true)
-            return this._bitmap.Result.Width;
+            return this._bitmap.Result.Height;
         unsafe {
             uint width, height;
             this._wicBitmap!.Result.Get()->GetSize(&width, &height).Ensure();

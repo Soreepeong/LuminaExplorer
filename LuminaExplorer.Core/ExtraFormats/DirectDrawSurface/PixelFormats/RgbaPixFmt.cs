@@ -46,22 +46,22 @@ public class RgbaPixFmt : IPixFmt, IEquatable<RgbaPixFmt> {
         int width,
         int height)
     {
-        var bits = 0ul;
-        var availBits = 0;
-
         for (var y = 0; y < height; y++) {
             var inOffset = y * sourceStride;
             var inOffsetTo = inOffset + (width * this.Bpp + 7) / 8;
             var outOffset = y * targetStride;
 
+            var bits = 0ul;
+            var availBits = 0;
             for (var x = 0; x < width && inOffset < inOffsetTo; inOffset++) {
-                bits = (bits << 8) | source[inOffset];
+                bits |= (ulong) source[inOffset] << availBits;
                 availBits += 8;
                 for (; availBits >= this.Bpp && x < width; x++, availBits -= this.Bpp) {
-                    target[outOffset++] = (byte) (this.A.Bits == 0 ? 255 : this.A.DecodeValueAsUnorm(bits, 8));
-                    target[outOffset++] = (byte) this.R.DecodeValueAsUnorm(bits, 8);
-                    target[outOffset++] = (byte) this.G.DecodeValueAsUnorm(bits, 8);
                     target[outOffset++] = (byte) this.B.DecodeValueAsUnorm(bits, 8);
+                    target[outOffset++] = (byte) this.G.DecodeValueAsUnorm(bits, 8);
+                    target[outOffset++] = (byte) this.R.DecodeValueAsUnorm(bits, 8);
+                    target[outOffset++] = (byte) (this.A.Bits == 0 ? 255 : this.A.DecodeValueAsUnorm(bits, 8));
+                    bits = this.Bpp >= 64 ? 0 : bits >> this.Bpp;
                 }
             }
         }
@@ -133,9 +133,9 @@ public class RgbaPixFmt : IPixFmt, IEquatable<RgbaPixFmt> {
             r: new(valueType, 0, rbits),
             g: new(valueType, rbits, gbits),
             b: new(valueType, rbits + gbits, bbits),
-            a: new(valueType, rbits + bbits + bbits, abits),
-            x1: new(ValueType.Typeless, rbits + bbits + bbits + abits, xbits1),
-            x2: new(ValueType.Typeless, rbits + bbits + bbits + abits + xbits1, xbits2));
+            a: new(valueType, rbits + gbits + bbits, abits),
+            x1: new(ValueType.Typeless, rbits + gbits + bbits + abits, xbits1),
+            x2: new(ValueType.Typeless, rbits + gbits + bbits + abits + xbits1, xbits2));
 
     public static RgbaPixFmt NewBgr(
         int rbits,

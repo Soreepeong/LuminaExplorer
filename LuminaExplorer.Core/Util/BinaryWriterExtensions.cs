@@ -11,7 +11,7 @@ public static class BinaryWriterExtensions {
         var newOffset = origin switch {
             SeekOrigin.Begin => offset,
             SeekOrigin.Current => position + offset,
-            SeekOrigin.End => position + offset,
+            SeekOrigin.End => reader.BaseStream.Length + offset,
             _ => throw new ArgumentOutOfRangeException(nameof(origin), origin, null),
         };
         if (position != newOffset)

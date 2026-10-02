@@ -22,7 +22,7 @@ public sealed class SqpackFileLookup : ICloneable, IVirtualFileLookup {
     {
         this._core = core;
         if (this._core is null)
-            throw new ObjectDisposedException(nameof(ModelSqpackFileStream));
+            throw new ObjectDisposedException(nameof(SqpackFileLookup));
 
         this._core.AddRef();
     }
@@ -170,6 +170,7 @@ public sealed class SqpackFileLookup : ICloneable, IVirtualFileLookup {
             if (!type.IsAssignableTo(typeof(FileResource)))
                 throw new ArgumentException(null, nameof(type));
 
+            type = IVirtualFileLookup.ResolveFileResourceType(type);
             var file = (FileResource) Activator.CreateInstance(type)!;
             var luminaFileInfo = new LuminaFileInfo {
                 HeaderSize = this._fileInfo.Size,
@@ -187,7 +188,13 @@ public sealed class SqpackFileLookup : ICloneable, IVirtualFileLookup {
                     !.SetValue(luminaFileInfo, this._modelBlock);
             }
 
-            var pfp = GameData.ParseFilePath(this._vfs.GetFullPath(this.FileTyped));
+            var fullPath = this._vfs.GetFullPath(this.FileTyped);
+            var pfp = GameData.ParseFilePath(fullPath);
+            if (pfp is null) {
+                // Lumina 7+ returns null for paths that are 260+ characters long or have no folder.
+                pfp = new();
+                typeof(ParsedFilePath).GetProperty("Path", bindingFlags)!.SetValue(pfp, fullPath.ToLowerInvariant());
+            }
 
             typeof(FileResource).GetProperty("FileInfo", bindingFlags)!.SetValue(file, luminaFileInfo);
             typeof(FileResource).GetProperty("FilePath", bindingFlags)!.SetValue(file, pfp);
@@ -213,7 +220,7 @@ public sealed class SqpackFileLookup : ICloneable, IVirtualFileLookup {
                         },
                         cancellationToken),
                 cancellationToken,
-                TaskCreationOptions.None,u
+                TaskCreationOptions.None,
                 TaskScheduler.Default
             ).Unwrap();
 

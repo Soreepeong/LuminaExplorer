@@ -266,7 +266,7 @@ public sealed class PanZoomTracker : IDisposable {
                         IScaleMode.ExponentToZoom(this.ZoomExponentRange, this.ZoomExponentUnit))),
             cursor);
 
-    public bool UpdateZoomExponent(int? value) => this.UpdateZoom(value, this.DefaultOrigin);
+    public bool UpdateZoomExponent(int? value) => this.UpdateZoomExponent(value, this.DefaultOrigin);
 
     public bool UpdateZoomExponent(int? value, PointF cursor) =>
         this.UpdateScaleMode(

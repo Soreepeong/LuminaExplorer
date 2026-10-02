@@ -13,6 +13,7 @@ using LuminaExplorer.Controls.DirectXStuff.Resources;
 using LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter.VertexShaderInputParameters;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
+using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.Penumbra;
 using LuminaExplorer.Core.Util;
 using Silk.NET.Maths;
 using TerraFX.Interop.DirectX;
@@ -93,7 +94,7 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
             fixed (uint* pDummy = stackalloc uint[16]) {
                 for (var i = 0; i < 16; i++)
                     pDummy[i] = 0xFF000000;
-                this._dummy = new(this._pDevice, DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM, 4, 4, 16, (nint) (&pDummy));
+                this._dummy = new(this._pDevice, DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM, 4, 4, 16, (nint) pDummy);
             }
         } catch (Exception) {
             this.DisposePrivate(true);
@@ -189,11 +190,13 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
                 }
             }
 
+            // The index buffer holds the whole LOD; Lumina's Submesh.IndexOffset is relative to the mesh's StartIndex.
+            var meshStartIndex = modelObject.GetStartIndex(i);
             if (submeshes.Any()) {
                 foreach (var submesh in submeshes)
-                    this._pDeviceContext->DrawIndexed(submesh.IndexNum, submesh.IndexOffset, 0);
+                    this._pDeviceContext->DrawIndexed(submesh.IndexNum, meshStartIndex + submesh.IndexOffset, 0);
             } else {
-                this._pDeviceContext->DrawIndexed((uint) modelObject.GetNumIndices(i), 0, 0);
+                this._pDeviceContext->DrawIndexed((uint) modelObject.GetNumIndices(i), meshStartIndex, 0);
             }
         }
     }
@@ -224,7 +227,7 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
                 this._pDevice->AddRef();
                 this._mdl = mdlFile;
 
-                this._model = new(mdlFile: mdlFile, lod, variantId);
+                this._model = PenumbraMdlFile.CreateModel(mdlFile, lod, variantId);
                 this._materials = new Task<Material?>?[this._model.Materials.Length];
                 this._textures = new Task<Texture2DShaderResource?>[this._model.Materials.Length][];
 
@@ -290,8 +293,22 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
 
         private void DisposeInner(bool disposing)
         {
-            if (disposing)
-                SafeDispose.Enumerable(ref this._textures!);
+            if (disposing) {
+                // Disposing the tasks does not dispose their results; dispose the loaded textures instead.
+                foreach (var textures in this._textures) {
+                    if (textures is null)
+                        continue;
+                    foreach (var texture in textures) {
+                        texture?.ContinueWith(
+                            r => {
+                                if (r.IsCompletedSuccessfully)
+                                    r.Result?.Dispose();
+                            });
+                    }
+                }
+
+                this._textures = [];
+            }
 
             this.ReleaseUnmanagedResources();
         }
@@ -337,7 +354,10 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
 
                 var mtrlPath = Encoding.UTF8.GetString(mtrlPathSpan);
                 if (mtrlPath.StartsWith('/')) {
-                    mtrlPath = Material.ResolveRelativeMaterialPath(mtrlPath, this._model.VariantId);
+                    mtrlPath = Material.ResolveRelativeMaterialPath(
+                        mtrlPath,
+                        this._model.VariantId,
+                        strictSuffixValidation: false);
                     if (mtrlPath is null) {
                         this._materials[materialIndex] = Task.FromResult((Material?) null);
                         return false;
@@ -349,14 +369,14 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
                 if (loader is null)
                     return false;
 
+                var materialIndexCopy = materialIndex;
                 this._materials[materialIndex] = task = loader.ContinueWith(
                     r => {
                         if (!r.IsCompletedSuccessfully || r.Result is not { } mtrlFile)
                             return null;
 
-                        var mat = new Material(mtrlFile);
-                        for (var i = 0; i < this._model.Materials.Length; i++)
-                            this._textures[i] = new Task<Texture2DShaderResource?>[mat?.Textures.Length ?? 0];
+                        var mat = PenumbraMtrlFile.CreateMaterial(mtrlFile);
+                        this._textures[materialIndexCopy] =new Task<Texture2DShaderResource?>[mat.Textures.Length];
                         return mat;
                     });
 
@@ -424,6 +444,8 @@ public unsafe class CustomMdlRendererShader : DirectXObject {
         public int GetNumIndices(int i) => this._meshes[i].Indices.Length;
 
         public Submesh[] GetSubmeshes(int i) => this._meshes[i].Submeshes;
+
+        public uint GetStartIndex(int i) => this._model.File!.Meshes[this._meshes[i].MeshIndex].StartIndex;
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 0xC0)]

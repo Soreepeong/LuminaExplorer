@@ -2145,8 +2145,7 @@ namespace Be.Windows.Forms
 			if (da.GetDataPresent("BinaryData"))
 			{
 				System.IO.MemoryStream ms = (System.IO.MemoryStream)da.GetData("BinaryData");
-				buffer = new byte[ms.Length];
-				ms.Read(buffer, 0, buffer.Length);
+				buffer = ms.ToArray();
 			}
 			else if (da.GetDataPresent(typeof(string)))
 			{
@@ -3415,7 +3414,13 @@ namespace Be.Windows.Forms
 		{
 			get { return _shadowSelectionColor; }
 			set { _shadowSelectionColor = value; Invalidate(); }
-		} Color _shadowSelectionColor = Color.FromArgb(100, 60, 188, 255);
+		} Color _shadowSelectionColor = DefaultShadowSelectionColor;
+
+		static readonly Color DefaultShadowSelectionColor = Color.FromArgb(100, 60, 188, 255);
+
+		bool ShouldSerializeShadowSelectionColor() => _shadowSelectionColor != DefaultShadowSelectionColor;
+
+		void ResetShadowSelectionColor() => ShadowSelectionColor = DefaultShadowSelectionColor;
 
         /// <summary>
         /// Contains the size of a single character in pixel

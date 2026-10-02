@@ -530,7 +530,7 @@ namespace Be.Windows.Forms
                     long readOffset = fileBlock.FileOffset + relativeOffset;
                     int bytesToRead = (int)Math.Min(buffer.Length, fileBlock.Length - relativeOffset);
                     _stream.Position = readOffset;
-                    _stream.Read(buffer, 0, bytesToRead);
+                    _stream.ReadExactly(buffer, 0, bytesToRead);
 
                     long writeOffset = dataOffset + relativeOffset;
                     _stream.Position = writeOffset;
@@ -546,7 +546,7 @@ namespace Be.Windows.Forms
                     int bytesToRead = (int)Math.Min(buffer.Length, fileBlock.Length - relativeOffset);
                     long readOffset = fileBlock.FileOffset + fileBlock.Length - relativeOffset - bytesToRead;
                     _stream.Position = readOffset;
-                    _stream.Read(buffer, 0, bytesToRead);
+                    _stream.ReadExactly(buffer, 0, bytesToRead);
 
                     long writeOffset = dataOffset + fileBlock.Length - relativeOffset - bytesToRead;
                     _stream.Position = writeOffset;

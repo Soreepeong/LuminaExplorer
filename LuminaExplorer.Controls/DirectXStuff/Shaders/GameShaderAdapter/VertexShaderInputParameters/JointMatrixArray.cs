@@ -5,10 +5,11 @@ using Silk.NET.Maths;
 
 namespace LuminaExplorer.Controls.DirectXStuff.Shaders.GameShaderAdapter.VertexShaderInputParameters;
 
-[StructLayout(LayoutKind.Explicit, Size = 0xC00)]
+[StructLayout(LayoutKind.Explicit, Size = 0x3000)]
 [InputId(InputId.JointMatrixArray)]
 public unsafe struct JointMatrixArray {
-    public const int ValueCount = 64;
+    /// <summary>Number of joint matrices. v6 (Dawntrail) models can have more than 64 bones per bone table.</summary>
+    public const int ValueCount = 256;
 
     [FieldOffset(0)] public fixed float Values[3 * 4 * ValueCount];
 

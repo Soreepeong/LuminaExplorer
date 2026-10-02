@@ -3,4 +3,5 @@
 public enum ShcdVersion : ushort {
     V0301 = 0x0301,
     V0501 = 0x0501,
+    V0601 = 0x0601,
 }

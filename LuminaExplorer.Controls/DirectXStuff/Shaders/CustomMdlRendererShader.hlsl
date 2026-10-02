@@ -69,7 +69,7 @@ cbuffer m_WorldViewMatrix : register(b1) {
 
 // InputId = 0x88AA546Au
 cbuffer m_JointMatrixArray : register(b2) {
-	row_major float3x4 m_JointMatrixArray[64];
+	row_major float3x4 m_JointMatrixArray[256];
 }
 
 // Following two are used by shaders from SaintCoinach.

@@ -49,7 +49,7 @@ public sealed class TextureSqpackFileStream : BaseSqpackFileStream {
             var consumed = (int) this.PositionUint;
             var remaining = this._offsetManager.HeaderBytes.Length - consumed;
             var available = Math.Min(count, remaining);
-            Array.Copy(this._offsetManager.HeaderBytes, consumed, buffer, consumed, available);
+            Array.Copy(this._offsetManager.HeaderBytes, consumed, buffer, offset, available);
             offset += available;
             count -= available;
             this.PositionUint += (uint) available;
@@ -116,7 +116,7 @@ public sealed class TextureSqpackFileStream : BaseSqpackFileStream {
                     readBuffer = ArrayPool<byte>.Shared.RentAsNecessary(readBuffer, 16384);
                     await (this._reader ??= this._offsetManager.CreateNewReader())
                         .WithSeek(this._offsetManager.BaseOffset + lod.Offsets[j])
-                        .BaseStream.ReadExactlyAsync(new(readBuffer, 0, lod.Sizes[j]), cancellationToken);
+                        .BaseStream.ReadExactlyAsync(new(readBuffer, 0, lod.Sizes[j]), cancellationToken).ConfigureAwait(false);
 
                     DatBlockHeader dbh;
                     unsafe {
@@ -148,7 +148,8 @@ public sealed class TextureSqpackFileStream : BaseSqpackFileStream {
                             }
                         }
                     } else {
-                        Array.Copy(readBuffer, 0, this._blockBuffer, 0, dbh.DecompressedSize);
+                        // Uncompressed data follows the block header, as compressed data does.
+                        Array.Copy(readBuffer, Unsafe.SizeOf<DatBlockHeader>(), this._blockBuffer, 0, dbh.DecompressedSize);
                     }
 
                     this._bufferLodIndex = i;

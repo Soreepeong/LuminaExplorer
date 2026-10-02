@@ -53,9 +53,9 @@ public class ChannelDefinition : IEquatable<ChannelDefinition> {
         switch (this.Type) {
             // Do we even have to convert?
             case ValueType.Float:
-                unsafe {
-                    return *(float*) &v;
-                }
+                if (this.Bits == 16)
+                    return (float) BitConverter.UInt16BitsToHalf((ushort) v);
+                return BitConverter.UInt32BitsToSingle(v);
 
             // Handle well-defined conversions first.
             case ValueType.Snorm: {
@@ -66,7 +66,7 @@ public class ChannelDefinition : IEquatable<ChannelDefinition> {
 
                 v = (~v & this.Mask) + 1;
                 // Handle the case where the value is the most negative value. 
-                if (v == 1 << this.Bits)
+                if (v == 1u << (this.Bits - 1))
                     return -1f;
                 return -1f * v / (this.Mask >> 1);
             }
@@ -74,12 +74,12 @@ public class ChannelDefinition : IEquatable<ChannelDefinition> {
                 return 1f * v / this.Mask;
             case ValueType.UnormSrgb: {
                 var c = 1f * v / this.Mask;
-                const float srgbToFloatToleranceInUlp = 0.5f;
+                const float srgbToFloatThreshold = 0.04045f;
                 const float srgbToFloatDenominator1 = 12.92f;
                 const float srgbToFloatDenominator2 = 1.055f;
                 const float srgbToFloatOffset = 0.055f;
                 const float srgbToFloatExponent = 2.4f;
-                if (c <= srgbToFloatToleranceInUlp)
+                if (c <= srgbToFloatThreshold)
                     return c / srgbToFloatDenominator1;
                 return MathF.Pow((c + srgbToFloatOffset) / srgbToFloatDenominator2, srgbToFloatExponent);
             }
@@ -127,7 +127,10 @@ public class ChannelDefinition : IEquatable<ChannelDefinition> {
                     : (int) (mid - 1 - value);
             }
             default:
-                return (int) ((1 << (outBits - 1)) * this.DecodeValueAsFloat(data));
+                return (int) Math.Clamp(
+                    ((1 << outBits) - 1) * this.DecodeValueAsFloat(data),
+                    0,
+                    (1 << outBits) - 1);
         }
     }
 

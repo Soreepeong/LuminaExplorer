@@ -3,6 +3,7 @@ using System.Drawing;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using LuminaExplorer.Controls.DirectXStuff.Resources;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
 using TerraFX.Interop.Windows;
@@ -38,6 +39,18 @@ public interface IBitmapSource : IDisposable, IAsyncDisposable {
     public Task<ComPtr<IWICBitmapSource>> GetWicBitmapSourceAsync(int imageIndex, int mipmap, int slice);
 
     public bool HasWicBitmapSource(int imageIndex, int mipmap, int slice);
+
+    /// <summary>
+    /// Checks whether <see cref="GetRawSlice"/> can provide the data of the given mipmap for uploading to the GPU
+    /// without conversion.
+    /// </summary>
+    public bool SupportsRawSlice(int imageIndex, int mipmap) => false;
+
+    /// <summary>
+    /// Gets the data of a slice for uploading to the GPU without conversion.
+    /// Only valid if <see cref="SupportsRawSlice"/> returns true.
+    /// </summary>
+    public RawTextureSlice GetRawSlice(int imageIndex, int mipmap, int slice) => throw new NotSupportedException();
 
     public Task<Bitmap> GetGdipBitmapAsync(int imageIndex, int mipmap, int slice);
 

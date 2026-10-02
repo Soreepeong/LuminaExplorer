@@ -87,7 +87,7 @@ public abstract unsafe class DirectXObject : IDisposable {
         this.Dispose(false);
     }
 
-    protected static IDXGIFactory* DxgiFactory => _pD2D1Factory.IsEmpty()
+    protected static IDXGIFactory* DxgiFactory => _pDxgiFactory.IsEmpty()
         ? throw InitializationException
         : _pDxgiFactory;
 
@@ -303,7 +303,7 @@ public abstract unsafe class DirectXObject : IDisposable {
         public Direct3DDeviceBuilder TakeContext(out ComPtr<ID3D11DeviceContext> pContext)
         {
             try {
-                if (this._pDevice is null)
+                if (this._pContext is null)
                     throw new NullReferenceException();
                 pContext = new(this._pContext);
                 return this;

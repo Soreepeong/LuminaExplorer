@@ -35,7 +35,10 @@ public sealed class CameraManager : IDisposable {
 
     public void Dispose()
     {
+        this._control.MouseActivity.LeftDoubleClick -= this.MouseActivityOnLeftDoubleClick;
         this._control.MouseActivity.Pan -= this.MouseActivityOnPan;
+        this._control.MouseActivity.DoubleClickDragZoom -= this.MouseActivityOnDoubleClickDragZoom;
+        this._control.MouseActivity.WheelZoom -= this.MouseActivityOnWheelZoom;
         this._control.ClientSizeChanged -= this.ControlOnClientSizeChanged;
     }
 

@@ -104,8 +104,8 @@ public class PhysicalFileSystem : IVirtualFileSystem {
                 var path = this.NormalizePath(pathComponents).Split('/');
                 var folder = root;
 
-                foreach (var pathComponent in path.SkipLast(1)) {
-                    if (pathComponent == ".")
+                foreach (var pathComponent in path) {
+                    if (pathComponent is "" or ".")
                         continue;
                     if (pathComponent == "..") {
                         folder = folder.Equals(root) ? root : (folder.Parent ?? root);
@@ -137,7 +137,7 @@ public class PhysicalFileSystem : IVirtualFileSystem {
                         x =>
                             string.Compare(
                                 x.Name,
-                                pathComponents.Last(),
+                                path.Last(),
                                 StringComparison.InvariantCultureIgnoreCase) == 0);
             });
     }

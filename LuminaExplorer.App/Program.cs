@@ -37,6 +37,7 @@ public static class Program {
                 hashCacheFile.OpenWrite(),
                 x => Debug.WriteLine($@"Progress: {x * 100:0.00}%"),
                 new()).Wait();
+            hashCacheFile.Refresh();
         }
 
         var hashdb = new HashDatabase(hashCacheFile);

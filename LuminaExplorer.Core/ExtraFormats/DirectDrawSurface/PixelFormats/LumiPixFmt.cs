@@ -37,25 +37,25 @@ public class LumiPixFmt : IPixFmt, IEquatable<LumiPixFmt> {
         int width,
         int height)
     {
-        var bits = 0ul;
-        var availBits = 0;
-        var outOffset = 0;
-
         for (var y = 0; y < height; y++) {
             var inOffset = y * sourceStride;
             var inOffsetTo = inOffset + (width * this.Bpp + 7) / 8;
+            var outOffset = y * targetStride;
 
+            var bits = 0ul;
+            var availBits = 0;
             for (var x = 0; x < width && inOffset < inOffsetTo; inOffset++) {
-                bits = (bits << 8) | source[inOffset];
+                bits |= (ulong) source[inOffset] << availBits;
                 availBits += 8;
 
                 for (; availBits >= this.Bpp && x < width; x++, availBits -= this.Bpp) {
                     var l = (byte) this.L.DecodeValueAsUnorm(bits, 8);
                     var a = (byte) (this.A.Bits == 0 ? 255 : this.A.DecodeValueAsUnorm(bits, 8));
+                    target[outOffset++] = l;
+                    target[outOffset++] = l;
+                    target[outOffset++] = l;
                     target[outOffset++] = a;
-                    target[outOffset++] = l;
-                    target[outOffset++] = l;
-                    target[outOffset++] = l;
+                    bits = this.Bpp >= 64 ? 0 : bits >> this.Bpp;
                 }
             }
         }

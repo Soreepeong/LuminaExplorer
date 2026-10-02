@@ -84,7 +84,7 @@ public static class MiscUtils {
 
             while (p1 < span1.Length && p2 < span2.Length) {
                 var c1 = span1[p1];
-                var c2 = span2[p1];
+                var c2 = span2[p2];
                 var i1 = p1;
                 var i2 = p2;
 
@@ -122,6 +122,12 @@ public static class MiscUtils {
                 p1++;
                 p2++;
             }
+
+            // The string that ran out first (a prefix of the other) comes first.
+            if (span1.Length - p1 < span2.Length - p2)
+                return -1;
+            if (span1.Length - p1 > span2.Length - p2)
+                return 1;
 
             if (p1 < p2)
                 return -1;

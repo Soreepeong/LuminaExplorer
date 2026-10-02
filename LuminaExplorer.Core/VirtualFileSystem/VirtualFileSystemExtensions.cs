@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Lumina.Data.Files;
 using Lumina.Data.Files.Excel;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
+using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.Penumbra;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 using LuminaExplorer.Core.VirtualFileSystem.Matcher;
 using Microsoft.Extensions.ObjectPool;
@@ -72,9 +73,14 @@ public static class VirtualFileSystemExtensions {
 
             _ = Task.Run(
                 async () => {
-                    await queue.Writer.WriteAsync(new List<IVirtualFolder> { rootFolder }, cancellationToken);
-                    await Traverse(rootFolder);
-                    await queue.Writer.WriteAsync(null, cancellationToken);
+                    try {
+                        await queue.Writer.WriteAsync(new List<IVirtualFolder> { rootFolder }, cancellationToken);
+                        await Traverse(rootFolder);
+                        await queue.Writer.WriteAsync(null, cancellationToken);
+                    } catch (Exception e) {
+                        // Propagate the failure to the reader; otherwise it would wait forever for the terminator.
+                        queue.Writer.TryComplete(e);
+                    }
                 },
                 cancellationToken);
 
@@ -198,6 +204,10 @@ public static class VirtualFileSystemExtensions {
             PapFile.PapHeader.MagicValue => typeof(PapFile),
             EidFile.EidHeader.MagicValue => typeof(EidFile),
             SklbFile.MagicValue => typeof(SklbFile),
+            TmbFile.MagicValue => typeof(TmbFile),
+            AvfxFile.MagicValue => typeof(AvfxFile),
+            _ when (magic & EvpFile.MagicMask) == EvpFile.MagicValue => typeof(EvpFile),
+            _ when (ushort) magic == StmFile.MagicValue => typeof(StmFile),
             _ => null,
         };
 

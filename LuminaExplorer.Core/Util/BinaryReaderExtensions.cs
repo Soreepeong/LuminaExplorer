@@ -1,7 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Numerics;
-using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace LuminaExplorer.Core.Util;
@@ -18,7 +18,7 @@ public static class BinaryReaderExtensions {
         var newOffset = origin switch {
             SeekOrigin.Begin => offset,
             SeekOrigin.Current => position + offset,
-            SeekOrigin.End => position + offset,
+            SeekOrigin.End => reader.BaseStream.Length + offset,
             _ => throw new ArgumentOutOfRangeException(nameof(origin), origin, null),
         };
         if (position != newOffset)
@@ -59,21 +59,18 @@ public static class BinaryReaderExtensions {
 
     #region Utilities for reading extra types
 
-    public static unsafe T ReadEnum<T>(this BinaryReader reader) where T : unmanaged, Enum
+    public static T ReadEnum<T>(this BinaryReader reader) where T : unmanaged, Enum
     {
-        switch (Marshal.SizeOf(Enum.GetUnderlyingType(typeof(T)))) {
+        // Unsafe.SizeOf<T>() is a JIT-time constant, so only the matching branch survives.
+        switch (Unsafe.SizeOf<T>()) {
             case 1:
-                var b1 = reader.ReadByte();
-                return *(T*) &b1;
+                return Unsafe.BitCast<byte, T>(reader.ReadByte());
             case 2:
-                var b2 = reader.ReadUInt16();
-                return *(T*) &b2;
+                return Unsafe.BitCast<ushort, T>(reader.ReadUInt16());
             case 4:
-                var b4 = reader.ReadUInt32();
-                return *(T*) &b4;
+                return Unsafe.BitCast<uint, T>(reader.ReadUInt32());
             case 8:
-                var b8 = reader.ReadUInt64();
-                return *(T*) &b8;
+                return Unsafe.BitCast<ulong, T>(reader.ReadUInt64());
             default:
                 throw new ArgumentException(@"Enum is not of size 1, 2, 4, or 8.", nameof(T), null);
         }

@@ -232,6 +232,34 @@ public unsafe class AnimatingJointsConstantBufferResource : DirectXObject {
         return true;
     }
 
+    /// <summary>
+    /// Gets the skinning matrix (from the bind pose to the current pose, in the model space) of a joint referred by a
+    /// bone table, as of the last call to <see cref="UpdateAnimationState"/>.
+    /// </summary>
+    /// <param name="boneTableIndex">Index of the bone table in the model.</param>
+    /// <param name="jointIndex">Index of the joint in the bone table.</param>
+    /// <returns>The skinning matrix, or identity if the joint could not be resolved.</returns>
+    public Matrix4x4 GetBoneTableJointMatrix(int boneTableIndex, int jointIndex)
+    {
+        if (!this._animationStates.Any())
+            return Matrix4x4.Identity;
+        if (boneTableIndex < 0 || boneTableIndex >= this._mdl.BoneTables.Length)
+            return Matrix4x4.Identity;
+
+        var boneTable = this._mdl.BoneTables[boneTableIndex];
+        if (jointIndex < 0 || jointIndex >= boneTable.BoneCount)
+            return Matrix4x4.Identity;
+
+        var modelBoneIndex = boneTable.BoneIndex[jointIndex];
+        if (modelBoneIndex >= this._modelBoneIndexToSkeletonBoneIndexMapping.Length)
+            return Matrix4x4.Identity;
+
+        var boneIndex = this._modelBoneIndexToSkeletonBoneIndexMapping[modelBoneIndex];
+        return 0 <= boneIndex && boneIndex < this._activeJointMatrices.Length
+            ? this._activeJointMatrices[boneIndex]
+            : Matrix4x4.Identity;
+    }
+
     private void OnDataPull(ConstantBufferResource<JointMatrixArray> sender, int boneTableIndex)
     {
         var boneTable = this._mdl.BoneTables[boneTableIndex];

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -11,10 +12,13 @@ using System.Windows.Forms;
 using BrightIdeasSoftware;
 using JetBrains.Annotations;
 using Lumina.Data.Files;
+using Lumina.Data.Structs;
 using Lumina.Models.Materials;
 using Lumina.Models.Models;
+using LuminaExplorer.Controls.FileResourceViewerControls.ModelViewerControl;
 using LuminaExplorer.Controls.Util;
 using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors;
+using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.Penumbra;
 using LuminaExplorer.Core.ExtraFormats.GenericAnimation;
 using LuminaExplorer.Core.ExtraFormats.GltfInterop;
 using LuminaExplorer.Core.ObjectRepresentationWrapper;
@@ -64,8 +68,20 @@ public partial class ModelViewer : Form {
 
         this.AnimationEnabledCheckbox.CheckedChanged += this.AnimationEnabledCheckboxOnCheckedChanged;
         this.AnimationSpeedTrackBar.ValueChanged += this.AnimationSpeedTrackBarOnValueChanged;
+
+        this.RendererComboBox.SelectedIndex = (int) this.Viewer.RendererType;
+        this.RendererComboBox.SelectedIndexChanged += this.RendererComboBoxOnSelectedIndexChanged;
+        this.Viewer.RendererTypeChanged += this.ViewerOnRendererTypeChanged;
     }
 
+    /// <summary>Gets or sets the renderer used to show the model.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public ModelRendererType RendererType {
+        get => this.Viewer.RendererType;
+        set => this.Viewer.RendererType = value;
+    }
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool IsFullScreen {
         get => this._isFullScreen;
         set {
@@ -109,6 +125,12 @@ public partial class ModelViewer : Form {
             .Select(x => x.AnimationTask)
             .ToArray();
 
+    private void RendererComboBoxOnSelectedIndexChanged(object? sender, EventArgs e) =>
+        this.Viewer.RendererType = (ModelRendererType) Math.Max(0, this.RendererComboBox.SelectedIndex);
+
+    private void ViewerOnRendererTypeChanged(object? sender, EventArgs e) =>
+        this.RendererComboBox.SelectedIndex = (int) this.Viewer.RendererType;
+
     private void MouseActivityOnMiddleClick(Point cursor) => this.IsFullScreen = !this.IsFullScreen;
 
     private void ViewerOnAnimationPlayingChanged(object? sender, EventArgs e) =>
@@ -139,7 +161,7 @@ public partial class ModelViewer : Form {
                 else {
                     index = this.AnimationListView.SelectedIndices[0];
                     this.AnimationListView.Items[index].Selected = false;
-                    index += direction;
+                    index = Math.Clamp(index + direction, 0, this._source.Count - 1);
                 }
 
                 this.AnimationListView.Items[index].Selected = true;
@@ -159,8 +181,8 @@ public partial class ModelViewer : Form {
                 if (this.IsFullScreen)
                     this.IsFullScreen = false;
                 else if (!this.MainLeftSplitter.Panel1Collapsed) {
-                    this.MainLeftSplitter.Panel1Collapsed = false;
-                    this.MainRightSplitter.Panel2Collapsed = false;
+                    this.MainLeftSplitter.Panel1Collapsed = true;
+                    this.MainRightSplitter.Panel2Collapsed = true;
                 } else
                     this.Close();
 
@@ -248,6 +270,7 @@ public partial class ModelViewer : Form {
                             entries.AddRange(
                                 paps.Where(
                                         p =>
+                                            p.LoadException is null &&
                                             p.Header.ModelClassification == sklb.VersionedHeader.ModelClassification &&
                                             p.Header.ModelId == sklb.VersionedHeader.ModelId)
                                     .SelectMany(x => x.Animations.Select((_, i) => new AnimationListEntry(x, i))));
@@ -271,6 +294,8 @@ public partial class ModelViewer : Form {
                             .AsFileResource<PapFile>(cts.Token)
                             .ContinueWith(
                                 r2 => {
+                                    if (r2.Result.LoadException is not null)
+                                        return;
                                     lock (listLock)
                                         paps.Add(r2.Result);
                                     Flush(false);
@@ -299,10 +324,16 @@ public partial class ModelViewer : Form {
                                             cts.Token.ThrowIfCancellationRequested();
                                             try {
                                                 using var lookup = vfs.GetLookup(f3);
+                                                if (!HasPapMagic(lookup))
+                                                    continue;
+
                                                 var papTask = lookup.AsFileResource<PapFile>(cts.Token);
                                                 await this.Viewer.RunOnUiThreadAfter(
                                                     papTask,
                                                     r2 => {
+                                                        if (!r2.IsCompletedSuccessfully ||
+                                                            r2.Result.LoadException is not null)
+                                                            return;
                                                         lock (listLock)
                                                             paps.Add(r2.Result);
                                                         Flush(false);
@@ -322,17 +353,34 @@ public partial class ModelViewer : Form {
             cts.Token);
     }
 
+    /// <summary>Checks whether the file starts with the magic of a pap file, without parsing it.</summary>
+    private static bool HasPapMagic(IVirtualFileLookup lookup)
+    {
+        if (lookup.Type != FileType.Standard || lookup.Size < 4)
+            return false;
+
+        try {
+            using var stream = lookup.CreateStream();
+            Span<byte> magic = stackalloc byte[4];
+            stream.ReadExactly(magic);
+            return BitConverter.ToUInt32(magic) == PapFile.PapHeader.MagicValue;
+        } catch (Exception) {
+            return false;
+        }
+    }
+
     public void ShowRelativeTo(Control opener)
     {
         var rc = this.Viewer.GetViewportRectangleSuggestion(opener);
-        if (rc.Width < MinimumDefaultWidth) {
-            rc.X -= (MinimumDefaultWidth - rc.Width) / 2;
-            rc.Width = MinimumDefaultWidth;
+        var minimumSize = this.LogicalToDeviceUnits(new Size(MinimumDefaultWidth, MinimumDefaultHeight));
+        if (rc.Width < minimumSize.Width) {
+            rc.X -= (minimumSize.Width - rc.Width) / 2;
+            rc.Width = minimumSize.Width;
         }
 
-        if (rc.Height < MinimumDefaultHeight) {
-            rc.X -= (MinimumDefaultHeight - rc.Height) / 2;
-            rc.Height = MinimumDefaultHeight;
+        if (rc.Height < minimumSize.Height) {
+            rc.Y -= (minimumSize.Height - rc.Height) / 2;
+            rc.Height = minimumSize.Height;
         }
 
         rc = Rectangle.Inflate(
@@ -351,7 +399,7 @@ public partial class ModelViewer : Form {
                 if (this.Viewer.ModelTask?.IsCompletedSuccessfully is not true)
                     return true;
 
-                var model = new Model(this.Viewer.ModelTask.Result);
+                var model = PenumbraMdlFile.CreateModel(this.Viewer.ModelTask.Result);
                 Debug.Assert(model.File is not null);
 
                 using var sfd = new SaveFileDialog();
@@ -378,7 +426,10 @@ public partial class ModelViewer : Form {
                                         .ExtractCString();
 
                                     if (mtrlPath.StartsWith('/'))
-                                        mtrlPath = Material.ResolveRelativeMaterialPath(mtrlPath, model.VariantId);
+                                        mtrlPath = Material.ResolveRelativeMaterialPath(
+                                            mtrlPath,
+                                            model.VariantId,
+                                            strictSuffixValidation: false);
 
                                     if (mtrlPath is null)
                                         continue;
@@ -388,7 +439,8 @@ public partial class ModelViewer : Form {
                                         continue;
 
                                     using var lookup = this.Viewer.Vfs!.GetLookup(mtrlvf);
-                                    model.Materials[i] = new(await lookup.AsFileResource<MtrlFile>());
+                                    model.Materials[i] = PenumbraMtrlFile.CreateMaterial(
+                                        await lookup.AsFileResource<MtrlFile>());
 
                                     typeof(Material).GetProperty(nameof(Material.MaterialPath))!.SetValue(
                                         model.Materials[i],
@@ -448,6 +500,7 @@ public partial class ModelViewer : Form {
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         this._closeToken.Cancel();
+        this._loadCancelTokenSource?.Cancel();
         base.OnFormClosed(e);
     }
 

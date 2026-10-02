@@ -97,6 +97,9 @@ public class ModelInfoResolver {
             skeletonId = table.GetSkeletonId(raceId, setId);
         }
 
+        if (skeletonId is null)
+            return false;
+
         sklbPath = string.Format(
             "chara/human/c{0:D4}/skeleton/{1}/{2}{3:D4}/skl_c{0:D4}{2}{3:D4}.sklb",
             raceId,

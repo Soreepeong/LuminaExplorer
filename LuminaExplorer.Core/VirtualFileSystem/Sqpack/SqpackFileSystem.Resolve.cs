@@ -217,15 +217,18 @@ public sealed partial class SqpackFileSystem {
                                 }
 
                                 if (unknownFolders.Any()) {
-                                    this._childFoldersResolvers.Add(
-                                        unknownContainer,
-                                        new(
-                                            () => Task.Run(
-                                                () => {
-                                                    foreach (var v in unknownFolders.Values)
-                                                        unknownContainer.Folders.Add(v.Name, v);
-                                                    return (IVirtualFolder) unknownContainer;
-                                                })));
+                                    lock (this._childFoldersResolvers) {
+                                        this._childFoldersResolvers.Add(
+                                            unknownContainer,
+                                            new(
+                                                () => Task.Run(
+                                                    () => {
+                                                        foreach (var v in unknownFolders.Values)
+                                                            unknownContainer.Folders.Add(v.Name, v);
+                                                        return (IVirtualFolder) unknownContainer;
+                                                    })));
+                                    }
+
                                     currentFolder.Folders.Add(unknownContainer.Name, unknownContainer);
                                 }
                             } finally {
@@ -255,7 +258,12 @@ public sealed partial class SqpackFileSystem {
         return subfolder;
     }
 
-    public void SuggestFullPath(string name) =>
+    public void SuggestFullPath(string name) => _ = this.SuggestFullPathAsync(name);
+
+    /// <summary>Resolves the names of the folders and the file of a full path, if they are unknown.</summary>
+    /// <param name="name">Full path of a file.</param>
+    /// <returns>A task that completes once the names have been resolved.</returns>
+    public Task SuggestFullPathAsync(string name) =>
         Task.Run(
             async () => {
                 name = this.NormalizePath(name);
@@ -264,11 +272,11 @@ public sealed partial class SqpackFileSystem {
                     return;
 
                 var folderName = name[..sep];
-                var folderNameHash = Crc32.Get(folderName.ToLowerInvariant());
+                var folderNameHash = Crc32.Get(Encoding.UTF8.GetBytes(folderName.ToLowerInvariant()));
 
                 folderName = $"/{folderName}/";
                 name = name[(sep + 1)..];
-                var nameHash = Crc32.Get(name.ToLowerInvariant());
+                var nameHash = Crc32.Get(Encoding.UTF8.GetBytes(name.ToLowerInvariant()));
 
                 var chunkRootSolver = new HashSet<Task<IVirtualFolder>> { Task.FromResult(this.RootFolder) };
                 var changedCallbacks = new List<Action>();

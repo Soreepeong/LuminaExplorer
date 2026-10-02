@@ -70,6 +70,7 @@ public sealed partial class PhysicalFileLookup : IVirtualFileLookup {
         if (!type.IsAssignableTo(typeof(FileResource)))
             throw new ArgumentException(null, nameof(type));
 
+        type = IVirtualFileLookup.ResolveFileResourceType(type);
         var file = (FileResource) Activator.CreateInstance(type)!;
         var luminaFileInfo = new LuminaFileInfo {
             Type = this.Type,

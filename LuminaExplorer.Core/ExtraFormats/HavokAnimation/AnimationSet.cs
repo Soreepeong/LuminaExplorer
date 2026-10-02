@@ -42,17 +42,69 @@ public class AnimationSet : IAnimation {
 
     public static AnimationSet Decode(Node animationBinding)
     {
-        if (!animationBinding.AsMap.TryGetValue("animation", out var v) ||
-            v is not ValueNode v2 ||
-            v2.Node.Definition.Name != "hkaSplineCompressedAnimation")
-            throw new NotSupportedException();
+        if (!animationBinding.AsMap.TryGetValue("animation", out var v) || v is not ValueNode v2)
+            throw new NotSupportedException("Animation binding has no animation.");
 
         if (!animationBinding.AsMap.TryGetValue("transformTrackToBoneIndices", out var v3) ||
             v3 is not ValueArray v4 ||
             v4.InnerType.ElementType != FieldElementType.Integer)
-            throw new NotSupportedException();
+            throw new NotSupportedException("Animation binding has no transformTrackToBoneIndices.");
 
-        return Decode(v2.Node, v4.Values.Select(x => ((ValueInt) x!).Value).ToImmutableList());
+        var transformTrackToBoneIndices = v4.Values.Select(x => ((ValueInt) x!).Value).ToImmutableList();
+        return v2.Node.Definition.Name switch {
+            "hkaSplineCompressedAnimation" => Decode(v2.Node, transformTrackToBoneIndices),
+            "hkaInterleavedUncompressedAnimation" => DecodeInterleaved(v2.Node, transformTrackToBoneIndices),
+            var name => throw new NotSupportedException($"Animation type {name} is not supported."),
+        };
+    }
+
+    public static AnimationSet DecodeInterleaved(
+        Node iua,
+        ImmutableList<int> transformTrackToBoneIndices)
+    {
+        var duration = (iua.AsMap.GetValueOrDefault("duration") as ValueFloat)?.Value ?? 0f;
+        var numberOfTransformTracks = (iua.AsMap.GetValueOrDefault("numberOfTransformTracks") as ValueInt)?.Value ?? 0;
+        var transforms = (iua.AsMap.GetValueOrDefault("transforms") as ValueArray)?.Values ?? [];
+
+        // Each item is a hkQsTransform: translation (xyzw), rotation (xyzw), scale (xyzw); stored as frame-major.
+        var numFrames = numberOfTransformTracks == 0 ? 0 : transforms.Count / numberOfTransformTracks;
+        if (numberOfTransformTracks > 0 && numFrames == 0)
+            throw new InvalidDataException("Interleaved animation has no frames.");
+
+        var frameDuration = numFrames > 1 ? duration / (numFrames - 1) : duration;
+        var tracks = new List<AnimationTrack>(numberOfTransformTracks);
+        for (var track = 0; track < numberOfTransformTracks; track++) {
+            var translations = new Vector3[numFrames];
+            var rotations = new Quaternion[numFrames];
+            var scales = new Vector3[numFrames];
+            for (var frame = 0; frame < numFrames; frame++) {
+                var f = ((ValueArray) transforms[frame * numberOfTransformTracks + track]!).Values;
+                var x = new float[12];
+                for (var i = 0; i < 12 && i < f.Count; i++)
+                    x[i] = (f[i] as ValueFloat)?.Value ?? 0f;
+                translations[frame] = new(x[0], x[1], x[2]);
+                rotations[frame] = new(x[4], x[5], x[6], x[7]);
+                scales[frame] = new(x[8], x[9], x[10]);
+            }
+
+            tracks.Add(
+                new(
+                    translations.All(t => t == translations[0])
+                        ? new StaticVector3Track(translations[0], duration, false)
+                        : new SampledVector3Track(translations, duration, frameDuration),
+                    rotations.All(r => r == rotations[0])
+                        ? new StaticQuaternionTrack(rotations[0], duration, false)
+                        : new SampledQuaternionTrack(rotations, duration, frameDuration),
+                    scales.All(s => s == scales[0])
+                        ? new StaticVector3Track(scales[0], duration, false)
+                        : new SampledVector3Track(scales, duration, frameDuration)));
+        }
+
+        return new(
+            [new(duration, tracks.ToImmutableList(), transformTrackToBoneIndices)],
+            duration,
+            duration,
+            frameDuration);
     }
 
     public static AnimationSet Decode(

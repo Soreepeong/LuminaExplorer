@@ -1,11 +1,13 @@
 ﻿using System;
 using System.Drawing.Drawing2D;
-using Newtonsoft.Json;
+using System.Text.Json.Serialization;
+using LuminaExplorer.Core.ExcelSheets;
+using LuminaExplorer.Core.GameDataNames;
 
 namespace LuminaExplorer.App;
 
 public record AppConfig {
-    [JsonIgnore] public string BaseDirectory { get; init; }
+    [JsonIgnore] public string BaseDirectory { get; init; } = "";
 
     public string PathListUrl { get; init; } = "https://rl2.perchbird.dev/download/export/PathList.gz";
 
@@ -13,6 +15,17 @@ public record AppConfig {
         @"C:\Program Files (x86)\SquareEnix\FINAL FANTASY XIV - A Realm Reborn\game\sqpack";
 
     public string CacheFilePath { get; init; } = "paths.dat";
+
+    /// <summary>Association between BNpcName and BNpcBase, used to name monster model folders.</summary>
+    public string BNpcLinkUrl { get; init; } = CharaFolderNames.DefaultBNpcLinkUrl;
+
+    public string BNpcLinkCacheFilePath { get; init; } = "bnpclink.csv";
+
+    /// <summary>GitHub repository of EXDSchema, used to name the columns of Excel sheets.</summary>
+    public string ExcelSchemaRepository { get; init; } = ExcelSchemaProvider.DefaultRepository;
+
+    /// <summary>Directory to keep downloaded EXDSchema archives in.</summary>
+    public string ExcelSchemaCacheDirectory { get; init; } = "exdschema";
 
     public int ListViewMode { get; init; } = 10; // Details
 

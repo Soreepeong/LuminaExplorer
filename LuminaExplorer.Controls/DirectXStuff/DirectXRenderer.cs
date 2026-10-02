@@ -90,6 +90,7 @@ public abstract unsafe class DirectXRenderer<T> : DirectXObject where T : Contro
             this.Control.ForeColorChanged += this.ControlOnForeColorChanged;
             this.Control.BackColorChanged += this.ControlOnBackColorChanged;
             this.Control.FontChanged += this.ControlOnFontChanged;
+            this.Control.DpiChangedAfterParent += this.ControlOnFontChanged;
         } catch (Exception e) {
             this.LastException = e;
         }
@@ -103,11 +104,13 @@ public abstract unsafe class DirectXRenderer<T> : DirectXObject where T : Contro
             this.Control.ForeColorChanged -= this.ControlOnForeColorChanged;
             this.Control.BackColorChanged -= this.ControlOnBackColorChanged;
             this.Control.FontChanged -= this.ControlOnFontChanged;
+            this.Control.DpiChangedAfterParent -= this.ControlOnFontChanged;
             SafeDispose.One(ref this._depthStencilResource);
         }
 
         this._pForeColorBrush.Reset();
         this._pBackColorBrush.Reset();
+        this._pFontTextFormat.Reset();
         this._pDxgiSwapChain.Reset();
         this._pRenderTarget2D.Reset();
         this._pRenderTarget3D.Reset();
@@ -141,8 +144,8 @@ public abstract unsafe class DirectXRenderer<T> : DirectXObject where T : Contro
             var cts = this._autoInvalidateCancellationTokenSource = new();
             this._autoInvalidateThread = new(
                 () => {
+                    IDXGIOutput* pOutput = null;
                     try {
-                        IDXGIOutput* pOutput = null;
                         this._pDxgiSwapChain.Get()->GetContainingOutput(&pOutput).Ensure();
                         while (!cts.IsCancellationRequested) {
                             pOutput->WaitForVBlank();
@@ -150,8 +153,12 @@ public abstract unsafe class DirectXRenderer<T> : DirectXObject where T : Contro
                         }
                     } catch (Exception) {
                         // swallow
+                    } finally {
+                        SafeRelease(ref pOutput);
                     }
-                });
+                }) {
+                IsBackground = true,
+            };
             this._autoInvalidateThread.Start();
         }
     }
@@ -252,6 +259,9 @@ public abstract unsafe class DirectXRenderer<T> : DirectXObject where T : Contro
                         alphaMode = D2D1_ALPHA_MODE.D2D1_ALPHA_MODE_PREMULTIPLIED,
                         format = DXGI_FORMAT.DXGI_FORMAT_UNKNOWN,
                     },
+                    // Draw in device pixels, same as WinForms coordinates; DPI scaling is applied explicitly.
+                    dpiX = 96,
+                    dpiY = 96,
                 };
 
                 fixed (ID2D1RenderTarget** ppRenderTarget = &this._pRenderTarget2D.GetPinnableReference())
@@ -427,35 +437,43 @@ public abstract unsafe class DirectXRenderer<T> : DirectXObject where T : Contro
         textBrush->SetOpacity(opacity);
 
         var pRenderTarget = this.RenderTarget2D;
+        var scaledBorderWidth = borderWidth <= 0 ? 0 : this.Control.LogicalToDeviceUnits(borderWidth);
 
-        fixed (char* pString = @string.AsSpan()) {
-            D2D_RECT_F box;
+        // Lay out once; the shadow is drawn at every offset within the border, which can be many draws on high DPI.
+        IDWriteTextLayout* layout = null;
+        try {
+            fixed (char* pString = @string.AsSpan()) {
+                DWriteFactory->CreateGdiCompatibleTextLayout(
+                    pString,
+                    (uint) @string.Length,
+                    textFormat,
+                    Math.Max(0f, rectangle.Width),
+                    Math.Max(0f, rectangle.Height),
+                    1f,
+                    null,
+                    true,
+                    &layout).Ensure();
+            }
 
-            for (var i = -borderWidth; i <= borderWidth; i++) {
-                for (var j = -borderWidth; j <= borderWidth; j++) {
+            for (var i = -scaledBorderWidth; i <= scaledBorderWidth; i++) {
+                for (var j = -scaledBorderWidth; j <= scaledBorderWidth; j++) {
                     if (i == 0 && j == 0)
                         continue;
-                    box = new(rectangle.Left + i, rectangle.Top + j, rectangle.Right + i, rectangle.Bottom + j);
-                    pRenderTarget->DrawText(
-                        pString,
-                        (uint) @string.Length,
-                        textFormat,
-                        &box,
+                    pRenderTarget->DrawTextLayout(
+                        new(rectangle.Left + i, rectangle.Top + j),
+                        layout,
                         shadowBrush,
-                        D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE,
-                        DWRITE_MEASURING_MODE.DWRITE_MEASURING_MODE_GDI_NATURAL);
+                        D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
                 }
             }
 
-            box = new(rectangle.Left, rectangle.Top, rectangle.Right, rectangle.Bottom);
-            pRenderTarget->DrawText(
-                pString,
-                (uint) @string.Length,
-                textFormat,
-                &box,
+            pRenderTarget->DrawTextLayout(
+                new(rectangle.Left, rectangle.Top),
+                layout,
                 textBrush,
-                D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE,
-                DWRITE_MEASURING_MODE.DWRITE_MEASURING_MODE_GDI_NATURAL);
+                D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
+        } finally {
+            SafeRelease(ref layout);
         }
     }
 
@@ -470,7 +488,7 @@ public abstract unsafe class DirectXRenderer<T> : DirectXObject where T : Contro
     protected ID2D1Brush* GetOrCreateSolidColorBrush(ref ComPtr<ID2D1Brush> pBrush, Color color)
     {
         if (pBrush.IsEmpty())
-            pBrush = this.CreateSolidColorBrush(color);
+            pBrush.Attach(this.CreateSolidColorBrush(color));
         return pBrush;
     }
 
@@ -506,7 +524,7 @@ public abstract unsafe class DirectXRenderer<T> : DirectXObject where T : Contro
                         ? DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_ITALIC
                         : DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_NORMAL,
                     DWRITE_FONT_STRETCH.DWRITE_FONT_STRETCH_NORMAL,
-                    font.SizeInPoints * 4 / 3,
+                    font.SizeInPoints * this.Control.DeviceDpi / 72,
                     pEmpty,
                     ppFontTextFormat).Ensure();
             }

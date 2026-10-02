@@ -216,7 +216,7 @@ public class FdtFile : FileResource {
         /// <inheritdoc/>
         public int CompareTo(FontTableEntry other)
         {
-            return this.CharUtf8 - other.CharUtf8;
+            return ((uint) this.CharUtf8).CompareTo((uint) other.CharUtf8);
         }
 
         public string StringFromUtf8 {
@@ -339,14 +339,14 @@ public class FdtFile : FileResource {
         public int CompareTo(KerningTableEntry other)
         {
             if (this.LeftUtf8 == other.LeftUtf8)
-                return this.RightUtf8 - other.RightUtf8;
+                return ((uint) this.RightUtf8).CompareTo((uint) other.RightUtf8);
             else
-                return this.LeftUtf8 - other.LeftUtf8;
+                return ((uint) this.LeftUtf8).CompareTo((uint) other.LeftUtf8);
         }
 
-        public string StringFromLeftUtf8 => char.ConvertFromUtf32(this.LeftUtf8);
+        public string StringFromLeftUtf8 => char.ConvertFromUtf32(this.LeftInt);
 
-        public string StringFromRightUtf8 => char.ConvertFromUtf32(this.RightUtf8);
+        public string StringFromRightUtf8 => char.ConvertFromUtf32(this.RightInt);
 
         public override string ToString() =>
             $"K[{this.StringFromLeftUtf8}, {this.StringFromRightUtf8}] = {this.RightOffset}";

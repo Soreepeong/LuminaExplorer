@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
@@ -67,6 +68,7 @@ public partial class MultiBitmapViewerControl {
 
     public event EventHandler? PixelGridMinimumZoomChanged;
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public bool UseAlphaChannel {
         get => this._useAlphaChannel;
         set {
@@ -80,6 +82,7 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public DirectXTexRendererShader.VisibleColorChannelTypes ChannelFilter {
         get => this._channelFilter;
         set {
@@ -93,6 +96,7 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public float Rotation {
         get => this.Viewport.Rotation;
         set {
@@ -107,6 +111,7 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public IReadOnlyList<Tuple<Size, float>> FontSizeStepLevel {
         get => this._fontSizeStepLevel;
         set {
@@ -120,6 +125,7 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public Color ForeColorWhenLoaded {
         get => this._foreColorWhenLoaded;
         set {
@@ -131,6 +137,7 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public Color BackColorWhenLoaded {
         get => this._backColorWhenLoaded;
         set {
@@ -142,6 +149,7 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public Color TransparencyCellColor1 {
         get => this._transparencyCellColor1;
         set {
@@ -153,6 +161,7 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public Color TransparencyCellColor2 {
         get => this._transparencyCellColor2;
         set {
@@ -164,6 +173,7 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public int TransparencyCellSize {
         get => this._transparencyCellSize;
         set {
@@ -175,27 +185,31 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public Padding PanExtraRange {
         get => this.Viewport.PanExtraRange;
         set => this.Viewport.PanExtraRange = value;
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public TimeSpan DelayShowingLoadingBoxFor { get; set; } = TimeSpan.FromMilliseconds(300);
 
     public bool IsLoadingBoxDelayed =>
-        this._loadStartTicks == long.MaxValue || this._loadStartTicks + this.DelayShowingLoadingBoxFor.Milliseconds >
+        this._loadStartTicks == long.MaxValue || this._loadStartTicks + (long) this.DelayShowingLoadingBoxFor.TotalMilliseconds >
         Environment.TickCount64;
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public float OverlayBackgroundOpacity {
         get => this._overlayBackgroundOpacity;
         set {
-            if (!Equals(this._overlayBackgroundOpacity, value))
+            if (Equals(this._overlayBackgroundOpacity, value))
                 return;
             this._overlayBackgroundOpacity = value;
             this.Invalidate();
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public float NearestNeighborMinimumZoom {
         get => this._nearestNeighborMinimumZoom;
         set {
@@ -206,6 +220,7 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public Color PixelGridLineColor {
         get => this._pixelGridLineColor;
         set {
@@ -217,6 +232,7 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public float PixelGridMinimumZoom {
         get => this._pixelGridMinimumZoom;
         set {
@@ -228,6 +244,7 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public Size SliceSpacing {
         get => this._sliceSpacing;
         set {
@@ -251,17 +268,16 @@ public partial class MultiBitmapViewerControl {
         }
     }
 
-    public float EffectiveFontSizeScale =>
-        this._fontSizeStepLevel.LastOrDefault(
-            x => x.Item1.Width <= this.ClientSize.Width && x.Item1.Height <= this.ClientSize.Height,
-            this._fontSizeStepLevel.FirstOrDefault(Tuple.Create(Size.Empty, this.Font.Size))).Item2 / 9 *
-        this.DeviceDpi / 96;
+    public float EffectiveFontSizeScale => this.EffectiveFontSizeStep / 9 * this.DeviceDpi / 96;
 
-    public float EffectiveFontSizeInPoints =>
+    public float EffectiveFontSizeInPoints => this.EffectiveFontSizeStep / 9 * this.Font.SizeInPoints;
+
+    // Step thresholds are in logical (96 DPI) pixels.
+    private float EffectiveFontSizeStep =>
         this._fontSizeStepLevel.LastOrDefault(
-            x => x.Item1.Width <= this.ClientSize.Width && x.Item1.Height <= this.ClientSize.Height,
-            this._fontSizeStepLevel.FirstOrDefault(Tuple.Create(Size.Empty, this.Font.Size))).Item2 / 9 *
-        this.Font.SizeInPoints;
+            x => this.LogicalToDeviceUnits(x.Item1) is var s
+                && s.Width <= this.ClientSize.Width && s.Height <= this.ClientSize.Height,
+            this._fontSizeStepLevel.FirstOrDefault(Tuple.Create(Size.Empty, this.Font.Size))).Item2;
 
     public float AutoDescriptionOpacity {
         get {
@@ -285,10 +301,11 @@ public partial class MultiBitmapViewerControl {
 
     private PanZoomTracker Viewport { get; }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public PointF Pan {
         get => this.Viewport.Pan;
         set {
-            if (this.Viewport.Pan != value)
+            if (this.Viewport.Pan == value)
                 return;
             this.Viewport.Pan = value;
             this.Invalidate();
@@ -349,6 +366,9 @@ public partial class MultiBitmapViewerControl {
 
         this.Invoke(
             () => {
+                if (this._bitmapSourceTaskCurrent?.Task != task)
+                    return;
+
                 if (this._bitmapSourceTaskPrevious is not null) {
                     if (this.TryGetRenderers(out var renderers))
                         foreach (var r in renderers)

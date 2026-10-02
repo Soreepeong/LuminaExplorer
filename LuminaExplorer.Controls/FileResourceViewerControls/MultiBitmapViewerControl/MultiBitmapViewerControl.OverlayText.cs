@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Text;
 using LuminaExplorer.Controls.DirectXStuff.Shaders;
 
@@ -18,6 +19,7 @@ public partial class MultiBitmapViewerControl {
 
     public TimeSpan OverlayLongDuration = TimeSpan.FromSeconds(1);
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public string? LoadingFileNameWhenEmpty {
         get => this._loadingFileNameWhenEmpty;
         set {

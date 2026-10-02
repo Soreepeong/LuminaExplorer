@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using Lumina.Data.Files;
 using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
 using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface.PixelFormats;
@@ -70,7 +71,107 @@ public sealed unsafe class Texture2DShaderResource : D3D11Resource {
         }
     }
 
+    private Texture2DShaderResource(ID3D11Device* pDevice, ID3D11Texture2D* pTexture2D)
+    {
+        try {
+            this._pTexture2D = pTexture2D;
+            this.SetResource(this._pTexture2D);
+            this._pShaderResourceView = ResourceUtils.CreateShaderResourceView(this._pTexture2D, pDevice);
+        } catch (Exception) {
+            this.Dispose();
+            throw;
+        }
+    }
+
     public ID3D11ShaderResourceView* ShaderResourceView => this._pShaderResourceView;
+
+    /// <summary>
+    /// Creates a texture from a 2D texture file, keeping all array slices (unlike the conversion to
+    /// <see cref="DdsFile"/>, which keeps only the first one). Only formats that need no conversion are supported.
+    /// </summary>
+    /// <remarks>Surfaces of array textures are stored mipmap by mipmap, each with all of the slices.</remarks>
+    public static Texture2DShaderResource FromTexFileWithArraySlices(ID3D11Device* pDevice, TexFile tex)
+    {
+        var (formatInt, conversion) = TexFile.GetDxgiFormatFromTextureFormat(tex.Header.Format);
+        var format = (DXGI_FORMAT) formatInt;
+        if (conversion != TexFile.DxgiFormatConversion.NoConversion || format == DXGI_FORMAT.DXGI_FORMAT_UNKNOWN)
+            throw new NotSupportedException($"Unsupported format: {tex.Header.Format}");
+
+        var width = (uint) tex.Header.Width;
+        var height = (uint) tex.Header.Height;
+        var arraySize = Math.Max(1u, (uint) tex.Header.ArraySize);
+        var mipCount = Math.Max(1u, (uint) tex.Header.MipCount);
+        var isBlockCompressed = format.IsBlockCompressed();
+        var bitsPerPixel = isBlockCompressed
+            ? format is DXGI_FORMAT.DXGI_FORMAT_BC1_UNORM or DXGI_FORMAT.DXGI_FORMAT_BC4_UNORM ? 4u : 8u
+            : format switch {
+                DXGI_FORMAT.DXGI_FORMAT_R8_UNORM or DXGI_FORMAT.DXGI_FORMAT_A8_UNORM => 8u,
+                DXGI_FORMAT.DXGI_FORMAT_R16_FLOAT or DXGI_FORMAT.DXGI_FORMAT_R8G8_UNORM => 16u,
+                DXGI_FORMAT.DXGI_FORMAT_R16G16B16A16_FLOAT => 64u,
+                DXGI_FORMAT.DXGI_FORMAT_R32G32B32A32_FLOAT => 128u,
+                _ => 32u,
+            };
+
+        var data = tex.Data;
+        var offset = (int) tex.Header.OffsetToSurface[0];
+        var subresources = new D3D11_SUBRESOURCE_DATA[arraySize * mipCount];
+        fixed (byte* pData = data)
+        fixed (D3D11_SUBRESOURCE_DATA* pSubresources = subresources) {
+            for (var mip = 0u; mip < mipCount; mip++) {
+                for (var slice = 0u; slice < arraySize; slice++) {
+                    var w = Math.Max(1u, width >> (int) mip);
+                    var h = Math.Max(1u, height >> (int) mip);
+                    uint pitch, rows;
+                    if (isBlockCompressed) {
+                        pitch = Math.Max(1u, (w + 3) / 4) * bitsPerPixel * 2;
+                        rows = Math.Max(1u, (h + 3) / 4);
+                    } else {
+                        pitch = (w * bitsPerPixel + 7) / 8;
+                        rows = h;
+                    }
+
+                    if (offset + pitch * rows > data.Length)
+                        throw new InvalidDataException("Texture data is too short.");
+
+                    pSubresources[slice * mipCount + mip] = new() {
+                        pSysMem = pData + offset,
+                        SysMemPitch = pitch,
+                        SysMemSlicePitch = pitch * rows,
+                    };
+                    offset += (int) (pitch * rows);
+                }
+            }
+
+            var desc = new D3D11_TEXTURE2D_DESC(
+                format,
+                width,
+                height,
+                arraySize,
+                mipCount,
+                (uint) D3D11_BIND_FLAG.D3D11_BIND_SHADER_RESOURCE);
+            ID3D11Texture2D* pTexture;
+            pDevice->CreateTexture2D(&desc, pSubresources, &pTexture).Ensure();
+            return new(pDevice, pTexture);
+        }
+    }
+
+    /// <summary>Whether the texture only has a red channel that should be shown as gray.</summary>
+    public bool ReplicateRedChannel { get; init; }
+
+    public static Texture2DShaderResource FromRawSlice(ID3D11Device* pDevice, RawTextureSlice slice)
+    {
+        fixed (byte* pData = slice.Data) {
+            return new(
+                pDevice,
+                slice.Format,
+                checked((uint) slice.Width),
+                checked((uint) slice.Height),
+                checked((uint) slice.RowPitch),
+                (nint) pData) {
+                ReplicateRedChannel = slice.ReplicateRedChannel,
+            };
+        }
+    }
 
     public static Texture2DShaderResource FromWicBitmap(ID3D11Device* pDevice, ComPtr<IWICBitmapSource> bitmapSource)
     {
@@ -91,5 +192,6 @@ public sealed unsafe class Texture2DShaderResource : D3D11Resource {
     {
         SafeRelease(ref this._pTexture2D);
         SafeRelease(ref this._pShaderResourceView);
+        base.Dispose(disposing);
     }
 }

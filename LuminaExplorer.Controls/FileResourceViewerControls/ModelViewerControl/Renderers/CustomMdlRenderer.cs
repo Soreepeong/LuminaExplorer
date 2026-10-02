@@ -45,14 +45,17 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
         this._paramWorldMisc = new(this.Device, this.DeviceContext);
         this._paramWorldMisc.DataPull += this.ParamWorldMiscOnDataPull;
         this._paramLight = new(this.Device, this.DeviceContext, false, CustomMdlRendererShader.LightParameters.Default);
-        this.Control.ViewportChanged += (_, _) => this.ResetCamera();
-        this.Control.AnimationSpeedChanged += (_, _) => this.UpdateAnimationSpeed();
-        this.Control.AnimationPlayingChanged += (_, _) => this.UpdateAnimationSpeed();
+        this.Control.ViewportChanged += this.ControlOnViewportChanged;
+        this.Control.AnimationSpeedChanged += this.ControlOnAnimationStateChanged;
+        this.Control.AnimationPlayingChanged += this.ControlOnAnimationStateChanged;
     }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing) {
+            this.Control.ViewportChanged -= this.ControlOnViewportChanged;
+            this.Control.AnimationSpeedChanged -= this.ControlOnAnimationStateChanged;
+            this.Control.AnimationPlayingChanged -= this.ControlOnAnimationStateChanged;
             this.ModelTask = null;
             _ = SafeDispose.OneAsync(ref this._shader!);
             _ = SafeDispose.OneAsync(ref this._paramCamera!);
@@ -265,6 +268,10 @@ public unsafe class CustomMdlRenderer : BaseMdlRenderer {
             }
         }
     }
+
+    private void ControlOnViewportChanged(object? sender, EventArgs e) => this.ResetCamera();
+
+    private void ControlOnAnimationStateChanged(object? sender, EventArgs e) => this.UpdateAnimationSpeed();
 
     private void ResetCamera(MdlStructs.BoundingBoxStruct bboxTarget)
     {

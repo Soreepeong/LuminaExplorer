@@ -91,7 +91,7 @@ public sealed class DdsBitmapSource : IBitmapSource {
 
     public string FileName => this._ddsFile.Name;
 
-    public int ImageCount => this._ddsFile.NumMipmaps;
+    public int ImageCount => this._ddsFile.NumImages;
 
     public IGridLayout Layout { get; private set; }
 
@@ -414,7 +414,7 @@ public sealed class DdsBitmapSource : IBitmapSource {
         var slices = this.NumSlicesOfMipmap(this._imageIndex, this._mipmap);
 
         this.Layout = IGridLayout.CreateGridLayoutForDepthView(
-            0,
+            this._imageIndex,
             this._mipmap,
             width,
             height,

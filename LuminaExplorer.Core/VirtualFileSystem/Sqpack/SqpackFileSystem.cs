@@ -23,6 +23,11 @@ public sealed partial class SqpackFileSystem : IVirtualFileSystem {
     public readonly DirectoryInfo InstallationSqPackDirectory;
     public readonly PlatformId PlatformId;
 
+    /// <summary>Known paths, used to resolve file and folder names.</summary>
+    public readonly HashDatabase HashDatabase;
+
+    public readonly GameData GameData;
+
     public event IVirtualFileSystem.FolderChangedDelegate? FolderChanged;
     public event IVirtualFileSystem.FileChangedDelegate? FileChanged;
 
@@ -30,6 +35,8 @@ public sealed partial class SqpackFileSystem : IVirtualFileSystem {
     {
         this.InstallationSqPackDirectory = gameData.DataPath;
         this.PlatformId = gameData.Options.CurrentPlatform;
+        this.HashDatabase = hashDatabase;
+        this.GameData = gameData;
 
         this._childFoldersResolvers.Add(
             this.RootFolderTyped,

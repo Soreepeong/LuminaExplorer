@@ -9,6 +9,8 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using BCnEncoder.Decoder;
+using CompressionFormat = BCnEncoder.Shared.CompressionFormat;
 using Lumina.Data;
 using Lumina.Data.Files;
 using Lumina.Data.Parsing.Tex.Buffers;
@@ -148,7 +150,7 @@ public static class ImagingExtensions {
                     } else {
                         // add gAMA chunk with gamma 1.0
                         // gama value * 100,000 -- i.e. gamma 1.0
-                        _ = metaWriter.Get()->SetMetadataByName("/sRGB/RenderingIntent", 100000U);
+                        _ = metaWriter.Get()->SetMetadataByName("/gAMA/ImageGamma", 100000U);
 
                         // remove sRGB chunk which is added by default.
                         _ = metaWriter.Get()->RemoveMetadataByName("/sRGB/RenderingIntent");
@@ -186,7 +188,7 @@ public static class ImagingExtensions {
                     (IStream*) stream.Get(),
                     pGuidDds,
                     WICDecodeOptions.WICDecodeMetadataCacheOnDemand,
-                    decoder.GetAddressOf());
+                    decoder.GetAddressOf()).Ensure();
 
                 using var ddsDecoder = new ComPtr<IWICDdsDecoder>();
                 decoder.As(&ddsDecoder).Ensure();
@@ -194,70 +196,131 @@ public static class ImagingExtensions {
                 WICDdsParameters ddsp;
                 ddsDecoder.Get()->GetParameters(&ddsp).Ensure();
                 ddsDecoder.Get()->GetFrame(0, (uint) mipIndex, (uint) slice, frame.GetAddressOf()).Ensure();
-                return new((IWICBitmapSource*) frame.Get());
+
+                // The frame decodes lazily from pData, which is only pinned (and kept alive) within this scope;
+                // materialize the pixels before returning.
+                using var decoded = frame.AsBitmap();
+                return new((IWICBitmapSource*) decoded.Get());
             }
         }
 
-        // if (texFile.Header.Format is TexFile.TextureFormat.BC5 or TexFile.TextureFormat.BC7) {
-        //     using var device = new ComPtr<ID3D11Device>();
-        //     using var context = new ComPtr<ID3D11DeviceContext>();
-        //     D3D_FEATURE_LEVEL level;
-        //     var featureLevels = stackalloc D3D_FEATURE_LEVEL[] {
-        //         D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_11_1,
-        //         D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_11_0,
-        //         D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_10_1,
-        //         D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_10_0,
-        //         D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_9_3,
-        //         D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_9_2,
-        //         D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_9_1
-        //     };
-        //     DirectX.D3D11CreateDevice(
-        //         null,
-        //         D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_UNKNOWN,
-        //         default,
-        //         0,
-        //         featureLevels,
-        //         7,
-        //         D3D11.D3D11_SDK_VERSION,
-        //         device.GetAddressOf(),
-        //         &level,
-        //         context.GetAddressOf()).Ensure();
-        // }
-
         var texBuf = texFile.TextureBuffer.Filter(mip: mipIndex, z: slice);
-        var format = texFile.Header.Format;
-        if (format == TexFile.TextureFormat.B4G4R4A4) {
-            format = TexFile.TextureFormat.B8G8R8A8;
-            texBuf = texBuf.Filter(format: format);
-        }
-
-        var bpp = 1 << (
-            (int) (format & TexFile.TextureFormat.BppMask) >>
-            (int) TexFile.TextureFormat.BppShift);
-
-        var guidPixelFormat = format switch {
-            TexFile.TextureFormat.L8 => GUID.GUID_WICPixelFormat8bppGray,
-            TexFile.TextureFormat.A8 => GUID.GUID_WICPixelFormat8bppAlpha,
-            TexFile.TextureFormat.B5G5R5A1 => GUID.GUID_WICPixelFormat16bppBGRA5551,
-            TexFile.TextureFormat.B8G8R8A8 => GUID.GUID_WICPixelFormat32bppBGRA,
-            TexFile.TextureFormat.B8G8R8X8 => GUID.GUID_WICPixelFormat32bppBGR,
-            TexFile.TextureFormat.R16G16B16A16F => GUID.GUID_WICPixelFormat64bppRGBAHalf,
-            TexFile.TextureFormat.R32G32B32A32F => GUID.GUID_WICPixelFormat128bppRGBAFloat,
-            TexFile.TextureFormat.D16 => GUID.GUID_WICPixelFormat16bppGray,
-            TexFile.TextureFormat.Shadow16 => GUID.GUID_WICPixelFormat16bppGray,
-            _ => throw new NotSupportedException(),
-        };
-        fixed (byte* pData = texBuf.RawData) {
+        var (guidPixelFormat, stride, pixels) = ToWicPixels(texFile.Header.Format, texBuf);
+        fixed (byte* pData = pixels) {
             using var bitmap = new ComPtr<IWICBitmap>();
             WicFactory.Get()->CreateBitmapFromMemory(
                 checked((uint) texBuf.Width),
                 checked((uint) texBuf.Height),
                 &guidPixelFormat,
-                checked((uint) (texBuf.Width * bpp / 8)),
-                checked((uint) texBuf.RawData.Length),
+                checked((uint) stride),
+                checked((uint) pixels.Length),
                 pData,
                 bitmap.GetAddressOf()).Ensure();
             return new((IWICBitmapSource*) bitmap.Get());
+        }
+    }
+
+    /// <summary>
+    /// Converts a single texture plane to pixels that WIC can hold, keeping the precision and channel layout
+    /// where a matching WIC pixel format exists.
+    /// </summary>
+    private static (Guid PixelFormat, int Stride, byte[] Data) ToWicPixels(
+        TexFile.TextureFormat format,
+        TextureBuffer texBuf)
+    {
+        var w = texBuf.Width;
+        var h = texBuf.Height;
+        var raw = texBuf.RawData;
+        switch (format) {
+            case TexFile.TextureFormat.L8:
+                return (GUID.GUID_WICPixelFormat8bppGray, w, raw);
+            case TexFile.TextureFormat.A8:
+                return (GUID.GUID_WICPixelFormat8bppAlpha, w, raw);
+            case TexFile.TextureFormat.B5G5R5A1:
+                return (GUID.GUID_WICPixelFormat16bppBGRA5551, w * 2, raw);
+            case TexFile.TextureFormat.B8G8R8A8:
+                return (GUID.GUID_WICPixelFormat32bppBGRA, w * 4, raw);
+            case TexFile.TextureFormat.B8G8R8X8:
+                return (GUID.GUID_WICPixelFormat32bppBGR, w * 4, raw);
+            case TexFile.TextureFormat.R16G16B16A16F:
+                return (GUID.GUID_WICPixelFormat64bppRGBAHalf, w * 8, raw);
+            case TexFile.TextureFormat.R32G32B32A32F:
+                return (GUID.GUID_WICPixelFormat128bppRGBAFloat, w * 16, raw);
+            case TexFile.TextureFormat.R32F:
+                return (GUID.GUID_WICPixelFormat32bppGrayFloat, w * 4, raw);
+            case TexFile.TextureFormat.D16:
+            case TexFile.TextureFormat.Shadow16:
+                return (GUID.GUID_WICPixelFormat16bppGray, w * 2, raw);
+
+            case TexFile.TextureFormat.B4G4R4A4:
+            case TexFile.TextureFormat.DXT1:
+            case TexFile.TextureFormat.DXT3:
+            case TexFile.TextureFormat.DXT5:
+            case TexFile.TextureFormat.BC5:
+            case TexFile.TextureFormat.BC7:
+                // Lumina decodes these to B8G8R8A8.
+                return (GUID.GUID_WICPixelFormat32bppBGRA, w * 4,
+                    texBuf.Filter(format: TexFile.TextureFormat.B8G8R8A8).RawData);
+
+            case TexFile.TextureFormat.BC4: {
+                var decoded = new BcDecoder().DecodeRaw(raw, w, h, CompressionFormat.Bc4);
+                var res = new byte[w * h];
+                for (var i = 0; i < res.Length; i++)
+                    res[i] = decoded[i].r;
+                return (GUID.GUID_WICPixelFormat8bppGray, w, res);
+            }
+
+            case TexFile.TextureFormat.BC6H: {
+                var decoded = new BcDecoder().DecodeRawHdr(raw, w, h, CompressionFormat.Bc6U);
+                var res = new float[w * h * 4];
+                for (var i = 0; i < decoded.Length; i++) {
+                    res[i * 4 + 0] = decoded[i].r;
+                    res[i * 4 + 1] = decoded[i].g;
+                    res[i * 4 + 2] = decoded[i].b;
+                    res[i * 4 + 3] = 1f;
+                }
+
+                return (GUID.GUID_WICPixelFormat128bppRGBAFloat, w * 16, MemoryMarshal.AsBytes(res.AsSpan()).ToArray());
+            }
+
+            case TexFile.TextureFormat.R16G16F: {
+                // No two-channel WIC format; expand to RGBA with B = 0 and A = 1.
+                var src = MemoryMarshal.Cast<byte, Half>(raw);
+                var res = new Half[w * h * 4];
+                for (var i = 0; i < w * h; i++) {
+                    res[i * 4 + 0] = src[i * 2 + 0];
+                    res[i * 4 + 1] = src[i * 2 + 1];
+                    res[i * 4 + 2] = Half.Zero;
+                    res[i * 4 + 3] = Half.One;
+                }
+
+                return (GUID.GUID_WICPixelFormat64bppRGBAHalf, w * 8, MemoryMarshal.AsBytes(res.AsSpan()).ToArray());
+            }
+
+            case TexFile.TextureFormat.R32G32F: {
+                var src = MemoryMarshal.Cast<byte, float>(raw);
+                var res = new float[w * h * 4];
+                for (var i = 0; i < w * h; i++) {
+                    res[i * 4 + 0] = src[i * 2 + 0];
+                    res[i * 4 + 1] = src[i * 2 + 1];
+                    res[i * 4 + 3] = 1f;
+                }
+
+                return (GUID.GUID_WICPixelFormat128bppRGBAFloat, w * 16, MemoryMarshal.AsBytes(res.AsSpan()).ToArray());
+            }
+
+            case TexFile.TextureFormat.D24S8:
+            case TexFile.TextureFormat.Shadow24: {
+                // Depth in the low 24 bits, stencil in the high 8 bits; show the depth.
+                var src = MemoryMarshal.Cast<byte, uint>(raw);
+                var res = new float[w * h];
+                for (var i = 0; i < res.Length; i++)
+                    res[i] = (src[i] & 0xFFFFFF) / (float) 0xFFFFFF;
+                return (GUID.GUID_WICPixelFormat32bppGrayFloat, w * 4, MemoryMarshal.AsBytes(res.AsSpan()).ToArray());
+            }
+
+            default:
+                throw new NotSupportedException($"Texture format {format} is not supported.");
         }
     }
 
@@ -310,7 +373,7 @@ public static class ImagingExtensions {
         source.GetMetrics(out var width, out var height, out var pixelFormat);
         if (desiredPixelFormat != default && pixelFormat != desiredPixelFormat) {
             using var temp = source.ConvertPixelFormat(desiredPixelFormat);
-            using var bitmap = CreateBitmap(width, height, pixelFormat);
+            using var bitmap = CreateBitmap(width, height, desiredPixelFormat);
             using var bitmapLock = bitmap.Lock(write: true);
             temp.Get()->CopyPixels(null, bitmapLock.Stride, bitmapLock.Length, bitmapLock.Data).Ensure();
             return new(bitmap);
@@ -370,18 +433,17 @@ public static class ImagingExtensions {
                     using (var t = wicBitmap.ConvertPixelFormat(targetFormatGuid)) {
                         t.Get()->CopyPixels(
                                 null,
-                                checked((uint) (bd.Height * bd.Stride)),
                                 checked((uint) bd.Stride),
+                                checked((uint) (bd.Height * bd.Stride)),
                                 (byte*) bd.Scan0)
                             .Ensure();
                     }
-
-                    exception = null;
-                    return true;
-                } catch {
+                } finally {
                     b.UnlockBits(bd);
-                    throw;
                 }
+
+                exception = null;
+                return true;
             } catch {
                 SafeDispose.One(ref b);
                 throw;
@@ -413,7 +475,7 @@ public static class ImagingExtensions {
             // WICPixelFormat says it's "BGRA"; Imaging.PixelFormat says it's "ARGB"
             lb = source.LockBits(
                 new(Point.Empty, source.Size),
-                ImageLockMode.WriteOnly,
+                ImageLockMode.ReadOnly,
                 PixelFormat.Format32bppArgb);
 
             var rc = new WICRect { X = 0, Y = 0, Width = source.Width, Height = source.Height };
@@ -432,8 +494,9 @@ public static class ImagingExtensions {
                 throw new NotSupportedException("Stride does not match");
             if (lb.Height != height)
                 throw new NotSupportedException("Height does not match");
-            Unsafe.CopyBlock((void*) lb.Scan0, pData, stride * height);
+            Unsafe.CopyBlock(pData, (void*) lb.Scan0, stride * height);
 
+            target = new((IWICBitmapSource*) bitmap.Get());
             exception = null;
             return true;
         } catch (Exception e) {

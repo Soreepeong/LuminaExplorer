@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using Lumina.Misc;
 
 namespace LuminaExplorer.Core.VirtualFileSystem.Sqpack;
@@ -53,7 +54,7 @@ public class SqpackFolder : IEquatable<SqpackFolder>, IVirtualFolder {
     internal static SqpackFolder CreateRoot() => new("", Crc32.Get(Array.Empty<byte>()), null);
 
     internal static SqpackFolder CreateKnownEntry(string name, string fullPath, SqpackFolder parent)
-        => new(name, Crc32.Get(fullPath.ToLowerInvariant().Trim('/')), parent);
+        => new(name, Crc32.Get(Encoding.UTF8.GetBytes(fullPath.ToLowerInvariant().Trim('/'))), parent);
 
     internal static SqpackFolder CreateUnknownContainer(SqpackFolder parent)
         => new(UnknownContainerName, 0, parent);

@@ -23,7 +23,12 @@ public class QueryTokenizer {
         this._query = query;
     }
 
-    public IMatcher? Parse() => this._NextQuery(0, out _, out var o) ? o : null;
+    public IMatcher? Parse()
+    {
+        var i = 0;
+        this.DrainWhitespaces(ref i);
+        return this._NextQuery(i, out _, out var o) ? o : null;
+    }
 
     private bool _NextQuery(int i, out int next, out IMatcher o, params uint[] extraTerminatorsIfUnescaped) =>
         this._NextQueryOperator(
@@ -102,7 +107,8 @@ public class QueryTokenizer {
             }
 
             if (matcher is null) {
-                if (@operator != MultipleConditionsMatcher.OperatorType.Default)
+                // Also stop if nothing was consumed; otherwise this would loop forever.
+                if (@operator != MultipleConditionsMatcher.OperatorType.Default || next <= i)
                     break;
             } else
                 matchers.Add(matcher);
@@ -137,7 +143,7 @@ public class QueryTokenizer {
                 i = next;
                 this.DrainWhitespaces(ref i);
 
-                return this._NextValidCodepoint(i, out next, out c) && c == ')';
+                return this._NextValidCodepoint(i, out next, out c) && c == terminator;
             }
         } else {
             // All the following conditions will fail if no more characters are available.
@@ -268,6 +274,7 @@ public class QueryTokenizer {
         if (this._NextValidCodepoint(i, out next, out var c) && c is '<' or '=' or '>') {
             i = next;
             if (c is '<' or '>' && this._NextValidCodepoint(i, out next, out var c2) && c2 is '=') {
+                i = next;
                 rangeSpecifier = c switch {
                     '>' => SizeMatcher.ComparisonType.GreaterThanOrEquals,
                     '<' => SizeMatcher.ComparisonType.LessThanOrEquals,
@@ -327,13 +334,15 @@ public class QueryTokenizer {
                 _ => 0ul,
             };
 
-            if (unitMultiplier == 0)
+            if (unitMultiplier == 0) {
+                // Not a unit; do not consume it.
                 unitMultiplier = 1;
-            else {
+                next = i;
+            } else {
                 i = next;
                 if (unitMultiplier > 1) {
                     // deal with "kb" rather than "k"
-                    if (!this._NextValidCodepoint(i, out next, out c) && c is 'b' or 'B')
+                    if (!this._NextValidCodepoint(i, out next, out c) || c is not ('b' or 'B'))
                         next = i;
                 }
             }
@@ -633,7 +642,7 @@ public class QueryTokenizer {
             if (this._NextDigit(i, out next, out d, radix)) {
                 i = next;
                 value = d;
-                readBits++;
+                readBits += bitsPerCharacter;
             } else if (this._NextValidCodepoint(i, out next, out var c) && c is '-' or '+') {
                 i = next;
                 if (c == '-')
@@ -862,8 +871,12 @@ public class QueryTokenizer {
                     break;
 
                 next = i;
-                while (!this._NextDigit(i, out next, out var d, radix))
+                while (!this._NextDigit(i, out next, out var d, radix)) {
+                    // Stop at the end of input; otherwise this would loop forever.
+                    if (next == i)
+                        break;
                     i = next;
+                }
             }
 
             bytes = ms.Length == 0 ? null! : ms.ToArray();
@@ -882,6 +895,7 @@ public class QueryTokenizer {
                 case < '0':
                     return false;
                 case '_' when ignoreUnderscores:
+                    i = next;
                     continue;
                 case '0' or '1':
                 case <= '7' when radix >= NumberRadix.Oct:

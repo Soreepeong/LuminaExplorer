@@ -10,6 +10,53 @@ using TerraFX.Interop.Windows;
 namespace LuminaExplorer.Controls.DirectXStuff;
 
 public static unsafe class ResourceUtils {
+    /// <summary>
+    /// Gets the DXGI format that holds the texture data as-is, so that it can be uploaded without conversion.
+    /// </summary>
+    /// <param name="format">Texture format.</param>
+    /// <param name="dxgiFormat">Matching DXGI format.</param>
+    /// <param name="replicateRedChannel">Whether the format has only a red channel that should be shown as gray.</param>
+    /// <returns>Whether there is a matching DXGI format.</returns>
+    public static bool TryGetDirectDxgiFormat(
+        TexFile.TextureFormat format,
+        out DXGI_FORMAT dxgiFormat,
+        out bool replicateRedChannel)
+    {
+        replicateRedChannel = format is
+            TexFile.TextureFormat.L8 or
+            TexFile.TextureFormat.R32F or
+            TexFile.TextureFormat.D16 or
+            TexFile.TextureFormat.Shadow16 or
+            TexFile.TextureFormat.BC4;
+        dxgiFormat = format switch {
+            TexFile.TextureFormat.L8 => DXGI_FORMAT.DXGI_FORMAT_R8_UNORM,
+            TexFile.TextureFormat.A8 => DXGI_FORMAT.DXGI_FORMAT_A8_UNORM,
+            TexFile.TextureFormat.B4G4R4A4 => DXGI_FORMAT.DXGI_FORMAT_B4G4R4A4_UNORM,
+            TexFile.TextureFormat.B5G5R5A1 => DXGI_FORMAT.DXGI_FORMAT_B5G5R5A1_UNORM,
+            TexFile.TextureFormat.B8G8R8A8 => DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM,
+            TexFile.TextureFormat.B8G8R8X8 => DXGI_FORMAT.DXGI_FORMAT_B8G8R8X8_UNORM,
+            TexFile.TextureFormat.R32F => DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT,
+            TexFile.TextureFormat.R16G16F => DXGI_FORMAT.DXGI_FORMAT_R16G16_FLOAT,
+            TexFile.TextureFormat.R32G32F => DXGI_FORMAT.DXGI_FORMAT_R32G32_FLOAT,
+            TexFile.TextureFormat.R16G16B16A16F => DXGI_FORMAT.DXGI_FORMAT_R16G16B16A16_FLOAT,
+            TexFile.TextureFormat.R32G32B32A32F => DXGI_FORMAT.DXGI_FORMAT_R32G32B32A32_FLOAT,
+            TexFile.TextureFormat.DXT1 => DXGI_FORMAT.DXGI_FORMAT_BC1_UNORM,
+            TexFile.TextureFormat.DXT3 => DXGI_FORMAT.DXGI_FORMAT_BC2_UNORM,
+            TexFile.TextureFormat.DXT5 => DXGI_FORMAT.DXGI_FORMAT_BC3_UNORM,
+            TexFile.TextureFormat.BC4 => DXGI_FORMAT.DXGI_FORMAT_BC4_UNORM,
+            TexFile.TextureFormat.BC5 => DXGI_FORMAT.DXGI_FORMAT_BC5_UNORM,
+            TexFile.TextureFormat.BC6H => DXGI_FORMAT.DXGI_FORMAT_BC6H_UF16,
+            TexFile.TextureFormat.BC7 => DXGI_FORMAT.DXGI_FORMAT_BC7_UNORM,
+            TexFile.TextureFormat.D16 or TexFile.TextureFormat.Shadow16 => DXGI_FORMAT.DXGI_FORMAT_R16_UNORM,
+            _ => DXGI_FORMAT.DXGI_FORMAT_UNKNOWN,
+        };
+        return dxgiFormat != DXGI_FORMAT.DXGI_FORMAT_UNKNOWN;
+    }
+
+    public static bool IsBlockCompressed(this DXGI_FORMAT format) =>
+        format is >= DXGI_FORMAT.DXGI_FORMAT_BC1_TYPELESS and <= DXGI_FORMAT.DXGI_FORMAT_BC5_SNORM
+            or >= DXGI_FORMAT.DXGI_FORMAT_BC6H_TYPELESS and <= DXGI_FORMAT.DXGI_FORMAT_BC7_UNORM_SRGB;
+
     public static byte[] CompileShaderFromAssemblyResource(
         this Type typeSharingNamespace,
         string target,
@@ -22,10 +69,18 @@ public static unsafe class ResourceUtils {
                    .GetManifestResourceStream($"{typeSharingNamespace.Namespace}.{fileName}")!)
             stream.ReadExactly(buffer = new byte[stream.Length]);
 
+        return CompileShader(buffer, target, entrypointName);
+    }
+
+    public static byte[] CompileShaderFromString(string source, string target, string entrypointName = "main") =>
+        CompileShader(Encoding.UTF8.GetBytes(source), target, entrypointName);
+
+    public static byte[] CompileShader(byte[] buffer, string target, string entrypointName = "main")
+    {
         using var pCode = default(ComPtr<ID3DBlob>);
         using var pErrorMsgs = default(ComPtr<ID3DBlob>);
-        fixed (void* pTarget = Encoding.UTF8.GetBytes(target))
-        fixed (void* pEntrypointName = Encoding.UTF8.GetBytes(entrypointName))
+        fixed (void* pTarget = Encoding.UTF8.GetBytes(target + "\0"))
+        fixed (void* pEntrypointName = Encoding.UTF8.GetBytes(entrypointName + "\0"))
         fixed (byte* pBuffer = &buffer[0]) {
             var hr = DirectX.D3DCompile(
                 pBuffer,
@@ -138,7 +193,14 @@ public static unsafe class ResourceUtils {
         var numFaces = isCubeMap ? 6u : 1u;
         var numMipmaps = tex.Header.MipCount;
 
-        var (formatInt, conversion) = TexFile.GetDxgiFormatFromTextureFormat(tex.Header.Format);
+        // Lumina does not map BC4 and BC6H.
+        var (formatInt, conversion) = tex.Header.Format switch {
+            TexFile.TextureFormat.BC4 =>
+                ((int) DXGI_FORMAT.DXGI_FORMAT_BC4_UNORM, TexFile.DxgiFormatConversion.NoConversion),
+            TexFile.TextureFormat.BC6H =>
+                ((int) DXGI_FORMAT.DXGI_FORMAT_BC6H_UF16, TexFile.DxgiFormatConversion.NoConversion),
+            _ => TexFile.GetDxgiFormatFromTextureFormat(tex.Header.Format).ToValueTuple(),
+        };
         var format = (DXGI_FORMAT) formatInt;
         var buffer = tex.TextureBuffer;
         switch (conversion) {

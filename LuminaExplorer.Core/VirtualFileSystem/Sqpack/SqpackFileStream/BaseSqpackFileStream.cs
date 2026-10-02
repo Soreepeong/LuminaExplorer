@@ -34,18 +34,14 @@ public abstract class BaseSqpackFileStream : Stream, ICloneable {
 
     public override void SetLength(long value) => throw new NotSupportedException();
 
-    public override int Read(byte[] buffer, int offset, int count)
-    {
-        var t = this.ReadAsync(buffer, offset, count, default);
-        t.Wait();
-        return t.Result;
-    }
+    public override int Read(byte[] buffer, int offset, int count) =>
+        this.ReadAsync(buffer, offset, count, default).GetAwaiter().GetResult();
 
     public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 
     public override bool CanRead => true;
     public override bool CanSeek => true;
-    public override bool CanWrite => true;
+    public override bool CanWrite => false;
     public override long Length { get; }
 
     public override long Position {

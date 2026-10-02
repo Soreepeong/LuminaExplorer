@@ -137,7 +137,8 @@ public sealed unsafe class DirectXTexRendererShader : DirectXObject {
         pDeviceContext->DrawIndexed((uint) Indices.Length, 0, 0);
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    // The whole constant buffer (a multiple of 16 bytes) is uploaded from this struct.
+    [StructLayout(LayoutKind.Sequential, Size = 128)]
     public struct Cbuffer {
         public float Rotation;
         public float TransparencyCellSize;
@@ -151,6 +152,9 @@ public sealed unsafe class DirectXTexRendererShader : DirectXObject {
         public SizeF CellSourceSize;
         public VisibleColorChannelTypes ChannelFilter;
         public bool UseAlphaChannel;
+
+        // HLSL bool is 4 bytes, and so is the slot UseAlphaChannel occupies.
+        public int ReplicateRedChannel;
     }
 
     public enum VisibleColorChannelTypes {

@@ -25,7 +25,7 @@ public sealed class LruCache<TKey, TValue> : IDisposable, IEnumerable<LruCache<T
         get => this._capacity;
         set {
             this._capacity = value;
-            while (this._entryLookup.Count >= this._capacity) this.RemoveFirst();
+            while (this._entryLookup.Count > this._capacity) this.RemoveFirst();
         }
     }
 

@@ -80,7 +80,7 @@ public sealed class EquallCellSizeGridLayout : IGridLayout {
 
     public Rectangle RectOf(int cellIndex)
     {
-        if (cellIndex < 0 || 0 >= this.Count)
+        if (cellIndex < 0 || cellIndex >= this.Count)
             throw new ArgumentOutOfRangeException(nameof(cellIndex), cellIndex, null);
 
         var row = Math.DivRem(cellIndex, this.Columns, out var col);

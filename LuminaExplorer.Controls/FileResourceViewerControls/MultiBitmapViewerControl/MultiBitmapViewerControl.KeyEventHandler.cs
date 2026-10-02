@@ -11,6 +11,16 @@ namespace LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerCo
 public partial class MultiBitmapViewerControl {
     private readonly TimedKeyState[] _keys = new TimedKeyState[256];
 
+    /// <summary>
+    /// Performs the action bound to the given hotkey, as if the key was pressed and released.
+    /// </summary>
+    /// <param name="keyData">Key and modifiers.</param>
+    public void PerformHotkey(Keys keyData)
+    {
+        this.OnKeyDown(new(keyData));
+        this.OnKeyUp(new(keyData));
+    }
+
     protected override bool IsInputKey(Keys keyData)
     {
         switch (keyData & Keys.KeyCode) {
@@ -255,7 +265,7 @@ public partial class MultiBitmapViewerControl {
             this.IsPressBased = true;
             this.IsHeld = true;
             this.IsFresh = true;
-            this.PressTick = this.DeltaBaseTick = Environment.TickCount;
+            this.PressTick = this.DeltaBaseTick = Environment.TickCount64;
             this.ReleaseTick = long.MaxValue;
             return true;
         }
@@ -271,7 +281,7 @@ public partial class MultiBitmapViewerControl {
             this.IsPressBased = false;
             this.IsHeld = true;
             this.IsFresh = true;
-            this.PressTick = this.DeltaBaseTick = Environment.TickCount;
+            this.PressTick = this.DeltaBaseTick = Environment.TickCount64;
             this.ReleaseTick = long.MaxValue;
             return true;
         }

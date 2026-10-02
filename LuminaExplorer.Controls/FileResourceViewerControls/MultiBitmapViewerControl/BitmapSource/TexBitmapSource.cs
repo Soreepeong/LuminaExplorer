@@ -11,6 +11,8 @@ using Lumina;
 using Lumina.Data;
 using Lumina.Data.Files;
 using Lumina.Data.Structs;
+using LuminaExplorer.Controls.DirectXStuff;
+using LuminaExplorer.Controls.DirectXStuff.Resources;
 using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl.GridLayout;
 using LuminaExplorer.Core.ExtraFormats.DirectDrawSurface;
 using LuminaExplorer.Core.Util;
@@ -154,6 +156,37 @@ public sealed class TexBitmapSource : IBitmapSource {
         return this._wicBitmaps[mipmap][slice]?.IsCompletedSuccessfully is true;
     }
 
+    public bool SupportsRawSlice(int imageIndex, int mipmap)
+    {
+        if (this._disposed || imageIndex != 0 || mipmap < 0 || mipmap >= this.NumberOfMipmaps(imageIndex))
+            return false;
+        if (!ResourceUtils.TryGetDirectDxgiFormat(this._texFile.Header.Format, out var format, out _))
+            return false;
+
+        // D3D11 requires the dimensions of a block-compressed texture to be multiples of 4.
+        return !format.IsBlockCompressed() ||
+            (this.WidthOfMipmap(imageIndex, mipmap) % 4 == 0 && this.HeightOfMipmap(imageIndex, mipmap) % 4 == 0);
+    }
+
+    public RawTextureSlice GetRawSlice(int imageIndex, int mipmap, int slice)
+    {
+        if (this._disposed)
+            throw new ObjectDisposedException(nameof(TexBitmapSource));
+        if (!this.SupportsRawSlice(imageIndex, mipmap))
+            throw new NotSupportedException();
+
+        ResourceUtils.TryGetDirectDxgiFormat(this._texFile.Header.Format, out var format, out var replicateRedChannel);
+        var texBuf = this._texFile.TextureBuffer.Filter(mipmap, slice);
+        var rows = format.IsBlockCompressed() ? (texBuf.Height + 3) / 4 : texBuf.Height;
+        return new(
+            format,
+            texBuf.Width,
+            texBuf.Height,
+            texBuf.RawData.Length / rows,
+            texBuf.RawData,
+            replicateRedChannel);
+    }
+
     Task<Bitmap> IBitmapSource.GetGdipBitmapAsync(int imageIndex, int mipmap, int slice)
     {
         if (this._disposed)
@@ -165,9 +198,16 @@ public sealed class TexBitmapSource : IBitmapSource {
         return (this._bitmaps[mipmap][slice] ??= new(
             Task.Run(
                 () => {
-                    if (this._wicBitmaps[mipmap][slice] is { Task.IsCompletedSuccessfully: true } wicBitmapTask) {
-                        if (wicBitmapTask.Result.TryToGdipBitmap(out var b, out _))
+                    // The WIC conversion handles more formats than Lumina's conversion to B8G8R8A8.
+                    try {
+                        var wicBitmap = this.GetWicBitmapSourceAsync(imageIndex, mipmap, slice)
+                            .WaitAsync(this._cancellationTokenSource.Token)
+                            .GetAwaiter()
+                            .GetResult();
+                        if (wicBitmap.TryToGdipBitmap(out var b, out _))
                             return b;
+                    } catch (Exception e) when (e is not OperationCanceledException) {
+                        // Fall back to Lumina's conversion.
                     }
 
                     var texBuf = this._texFile.TextureBuffer.Filter(mipmap, slice, TexFile.TextureFormat.B8G8R8A8);

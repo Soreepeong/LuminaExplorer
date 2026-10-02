@@ -34,6 +34,8 @@ namespace LuminaExplorer.App.Window.FileViewers {
             AnimationEnabledCheckbox = new CheckBox();
             AnimationSpeedTrackBar = new TrackBar();
             AnimationSpeedLabel = new Label();
+            RendererLabel = new Label();
+            RendererComboBox = new ComboBox();
             ModelConfigTabControl = new TabControl();
             tabPage1 = new TabPage();
             AnimationListView = new CoreVirtualObjectListView();
@@ -92,6 +94,8 @@ namespace LuminaExplorer.App.Window.FileViewers {
             ModelConfigSplitter.Panel1.Controls.Add(AnimationEnabledCheckbox);
             ModelConfigSplitter.Panel1.Controls.Add(AnimationSpeedTrackBar);
             ModelConfigSplitter.Panel1.Controls.Add(AnimationSpeedLabel);
+            ModelConfigSplitter.Panel1.Controls.Add(RendererLabel);
+            ModelConfigSplitter.Panel1.Controls.Add(RendererComboBox);
             // 
             // ModelConfigSplitter.Panel2
             // 
@@ -133,6 +137,26 @@ namespace LuminaExplorer.App.Window.FileViewers {
             AnimationSpeedLabel.Name = "AnimationSpeedLabel";
             AnimationSpeedLabel.Size = new Size(116, 15);
             AnimationSpeedLabel.TabIndex = 0;
+            // 
+            // RendererLabel
+            // 
+            RendererLabel.AutoSize = true;
+            RendererLabel.Location = new Point(12, 91);
+            RendererLabel.Name = "RendererLabel";
+            RendererLabel.Size = new Size(57, 15);
+            RendererLabel.TabIndex = 3;
+            RendererLabel.Text = "Renderer:";
+            // 
+            // RendererComboBox
+            // 
+            RendererComboBox.Anchor =  AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            RendererComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            RendererComboBox.FormattingEnabled = true;
+            RendererComboBox.Items.AddRange(new object[] { "Custom", "Game shaders" });
+            RendererComboBox.Location = new Point(84, 88);
+            RendererComboBox.Name = "RendererComboBox";
+            RendererComboBox.Size = new Size(186, 23);
+            RendererComboBox.TabIndex = 4;
             AnimationSpeedLabel.Text = "Animation Speed: 1x";
             // 
             // ModelConfigTabControl
@@ -271,6 +295,8 @@ namespace LuminaExplorer.App.Window.FileViewers {
         private CheckBox AnimationEnabledCheckbox;
         private TrackBar AnimationSpeedTrackBar;
         private Label AnimationSpeedLabel;
+        private Label RendererLabel;
+        private ComboBox RendererComboBox;
         private Controls.CoreVirtualObjectListView AnimationListView;
         private BrightIdeasSoftware.OLVColumn AnimationListViewColumnFileName;
         private BrightIdeasSoftware.OLVColumn AnimationListViewColumnAnimationName;

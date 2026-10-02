@@ -178,8 +178,8 @@ public class AsyncListSorter<T> : IComparer<int> {
                     }
                 } else {
                     var left = i;
-                    var mid = left + Math.Min(unit, count - left);
-                    var right = mid + Math.Min(unit, count - mid);
+                    var mid = left + Math.Min(unit, index + count - left);
+                    var right = mid + Math.Min(unit, index + count - mid);
                     if (right == mid) {
                         currentProgress += right - mid;
                         MaybeReportProgress();

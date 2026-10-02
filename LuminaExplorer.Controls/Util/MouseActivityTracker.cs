@@ -43,6 +43,7 @@ public sealed class MouseActivityTracker : IDisposable {
         this._control.MouseUp -= this.OnMouseUp;
         this._control.MouseLeave -= this.OnMouseLeave;
         this._control.MouseWheel -= this.OnMouseWheel;
+        this._clickTimer.Dispose();
     }
 
     public Control Control => this._control;

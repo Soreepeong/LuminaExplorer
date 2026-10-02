@@ -14,7 +14,7 @@ public class Bitfield : IEnumerable<bool> {
         this._bitfield = bitfield;
     }
 
-    public bool this[int index] => 0 <= index && index <= this._length
+    public bool this[int index] => 0 <= index && index < this._length
         ? 0 != (this._bitfield[index >> 3] & (1 << (index & 7)))
         : throw new ArgumentOutOfRangeException(nameof(index), index, null);
 

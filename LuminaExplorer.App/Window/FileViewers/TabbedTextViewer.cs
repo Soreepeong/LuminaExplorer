@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Drawing;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -100,32 +101,26 @@ public class TabbedTextViewer : Form {
                     disd.Clear();
                 }
 
-                for (var i = 0; i < shpkFile.VertexShaderEntries.Length; i++) {
-                    if (cts.IsCancellationRequested || cts != this._cancellationTokenSource)
-                        break;
+                foreach (var (prefix, entries) in new[] {
+                             ("VS", shpkFile.VertexShaderEntries),
+                             ("PS", shpkFile.PixelShaderEntries),
+                             ("HS", shpkFile.HullShaderEntries),
+                             ("DS", shpkFile.DomainShaderEntries),
+                             ("GS", shpkFile.GeometryShaderEntries),
+                         }) {
+                    for (var i = 0; i < entries.Length; i++) {
+                        if (cts.IsCancellationRequested || cts != this._cancellationTokenSource)
+                            break;
 
-                    names.Add($"VS#{i}");
-                    disd.Add(
-                        this.DisassembleCsoData(shpkFile.VertexShaderEntries[i].ByteCode, out var d, out var e)
-                            ? d
-                            : e.ToString());
+                        names.Add($"{prefix}#{i}");
+                        disd.Add(
+                            this.DisassembleCsoData(entries[i].ByteCode, out var d, out var e)
+                                ? d
+                                : e.ToString());
 
-                    if (Environment.TickCount64 >= nextUpdate)
-                        await UpdateResults();
-                }
-
-                for (var i = 0; i < shpkFile.PixelShaderEntries.Length; i++) {
-                    if (cts.IsCancellationRequested || cts != this._cancellationTokenSource)
-                        break;
-
-                    names.Add($"PS#{i}");
-                    disd.Add(
-                        this.DisassembleCsoData(shpkFile.PixelShaderEntries[i].ByteCode, out var d, out var e)
-                            ? d
-                            : e.ToString());
-
-                    if (Environment.TickCount64 >= nextUpdate)
-                        await UpdateResults();
+                        if (Environment.TickCount64 >= nextUpdate)
+                            await UpdateResults();
+                    }
                 }
 
                 await UpdateResults();
@@ -136,14 +131,15 @@ public class TabbedTextViewer : Form {
     public void ShowWithParent(Control? opener)
     {
         var rc = this._viewerControl.GetViewportRectangleSuggestion(opener);
-        if (rc.Width < MinimumDefaultWidth) {
-            rc.X -= (MinimumDefaultWidth - rc.Width) / 2;
-            rc.Width = MinimumDefaultWidth;
+        var minimumSize = this.LogicalToDeviceUnits(new Size(MinimumDefaultWidth, MinimumDefaultHeight));
+        if (rc.Width < minimumSize.Width) {
+            rc.X -= (minimumSize.Width - rc.Width) / 2;
+            rc.Width = minimumSize.Width;
         }
 
-        if (rc.Height < MinimumDefaultHeight) {
-            rc.X -= (MinimumDefaultHeight - rc.Height) / 2;
-            rc.Height = MinimumDefaultHeight;
+        if (rc.Height < minimumSize.Height) {
+            rc.Y -= (minimumSize.Height - rc.Height) / 2;
+            rc.Height = minimumSize.Height;
         }
 
         this.SetBounds(rc.X, rc.Y, rc.Width, rc.Height);

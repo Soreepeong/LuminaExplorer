@@ -210,15 +210,17 @@ public class GltfTuple {
                 Max = count == 0 ? null : new float[componentCount],
             };
 
-            (accessor.Min, accessor.Max) = componentType switch {
-                GltfAccessorComponentTypes.s8 => MinMax<byte>(data),
-                GltfAccessorComponentTypes.u8 => MinMax<sbyte>(data),
-                GltfAccessorComponentTypes.s16 => MinMax<short>(data),
-                GltfAccessorComponentTypes.u16 => MinMax<ushort>(data),
-                GltfAccessorComponentTypes.u32 => MinMax<int>(data),
-                GltfAccessorComponentTypes.f32 => MinMax<float>(data),
-                _ => throw new NotSupportedException(),
-            };
+            if (count != 0) {
+                (accessor.Min, accessor.Max) = componentType switch {
+                    GltfAccessorComponentTypes.s8 => MinMax<sbyte>(data),
+                    GltfAccessorComponentTypes.u8 => MinMax<byte>(data),
+                    GltfAccessorComponentTypes.s16 => MinMax<short>(data),
+                    GltfAccessorComponentTypes.u16 => MinMax<ushort>(data),
+                    GltfAccessorComponentTypes.u32 => MinMax<uint>(data),
+                    GltfAccessorComponentTypes.f32 => MinMax<float>(data),
+                    _ => throw new NotSupportedException(),
+                };
+            }
 
             return this.Root.Accessors.AddAndGetIndex(accessor);
         }
@@ -247,11 +249,12 @@ public class GltfTuple {
         var bones = new SklbFile.BoneList();
         foreach (var sklb in sklbFiles)
             bones.AddBones(sklb.Bones);
+        var nodeIndexBase = this.Root.Nodes.Count;
         var firstGltfNodeIndex = this.Root.Nodes.AddRangeAndGetIndex(
             bones.Bones.Select(
                 bone => new GltfNode {
                     Name = bone.Name,
-                    Children = bone.Children.Select(x => x.Index).ToList(),
+                    Children = bone.Children.Select(x => nodeIndexBase + x.Index).ToList(),
                     Translation = bone.Translation.ToFloatList(Vector3.Zero, 1e-6f),
                     Rotation = Quaternion.Normalize(bone.Rotation).ToFloatList(Quaternion.Identity, 1e-6f),
                     Scale = bone.Scale.ToFloatList(Vector3.One, 1e-6f),
@@ -264,7 +267,7 @@ public class GltfTuple {
                     bones.Bones.Select(x => x.BindPoseAbsoluteInverse.Normalize())
                         .ToArray()
                         .AsSpan()),
-                Joints = this.Root.Nodes.Select((_, i) => firstGltfNodeIndex + i).ToList(),
+                Joints = bones.Bones.Select((_, i) => firstGltfNodeIndex + i).ToList(),
                 Extras = new() {
                     Alph = sklbFiles.ToDictionary(
                         x => x.FilePath.Path,
@@ -380,7 +383,7 @@ public class GltfTuple {
                 var colorSetDyeInfoBytes = new ushort[16];
                 for (var i = 0; i < 16; i++)
                     colorSetDyeInfoBytes[i] = csdi.Data[i];
-                material.Extras.ColorSetInfo = colorSetDyeInfoBytes;
+                material.Extras.ColorSetDyeInfo = colorSetDyeInfoBytes;
             }
         }
 
@@ -440,8 +443,19 @@ public class GltfTuple {
                                 setIndex2,
                                 normal[i].b,
                                 blendRatio);
-                            specular[i] = ColorSetBlender.Blend(setInfo, setIndex1, setIndex2, 255, blendRatio);
-                            emission[i] = ColorSetBlender.Blend(setInfo, setIndex1, setIndex2, 255, blendRatio);
+                            // Color set row layout: diffuse at +0, specular at +4, emissive at +8.
+                            specular[i] = ColorSetBlender.Blend(
+                                setInfo,
+                                setIndex1 + 4,
+                                setIndex2 + 4,
+                                255,
+                                blendRatio);
+                            emission[i] = ColorSetBlender.Blend(
+                                setInfo,
+                                setIndex1 + 8,
+                                setIndex2 + 8,
+                                255,
+                                blendRatio);
                             normal[i].b = normal[i].a = 255;
                         }
                     }
@@ -481,7 +495,7 @@ public class GltfTuple {
                     }
 
                     Blend();
-                    texDict.TryAdd(TextureUsage.SamplerWaveMap, (occlusionBitmap, null));
+                    texDict.TryAdd(TextureUsage.SamplerWaveMap, (new(occlusionBitmap), null));
                 }
             }
 
@@ -628,7 +642,7 @@ public class GltfTuple {
                                 Indices = this.AddAccessor(
                                     null,
                                     indexSpan,
-                                    (int) submesh.IndexOffset,
+                                    (int) (mdlFile.Meshes[xivMesh.MeshIndex].StartIndex + submesh.IndexOffset),
                                     (int) submesh.IndexNum,
                                     indexBufferView,
                                     GltfBufferViewTarget.ElementArrayBuffer),

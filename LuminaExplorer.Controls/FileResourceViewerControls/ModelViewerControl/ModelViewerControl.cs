@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,7 +16,7 @@ using LuminaExplorer.Core.VirtualFileSystem;
 namespace LuminaExplorer.Controls.FileResourceViewerControls.ModelViewerControl;
 
 public class ModelViewerControl : AbstractFileResourceViewerControl {
-    private ResultDisposingTask<GamePixelShaderMdlRenderer>? _gameShaderRendererTask;
+    private ResultDisposingTask<GameShaderMdlRenderer>? _gameShaderRendererTask;
     private ResultDisposingTask<CustomMdlRenderer>? _customRendererTask;
 
     private Task<BaseMdlRenderer>? _activeRendererTask;
@@ -27,6 +28,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
     private Task<IAnimation>[]? _animationTasks;
     private float _animationSpeed = 1f;
     private bool _animationPlaying = true;
+    private ModelRendererType _rendererType = ModelRendererType.Custom;
 
     public ModelViewerControl()
     {
@@ -46,7 +48,6 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
             _ = SafeDispose.OneAsync(ref this._cameraManager!);
             _ = SafeDispose.OneAsync(ref this._customRendererTask!);
             _ = SafeDispose.OneAsync(ref this._gameShaderRendererTask!);
-            _ = SafeDispose.OneAsync(ref this._customRendererTask!);
         }
 
         base.Dispose(disposing);
@@ -57,6 +58,8 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
     public event EventHandler? AnimationPlayingChanged;
 
     public event EventHandler? AnimationSpeedChanged;
+
+    public event EventHandler? RendererTypeChanged;
 
     public IVirtualFileSystem? Vfs { get; private set; }
 
@@ -85,26 +88,61 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         this.ModelInfoResolverTask ??= ModelInfoResolver.GetResolver(
             this.GetTypedFileAsync<EstFile>,
             this.GetTypedFileAsync<PbdFile>);
-        //*
-        _ = this.TryGetCustomRenderer(out _, true);
-        this._activeRendererTask =
-            this._customRendererTask?.Task.ContinueWith(r => (BaseMdlRenderer) r.Result, cts.Token);
-        /*/
-        _ = TryGetGameShaderRenderer(out _, true);
-        _activeRendererTask = _gameShaderRendererTask?.Task.ContinueWith(r => (MdlRenderer) r.Result, cts.Token);
-        //*/
+        this.ActivateRenderer();
+    }
 
-        this._activeRendererTask!.ContinueWith(
+    /// <summary>Gets or sets the renderer to use.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
+    [DefaultValue(ModelRendererType.Custom)]
+    public ModelRendererType RendererType {
+        get => this._rendererType;
+        set {
+            if (this._rendererType == value)
+                return;
+            this._rendererType = value;
+            if (this._mdlFileTask is not null)
+                this.ActivateRenderer();
+            this.RendererTypeChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>Gets the active renderer, if it has been initialized.</summary>
+    public BaseMdlRenderer? ActiveRenderer => this.TryGetRenderer(out var renderer) ? renderer : null;
+
+    private void ActivateRenderer()
+    {
+        if (this._mdlCancel?.Token is not { } token)
+            return;
+
+        // Only one renderer may present to this control at a time; dispose the other one.
+        if (this._rendererType == ModelRendererType.GameShaders) {
+            _ = SafeDispose.OneAsync(ref this._customRendererTask);
+            _ = this.TryGetGameShaderRenderer(out _, true);
+            this._activeRendererTask =
+                this._gameShaderRendererTask?.Task.ContinueWith(r => (BaseMdlRenderer) r.Result, token);
+        } else {
+            _ = SafeDispose.OneAsync(ref this._gameShaderRendererTask);
+            _ = this.TryGetCustomRenderer(out _, true);
+            this._activeRendererTask =
+                this._customRendererTask?.Task.ContinueWith(r => (BaseMdlRenderer) r.Result, token);
+        }
+
+        var activeRendererTask = this._activeRendererTask!;
+        activeRendererTask.ContinueWith(
             r => {
-                if (r.IsCompletedSuccessfully)
+                if (r.IsCompletedSuccessfully && this._activeRendererTask == activeRendererTask) {
                     r.Result.ModelTask = this._mdlFileTask;
+                    r.Result.AnimationsTask = this._animationTasks;
+                }
+
                 this.Invalidate();
             },
-            cts.Token,
+            token,
             TaskContinuationOptions.None,
             TaskScheduler.FromCurrentSynchronizationContext());
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public bool AnimationPlaying {
         get => this._animationPlaying;
         set {
@@ -115,6 +153,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public float AnimationSpeed {
         get => this._animationSpeed;
         set {
@@ -125,6 +164,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Task<IAnimation>[]? Animations {
         get => this._animationTasks;
         set {
@@ -133,13 +173,15 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
 
             this._animationCancel?.Cancel();
             this._animationCancel = null;
-            if (value is null)
-                return;
-
-            _ = this.TryGetCustomRenderer(out _, true);
-            var cts = this._animationCancel = new();
             this._animationTasks = value;
-            this._activeRendererTask!.ContinueWith(
+            if (value is null) {
+                if (this.TryGetRenderer(out var renderer))
+                    renderer.AnimationsTask = null;
+                return;
+            }
+
+            var cts = this._animationCancel = new();
+            this._activeRendererTask?.ContinueWith(
                 r => {
                     if (!r.IsCompletedSuccessfully || this._animationTasks != value)
                         return;
@@ -153,6 +195,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Task<ModelInfoResolver>? ModelInfoResolverTask { get; set; }
 
     protected override void OnPaintBackground(PaintEventArgs pevent)
@@ -217,7 +260,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
     }
 
     public bool TryGetGameShaderRenderer(
-        [MaybeNullWhen(false)] out GamePixelShaderMdlRenderer renderer,
+        [MaybeNullWhen(false)] out GameShaderMdlRenderer renderer,
         bool startInitializing = false)
     {
         if (this._gameShaderRendererTask?.IsCompletedSuccessfully is true) {
@@ -231,7 +274,7 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
 
         this._gameShaderRendererTask ??= new(
             Task
-                .Run(() => new GamePixelShaderMdlRenderer(this))
+                .Run(() => new GameShaderMdlRenderer(this))
                 .ContinueWith(
                     r => {
                         if (r.IsCompletedSuccessfully)
@@ -257,4 +300,12 @@ public class ModelViewerControl : AbstractFileResourceViewerControl {
             },
             cts).Unwrap();
     }
+}
+
+public enum ModelRendererType {
+    /// <summary>Renders using a simple shader made for this viewer, supporting animations.</summary>
+    Custom,
+
+    /// <summary>Renders using the shaders shipped with the game.</summary>
+    GameShaders,
 }

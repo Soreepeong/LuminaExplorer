@@ -62,7 +62,7 @@ public class TabbedTextViewerControl : AbstractFileResourceViewerControl {
 
         using (this._tabControl.DisableRedrawScoped()) {
             var tab = this._tabControl.TabPages.Cast<TabPage>()
-                .Select((x, i) => (x, i)).FirstOrDefault(x => x.x.Name == selectedItem, (null!, -1)).i;
+                .Select((x, i) => (x, i)).FirstOrDefault(x => x.x.Text == selectedItem, (null!, -1)).i;
             if (tab != -1) {
                 var tabPage = this._tabControl.TabPages[tab];
                 this._tabControl.TabPages.RemoveAt(tab);
@@ -74,8 +74,11 @@ public class TabbedTextViewerControl : AbstractFileResourceViewerControl {
                 this._tabControl.SelectedIndex = 0;
             }
 
-            while (this._tabControl.TabPages.Count > 8)
+            while (this._tabControl.TabPages.Count > 8) {
+                var page = this._tabControl.TabPages[^1];
                 this._tabControl.TabPages.RemoveAt(this._tabControl.TabPages.Count - 1);
+                page.Dispose();
+            }
 
             this._listBox.Focus();
         }
@@ -121,7 +124,7 @@ public class TabbedTextViewerControl : AbstractFileResourceViewerControl {
 
             var ll = this._tabControl.TabPages.Count;
             var ul = Math.Min(this._listBox.Items.Count, 8);
-            if (ll < ul) this._tabControl.TabPages.AddRange(Enumerable.Range(ll, ul).Select(this.NewPage).ToArray());
+            if (ll < ul) this._tabControl.TabPages.AddRange(Enumerable.Range(ll, ul - ll).Select(this.NewPage).ToArray());
 
             this._tabControl.SelectedIndex = 0;
         }
@@ -131,7 +134,7 @@ public class TabbedTextViewerControl : AbstractFileResourceViewerControl {
     {
         if (this._tabControl.TabPages.Cast<TabPage>().FirstOrDefault() is not { } tabPage ||
             tabPage.Controls.Cast<Control>().FirstOrDefault() is not Scintilla scintilla)
-            return new(640, 480);
+            return this.LogicalToDeviceUnits(new Size(640, 480));
 
         var height = 0;
         var width = 640;
@@ -151,7 +154,7 @@ public class TabbedTextViewerControl : AbstractFileResourceViewerControl {
             height + this.DeviceDpi / 3 + this._tabControl.Height - tabPage.Height +
             tabPage.Padding.Vertical + tabPage.Margin.Vertical +
             scintilla.Padding.Vertical + scintilla.Margin.Vertical,
-            proposedSize.Width);
+            proposedSize.Height);
         return new(width, height);
     }
 

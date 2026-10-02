@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using LuminaExplorer.Core.Util;
 
 namespace LuminaExplorer.Core.ObjectRepresentationWrapper;
@@ -75,7 +76,11 @@ public class ArrayWrapper : BaseWrapper<Array> {
 
         if (this.RangeJumpUnit != 1)
             return
-                $"[{this.RangeFrom + i * this.RangeJumpUnit}..{Math.Min(this.RangeTo, (i + 1) * this.RangeJumpUnit)}]";
+                $"[{this.RangeFrom + i * this.RangeJumpUnit}..{Math.Min(this.RangeTo, this.RangeFrom + (i + 1) * this.RangeJumpUnit)}]";
+
+        // Not enough indices to get an element of a multidimensional array.
+        if (!this.IsFlat)
+            return $"[{this.RangeFrom + i}]";
 
         var obj = this.Obj.GetValue(this.BaseIndices.Append(this.RangeFrom + i * this.RangeJumpUnit).ToArray());
         obj = this.TransformObject(obj);
@@ -96,9 +101,8 @@ public class ArrayWrapper : BaseWrapper<Array> {
                 break;
             default: {
                 if (objType.IsGenericType) {
-                    if (objType.GetGenericTypeDefinition() == typeof(Tuple<>) &&
-                        objType.GetGenericArguments().Length >= 2) {
-                        obj = objType.GetProperty("Item1")!.GetValue(obj);
+                    if (obj is ITuple { Length: >= 2 } tuple) {
+                        obj = tuple[0];
                     } else if (objType.GetGenericTypeDefinition() == typeof(KeyValuePair<,>)) {
                         obj = objType.GetProperty("Key")!.GetValue(obj);
                     } else

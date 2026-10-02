@@ -1,18 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="BCnEncoder.Net" Version="2.1.0" />
-    <PackageReference Include="JetBrains.Annotations" Version="2023.2.0-eap1" />
-    <PackageReference Include="Lumina" Version="5.6.1" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="TerraFX.Interop.Windows" Version="10.0.26100.2" />
+    <PackageReference Include="BCnEncoder.Net" Version="2.3.0" />
+    <PackageReference Include="JetBrains.Annotations" Version="2026.2.0" />
+    <PackageReference Include="Lumina" Version="7.7.1" />
+    <PackageReference Include="Lumina.Excel" Version="7.5.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
+    <PackageReference Include="TerraFX.Interop.Windows" Version="10.0.26100.6" />
   </ItemGroup>
 
 </Project>

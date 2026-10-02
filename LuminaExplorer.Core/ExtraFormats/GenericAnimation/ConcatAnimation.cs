@@ -63,6 +63,10 @@ public class ConcatAnimation : IAnimation {
 
         public Vector3 Interpolate(float t)
         {
+            // Avoid looping forever when there is nothing to advance through.
+            if (!(this._parent.Duration > 0) || !float.IsFinite(t))
+                return this._parts[0].Interpolate(0);
+
             t %= this._parent.Duration;
             while (true) {
                 for (var i = 0; i < this._parts.Length; i++) {
@@ -97,6 +101,10 @@ public class ConcatAnimation : IAnimation {
 
         public Quaternion Interpolate(float t)
         {
+            // Avoid looping forever when there is nothing to advance through.
+            if (!(this._parent.Duration > 0) || !float.IsFinite(t))
+                return this._parts[0].Interpolate(0);
+
             t %= this._parent.Duration;
             while (true) {
                 for (var i = 0; i < this._parts.Length; i++) {
@@ -131,6 +139,10 @@ public class ConcatAnimation : IAnimation {
 
         public Vector3 Interpolate(float t)
         {
+            // Avoid looping forever when there is nothing to advance through.
+            if (!(this._parent.Duration > 0) || !float.IsFinite(t))
+                return this._parts[0].Interpolate(0);
+
             t %= this._parent.Duration;
             while (true) {
                 for (var i = 0; i < this._parts.Length; i++) {

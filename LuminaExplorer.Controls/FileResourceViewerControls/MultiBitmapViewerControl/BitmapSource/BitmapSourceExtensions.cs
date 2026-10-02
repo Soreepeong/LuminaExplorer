@@ -188,8 +188,8 @@ public static class BitmapSourceExtensions {
         public uint SizeImage;
         public int XPelsPerMeter;
         public int YPelsPerMeter;
-        public ushort ClrUsed;
-        public ushort ClrImportant;
+        public uint ClrUsed;
+        public uint ClrImportant;
     }
 
     [StructLayout(LayoutKind.Sequential)]

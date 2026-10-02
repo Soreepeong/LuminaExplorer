@@ -30,7 +30,7 @@ public partial class MultiBitmapViewerControl : AbstractFileResourceViewerContro
 
         this.MouseActivity.Enabled = false;
         this.Viewport = new(this.MouseActivity);
-        this.Viewport.PanExtraRange = new(this._transparencyCellSize * 2);
+        this.Viewport.PanExtraRange = new(this.LogicalToDeviceUnits(this._transparencyCellSize * 2));
         this.Viewport.ViewportChanged += this.OnViewportChanged;
 
         this._timer = new();

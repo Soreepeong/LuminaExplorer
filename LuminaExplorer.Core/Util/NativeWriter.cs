@@ -32,7 +32,7 @@ public class NativeWriter : BinaryWriter {
 
         if (this.IsBigEndian == BitConverter.IsLittleEndian) {
             for (var i = 0; i < buffer.Length; i += sizeof(int))
-                buffer.Slice(i, i + sizeof(int)).Reverse();
+                buffer.Slice(i, sizeof(int)).Reverse();
         }
 
         this.OutStream.Write(buffer);

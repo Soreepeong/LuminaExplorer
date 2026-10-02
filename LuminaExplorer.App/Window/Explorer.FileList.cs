@@ -1,18 +1,14 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 using BrightIdeasSoftware;
-using Lumina.Data;
-using Lumina.Data.Files;
+using LuminaExplorer.App.Thumbnails;
 using LuminaExplorer.App.Utils;
-using LuminaExplorer.App.Window.FileViewers;
-using LuminaExplorer.Controls.FileResourceViewerControls.MultiBitmapViewerControl;
-using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.ShaderFiles;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.VirtualFileSystem;
 
@@ -27,6 +23,10 @@ public partial class Explorer {
         private readonly ThumbnailDecoration _thumbnailDecoration;
         private readonly Icon? _folderIconLarge;
         private readonly Icon? _fileIconLarge;
+        private readonly Bitmap? _fileImageSmall;
+        private readonly Bitmap? _fileImageLarge;
+        private readonly FileIconBadge _fileIconBadge;
+        private readonly ContextMenuStrip _contextMenu;
 
         private ExplorerListViewDataSource? _source;
         private IVirtualFileSystem? _vfs;
@@ -42,7 +42,7 @@ public partial class Explorer {
 
             this._listView.SmallImageList = new();
             this._listView.SmallImageList.ColorDepth = ColorDepth.Depth32Bit;
-            this._listView.SmallImageList.ImageSize = new(16, 16);
+            this._listView.SmallImageList.ImageSize = this._listView.LogicalToDeviceUnits(new Size(16, 16));
             using (var icon = UiUtils.ExtractPeIcon("shell32.dll", 0, false)!)
                 this._listView.SmallImageList.Images.Add(icon);
             using (var icon = UiUtils.ExtractPeIcon("shell32.dll", 4, false)!)
@@ -50,9 +50,15 @@ public partial class Explorer {
 
             this._listView.LargeImageList = new();
             this._listView.LargeImageList.ColorDepth = ColorDepth.Depth32Bit;
-            this._listView.LargeImageList.ImageSize = new(32, 32);
+            this._listView.LargeImageList.ImageSize = this._listView.LogicalToDeviceUnits(new Size(32, 32));
             this._fileIconLarge = UiUtils.ExtractPeIcon("shell32.dll", 0, true);
             this._folderIconLarge = UiUtils.ExtractPeIcon("shell32.dll", 4, true);
+            this._fileImageSmall = this._listView.SmallImageList.Images[0] as Bitmap;
+            this._fileImageLarge = this._fileIconLarge?.ToBitmap();
+            this._fileIconBadge = new(
+                size => size <= this._listView.SmallImageList.ImageSize.Width
+                    ? this._fileImageSmall
+                    : this._fileImageLarge);
 
             if (this._vfs is { } tree) {
                 this._listView.VirtualListDataSource = this._source = new(
@@ -64,6 +70,11 @@ public partial class Explorer {
             } else {
                 this._listView.VirtualListDataSource = new AbstractVirtualListDataSource(this._listView);
             }
+
+            // Shows model names next to folder names; sorting and other uses keep the plain name.
+            this._explorer.colFilesName.AspectGetter = x => (x as VirtualObject)?.DisplayName;
+            if (this._source is not null)
+                this._source.FolderDisplayNameResolver = this._explorer.GetFolderDisplayName;
 
             this._listView.PrimarySortColumn = this._explorer.colFilesName;
             this._listView.PrimarySortOrder = SortOrder.Ascending;
@@ -77,6 +88,12 @@ public partial class Explorer {
             this._listView.MouseUp += this.MouseUp;
             this._listView.MouseWheel += this.MouseWheel;
             this._listView.FormatRow += this.FormatRow;
+
+            // Ctrl+C copies the selected files instead of the text of the rows.
+            this._listView.CopySelectionOnControlC = false;
+            this._contextMenu = new();
+            this._contextMenu.Opening += this.ContextMenuOpening;
+            this._listView.ContextMenuStrip = this._contextMenu;
 
             this._explorer.Resize += this.WindowResized;
 
@@ -156,6 +173,11 @@ public partial class Explorer {
         public IVirtualFolder? CurrentFolder {
             get => this._source?.CurrentFolder;
             set {
+                // The selection is dropped without a selection change event, so stop previewing the previous file
+                // (including any SCD preview holding the audio device).
+                if (!Equals(this._source?.CurrentFolder, value))
+                    this._explorer._previewHandler?.ClearPreview();
+
                 if (this._source is not null) this._source.CurrentFolder = value;
 
                 this._explorer.colFilesFullPath.IsVisible = value is null;
@@ -164,6 +186,14 @@ public partial class Explorer {
         }
 
         public int ItemCount => this._source?.Count ?? 0;
+
+        public void SelectFileAfterLoad(string name) => this._source?.SelectFileAfterLoad(name);
+
+        public void RefreshFolderDisplayNames()
+        {
+            this._source?.RefreshFolderDisplayNames();
+            this._listView.Invalidate();
+        }
 
         public void Dispose()
         {
@@ -176,12 +206,19 @@ public partial class Explorer {
             this._listView.KeyUp -= this.KeyUp;
             this._listView.MouseUp -= this.MouseUp;
             this._listView.MouseWheel -= this.MouseWheel;
+            this._listView.FormatRow -= this.FormatRow;
             this._cboView.SelectedIndexChanged -= this.cboView_SelectedIndexChanged;
+            this._listView.ContextMenuStrip = null;
+            this._contextMenu.Opening -= this.ContextMenuOpening;
+            this._contextMenu.Dispose();
 
             this._explorer.Resize -= this.WindowResized;
 
             this._folderIconLarge?.Dispose();
             this._fileIconLarge?.Dispose();
+            this._fileImageSmall?.Dispose();
+            this._fileImageLarge?.Dispose();
+            this._fileIconBadge.Dispose();
         }
 
         public void Focus() => this._listView.Focus();
@@ -298,7 +335,53 @@ public partial class Explorer {
 
         private void KeyDown(object? sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Enter) this.ExecuteItems(this.GetSelectedFiles(), this.GetSelectedFolders());
+            switch (e.KeyData) {
+                case Keys.Enter:
+                    this.ExecuteItems(this.GetSelectedFiles(), this.GetSelectedFolders());
+                    break;
+                case Keys.Control | Keys.C:
+                    if (this.CreateSelectionTarget() is { } target)
+                        this._explorer.CopyItems(target, FileExportMode.AsIs);
+                    e.Handled = e.SuppressKeyPress = true;
+                    break;
+                case Keys.Control | Keys.Shift | Keys.C:
+                    if (this.CreateSelectionTarget() is { } target2)
+                        CopyPaths(target2);
+                    e.Handled = e.SuppressKeyPress = true;
+                    break;
+            }
+        }
+
+        private void ContextMenuOpening(object? sender, CancelEventArgs e)
+        {
+            ClearContextMenu(this._contextMenu);
+            if (this.CreateSelectionTarget() is not { } target) {
+                e.Cancel = true;
+                return;
+            }
+
+            this._explorer.PopulateFileContextMenu(this._contextMenu.Items, target);
+
+            // Opening is raised already cancelled if the menu had no items.
+            e.Cancel = false;
+        }
+
+        /// <summary>Creates the target of file operations from the selected items.</summary>
+        private FileOperationTarget? CreateSelectionTarget()
+        {
+            if (this._vfs is not { } tree)
+                return null;
+
+            var files = this.GetSelectedFiles();
+            var folders = this.GetSelectedFolders();
+            if (files.Count == 0 && folders.Count == 0)
+                return null;
+
+            return FileOperationTarget.FromItems(
+                tree,
+                files,
+                folders,
+                files.Count > 0 || folders.Count == 1 ? () => this.ExecuteItems(files, folders) : null);
         }
 
         private void KeyUp(object? sender, KeyEventArgs e)
@@ -326,17 +409,26 @@ public partial class Explorer {
 
             if (this._listView.SelectedIndices.Count is > 1 or 0) {
                 previewHandler.ClearPreview();
+                this.SetReferencesTargetToCurrentFolder();
                 return;
             }
 
             var vo = source[this._listView.SelectedIndices[0]];
             if (vo.IsFolder) {
                 previewHandler.ClearPreview();
+                previewHandler.SetReferencesTarget(this._vfs?.GetFullPath(vo.Folder), true);
                 return;
             }
 
             previewHandler.PreviewFile(vo.File);
+            previewHandler.SetReferencesTarget(this._vfs?.GetFullPath(vo.File), false);
         }
+
+        /// <summary>Shows the references to the current folder, when nothing in it is selected.</summary>
+        public void SetReferencesTargetToCurrentFolder() =>
+            this._explorer._previewHandler?.SetReferencesTarget(
+                this.CurrentFolder is { } folder && this._vfs is { } tree ? tree.GetFullPath(folder) : null,
+                true);
 
         private void WindowResized(object? sender, EventArgs e) => this.RecalculateNumberOfPreviewsToCache();
 
@@ -350,59 +442,14 @@ public partial class Explorer {
                 return;
             }
 
-            if (this._vfs is not { } tree)
+            if (this._vfs is null)
                 return;
 
             foreach (var file in files.Take(16)) {
-                Task<FileResource> fileResourceTask;
-                if (this._explorer._previewHandler is { } previewHandler &&
-                    previewHandler.TryGetAvailableFileResource(file, out var fileResource))
-                    fileResourceTask = Task.FromResult(fileResource);
-                else
-                    fileResourceTask = tree.GetLookup(file).AsFileResource();
-                fileResourceTask.ContinueWith(
-                    fr => {
-                        if (!fr.IsCompletedSuccessfully) {
-                            MessageBox.Show(
-                                $"Failed to open file \"{file.Name}\".\n\nError: {fr.Exception}",
-                                "Error",
-                                MessageBoxButtons.OK,
-                                MessageBoxIcon.Stop);
-                            return;
-                        }
-
-                        if (MultiBitmapViewerControl.MaySupportFileResource(fr.Result)) {
-                            var viewer = new TextureViewer();
-                            viewer.SetFile(
-                                tree,
-                                file,
-                                fr.Result,
-                                this._explorer._navigationHandler?.CurrentFolder,
-                                source.ObjectList.Where(x => !x.IsFolder).Select(x => x.File));
-                            viewer.ShowRelativeTo(this._explorer);
-                        }
-
-                        switch (fr.Result) {
-                            case ShcdFile f: {
-                                var viewer = new TabbedTextViewer();
-                                viewer.ShowShader(f, this._explorer);
-                                break;
-                            }
-                            case ShpkFile f: {
-                                var viewer = new TabbedTextViewer();
-                                viewer.ShowShader(f, this._explorer);
-                                break;
-                            }
-                            case MdlFile f: {
-                                var viewer = new ModelViewer();
-                                viewer.SetFile(tree, tree.RootFolder, file, f);
-                                viewer.ShowRelativeTo(this._explorer);
-                                ;
-                                break;
-                            }
-                        }
-                    },
-                    TaskScheduler.FromCurrentSynchronizationContext());
+                this._explorer.OpenFileInViewer(
+                    file,
+                    source.ObjectList.Where(x => !x.IsFolder).Select(x => x.File),
+                    this._explorer._navigationHandler?.CurrentFolder);
             }
 
             // TODO: do something
@@ -479,11 +526,13 @@ public partial class Explorer {
                     return;
 
                 Bitmap? bitmap = null;
-                var imageWidth = olv.View == View.LargeIcon ? 32 : 16;
-                var imageHeight = olv.View == View.LargeIcon ? 32 : 16;
+                var smallIconSize = olv.SmallImageList!.ImageSize.Width;
+                var iconSize = olv.View == View.LargeIcon ? olv.LogicalToDeviceUnits(32) : smallIconSize;
+                var imageWidth = iconSize;
+                var imageHeight = iconSize;
                 var thumbnailSize = source.ImageThumbnailSize;
-                var isAssoc = true;
-                if (thumbnailSize != 0 && source.TryGetThumbnail(virtualObject, out bitmap, out isAssoc)) {
+                var kind = ThumbnailKind.AssociationIcon;
+                if (thumbnailSize != 0 && source.TryGetThumbnail(virtualObject, out bitmap, out kind)) {
                     try {
                         (imageWidth, imageHeight) = (bitmap.Width, bitmap.Height);
                         if (imageWidth > thumbnailSize)
@@ -501,9 +550,18 @@ public partial class Explorer {
                 if (bitmap is not null) {
                     try {
                         g.DrawImage(bitmap, x, y, imageWidth, imageHeight);
-                        if (!isAssoc) {
+                        // Info cards and icons have their own frames.
+                        if (kind is ThumbnailKind.Image or ThumbnailKind.Render) {
                             using var pen = new Pen(Color.LightGray);
                             g.DrawRectangle(pen, x - 1, y - 1, imageWidth + 1, imageHeight + 1);
+                        }
+
+                        if (!virtualObject.IsFolder) {
+                            FileIconBadge.DrawBadge(
+                                g,
+                                new(x, y, imageWidth, imageHeight),
+                                virtualObject.Name,
+                                olv.LogicalToDeviceUnits(32));
                         }
 
                         return;
@@ -512,11 +570,18 @@ public partial class Explorer {
                     }
                 }
 
-                if (imageWidth <= 16 && imageHeight <= 16)
-                    olv.SmallImageList!.Draw(g, x, y, virtualObject.IsFolder ? 1 : 0);
+                // Files show their extension on the icon.
+                if (!virtualObject.IsFolder &&
+                    this._handler._fileIconBadge.Get(virtualObject.Name, imageWidth) is { } badgedIcon) {
+                    g.DrawImage(badgedIcon, x, y, imageWidth, imageHeight);
+                    return;
+                }
+
+                if (imageWidth <= smallIconSize && imageHeight <= smallIconSize)
+                    olv.SmallImageList.Draw(g, x, y, virtualObject.IsFolder ? 1 : 0);
                 else if ((virtualObject.IsFolder ? this._handler._folderIconLarge : this._handler._fileIconLarge) is
                          { } icon)
-                    g.DrawIcon(icon, x, y);
+                    g.DrawIcon(icon, new Rectangle(x, y, imageWidth, imageHeight));
             }
         }
     }

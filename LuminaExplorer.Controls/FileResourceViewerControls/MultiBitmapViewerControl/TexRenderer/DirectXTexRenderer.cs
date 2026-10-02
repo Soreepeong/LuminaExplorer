@@ -117,7 +117,7 @@ internal sealed unsafe class DirectXTexRenderer : DirectXRenderer<MultiBitmapVie
                             ? DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_ITALIC
                             : DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_NORMAL,
                         DWRITE_FONT_STRETCH.DWRITE_FONT_STRETCH_NORMAL,
-                        this.Control.EffectiveFontSizeInPoints * 4 / 3,
+                        this.Control.EffectiveFontSizeInPoints * this.Control.DeviceDpi / 72,
                         pEmpty,
                         ppFontTextFormat).Ensure();
 
@@ -474,6 +474,9 @@ internal sealed unsafe class DirectXTexRenderer : DirectXRenderer<MultiBitmapVie
 
                     renderer.Control.Invoke(
                         () => {
+                            if (this._cancellationTokenSource.IsCancellationRequested)
+                                return;
+
                             var source = r.Result;
                             _ = SafeDispose.EnumerableAsync(ref this._pBitmaps);
 
@@ -543,31 +546,57 @@ internal sealed unsafe class DirectXTexRenderer : DirectXRenderer<MultiBitmapVie
             }
 
             var source = this.SourceTask.Result;
+            if (this._pBitmaps is not { } pBitmaps)
+                return LoadState.Loading;
 
-            var task = source.GetWicBitmapSourceAsync(cell);
-            if (task.IsFaulted) {
-                exception = task.Exception;
+            ref var slot = ref pBitmaps[cell.ImageIndex][cell.Mipmap][cell.Slice];
+            if (slot is null) {
+                if (source.SupportsRawSlice(cell.ImageIndex, cell.Mipmap)) {
+                    slot = new(
+                        Task.Run(
+                            () => this.CreateFromRawSliceOrWic(source, cell),
+                            this._cancellationTokenSource.Token));
+                } else {
+                    var task = source.GetWicBitmapSourceAsync(cell);
+                    if (task.IsFaulted) {
+                        exception = task.Exception;
+                        return LoadState.Error;
+                    }
+
+                    if (!task.IsCompleted)
+                        return LoadState.Loading;
+
+                    slot = new(
+                        Task.Run(
+                            () => Texture2DShaderResource.FromWicBitmap(this._renderer.Device, task.Result),
+                            this._cancellationTokenSource.Token));
+                }
+            }
+
+            wrapperTask = slot;
+            if (wrapperTask.IsCompletedSuccessfully)
+                return LoadState.Loaded;
+
+            if (wrapperTask.IsFaulted) {
+                exception = wrapperTask.Task.Exception;
                 return LoadState.Error;
             }
 
-            if (task.IsCompleted && this._pBitmaps is { } pBitmaps) {
-                wrapperTask = pBitmaps[cell.ImageIndex][cell.Mipmap][cell.Slice] ??= new(
-                    Task.Run(
-                        () => Texture2DShaderResource.FromWicBitmap(this._renderer.Device, task.Result),
-                        this._cancellationTokenSource.Token));
+            return LoadState.Loading;
+        }
 
-                if (wrapperTask.IsCompletedSuccessfully)
-                    return LoadState.Loaded;
-
-                if (wrapperTask.IsFaulted) {
-                    exception = wrapperTask.Task.Exception;
-                    return LoadState.Error;
-                }
-
-                return LoadState.Loading;
+        private Texture2DShaderResource CreateFromRawSliceOrWic(IBitmapSource source, GridLayoutCell cell)
+        {
+            try {
+                return Texture2DShaderResource.FromRawSlice(
+                    this._renderer.Device,
+                    source.GetRawSlice(cell.ImageIndex, cell.Mipmap, cell.Slice));
+            } catch (Exception e) when (e is not ObjectDisposedException) {
+                // The device may not support the format (e.g. B4G4R4A4 needs D3D 11.1); decode on the CPU instead.
+                return Texture2DShaderResource.FromWicBitmap(
+                    this._renderer.Device,
+                    source.GetWicBitmapSourceAsync(cell).GetAwaiter().GetResult());
             }
-
-            return exception is null ? LoadState.Loading : LoadState.Error;
         }
 
         public bool TryGetBitmapAt(
@@ -606,7 +635,7 @@ internal sealed unsafe class DirectXTexRenderer : DirectXRenderer<MultiBitmapVie
                         ? this._renderer.Control.TransparencyCellColor2.ToDxgiColor()
                         : new(0, 0, 0, 1),
                     TransparencyCellSize = this._renderer.Control.TransparencyCellSize > 0
-                        ? this._renderer.Control.TransparencyCellSize
+                        ? this._renderer.Control.LogicalToDeviceUnits(this._renderer.Control.TransparencyCellSize)
                         : 1, // Prevent division by zero
                     PixelGridColor = this._renderer.Control.PixelGridMinimumZoom <= this._renderer.Control.EffectiveZoom
                         ? this._renderer.Control.PixelGridLineColor.ToDxgiColor()
@@ -614,6 +643,11 @@ internal sealed unsafe class DirectXTexRenderer : DirectXRenderer<MultiBitmapVie
                     CellSourceSize = new(w, h),
                     ChannelFilter = this._renderer.Control.ChannelFilter,
                     UseAlphaChannel = this._renderer.Control.UseAlphaChannel,
+                    ReplicateRedChannel =
+                        this._pBitmaps?[cell.ImageIndex][cell.Mipmap][cell.Slice] is { IsCompletedSuccessfully: true } t &&
+                        t.Result.ReplicateRedChannel
+                            ? 1
+                            : 0,
                 };
                 cbuffer.UpdateData(data);
             }
@@ -631,6 +665,9 @@ internal sealed unsafe class DirectXTexRenderer : DirectXRenderer<MultiBitmapVie
         private void SourceTaskOnLayoutChanged() =>
             this._renderer.Control.Invoke(
                 () => {
+                    if (this._cancellationTokenSource.IsCancellationRequested)
+                        return;
+
                     var layout = this.SourceTask.Result.Layout;
                     var bitmapSource = this.SourceTask.Result;
                     _ = SafeDispose.EnumerableAsync(ref this._cbuffer);
@@ -639,7 +676,9 @@ internal sealed unsafe class DirectXTexRenderer : DirectXRenderer<MultiBitmapVie
 
                     var allTasks = layout
                         .Select(
-                            cell => bitmapSource.GetWicBitmapSourceAsync(cell)
+                            cell => (bitmapSource.SupportsRawSlice(cell.ImageIndex, cell.Mipmap)
+                                    ? Task.CompletedTask
+                                    : bitmapSource.GetWicBitmapSourceAsync(cell))
                                 .ContinueWith(
                                     result => {
                                         if (this != this._renderer.SourceCurrent || layout != bitmapSource.Layout)

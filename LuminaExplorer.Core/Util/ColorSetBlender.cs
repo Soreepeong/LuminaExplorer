@@ -8,7 +8,7 @@ public static class ColorSetBlender {
         (byte) Math.Clamp(MathF.Floor((float) BitConverter.UInt16BitsToHalf(s) * 256), 0, byte.MaxValue);
 
     public static byte Blend(byte x, byte y, double scaler) =>
-        (byte) Math.Clamp((x * (1 - scaler) + y * scaler) / byte.MaxValue, 0, byte.MaxValue);
+        (byte) Math.Clamp(x * (1 - scaler) + y * scaler, 0, byte.MaxValue);
 
     public static Bgra8888 Blend(Bgra8888 x, Bgra8888 y, byte a, double scaler) =>
         new(Blend(x.r, y.r, scaler), Blend(x.g, y.g, scaler), Blend(x.b, y.b, scaler), a);

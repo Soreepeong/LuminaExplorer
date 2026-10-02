@@ -1,5 +1,7 @@
 using System;
+using System.ComponentModel;
 using System.Windows.Forms;
+using LuminaExplorer.App.Utils;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.VirtualFileSystem;
 
@@ -28,8 +30,15 @@ public partial class Explorer : Form {
 
         this._fileTreeHandler.ExpandTreeTo(this.AppConfig.LastFolder);
         _ = this._navigationHandler.NavigateTo(this.AppConfig.LastFolder);
+
+        this.LoadFolderNames();
+
+        // Building the index takes a while, so it is built only when a search needs it; a saved one is cheap to load.
+        this.LoadExcelValueIndex(false);
+        this.ExcelColumnNameResolver = this.ResolveExcelColumnName;
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public AppConfig AppConfig {
         get => this._appConfig;
         set {
@@ -43,6 +52,7 @@ public partial class Explorer : Form {
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public IVirtualFileSystem? Vfs {
         get => this._vfs;
         set {
@@ -61,11 +71,16 @@ public partial class Explorer : Form {
     {
         if (disposing) {
             this.Hide();
+            this._folderNamesCancel.Cancel();
+            this._excelValueIndexCancel.Cancel();
             SafeDispose.One(ref this._previewHandler);
             SafeDispose.One(ref this._fileListHandler);
             SafeDispose.One(ref this._navigationHandler);
             SafeDispose.One(ref this._fileTreeHandler);
             SafeDispose.One(ref this._searchHandler);
+
+            // Files copied to the clipboard cannot be pasted once this process is gone.
+            VirtualFileClipboard.ReleaseIfOwned();
 
             this.components?.Dispose();
         }

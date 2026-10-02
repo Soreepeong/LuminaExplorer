@@ -38,6 +38,7 @@ public partial class Explorer {
             this._explorer.btnNavUp.Click += this.btnNavUp_Click;
             this._explorer.txtPath.KeyDown += this.txtPath_KeyDown;
             this._explorer.txtPath.KeyUp += this.txtPath_KeyUp;
+            this._txtPath.TextUpdate += this.txtPath_TextUpdate;
         }
 
         public void Dispose()
@@ -49,6 +50,7 @@ public partial class Explorer {
             this._explorer.btnNavUp.Click -= this.btnNavUp_Click;
             this._explorer.txtPath.KeyDown -= this.txtPath_KeyDown;
             this._explorer.txtPath.KeyUp -= this.txtPath_KeyUp;
+            this._txtPath.TextUpdate -= this.txtPath_TextUpdate;
 
             this.Vfs = null;
         }
@@ -112,7 +114,7 @@ public partial class Explorer {
                             AutoSize = false,
                             Alignment = ToolStripItemAlignment.Left,
                             TextAlign = ContentAlignment.MiddleLeft,
-                            Width = 320,
+                            Width = this._explorer.LogicalToDeviceUnits(320),
                         });
                 }
 
@@ -134,13 +136,30 @@ public partial class Explorer {
 
         private void txtPath_KeyDown(object? sender, KeyEventArgs e)
         {
+            if (this.IsFilterText) {
+                switch (e.KeyCode) {
+                    case Keys.Enter:
+                    case Keys.Down:
+                        e.Handled = e.SuppressKeyPress = true;
+                        this._explorer._fileTreeHandler?.FocusFilterResults();
+                        return;
+                    case Keys.Escape:
+                        e.Handled = e.SuppressKeyPress = true;
+                        this.ClearFilter();
+                        this._explorer._fileListHandler?.Focus();
+                        return;
+                }
+
+                return;
+            }
+
             switch (e.KeyCode) {
                 case Keys.Enter: {
                     var prevText = this._txtPath.Text;
                     this._explorer._fileTreeHandler?.ExpandTreeTo(this._txtPath.Text)
                         .ContinueWith(
                             vfr => {
-                                if (this._vfs is not { } tree)
+                                if (!vfr.IsCompletedSuccessfully || this._vfs is not { } tree)
                                     return;
 
                                 var fullPath = tree.GetFullPath(vfr.Result.Folder);
@@ -179,9 +198,19 @@ public partial class Explorer {
             }
         }
 
+        /// <summary>
+        /// Whether the address bar holds a name filter instead of a path, which is when it does not start with a slash.
+        /// </summary>
+        private bool IsFilterText => IsFilterTextValue(this._txtPath.Text);
+
+        private static bool IsFilterTextValue(string text) => !string.IsNullOrWhiteSpace(text) && text[0] != '/';
+
+        private void txtPath_TextUpdate(object? sender, EventArgs e) =>
+            this._explorer._fileTreeHandler?.SetFilter(IsFilterTextValue(this._txtPath.Text) ? this._txtPath.Text : null);
+
         private void txtPath_KeyUp(object? sender, KeyEventArgs keyEventArgs)
         {
-            if (this._vfs is not { } tree)
+            if (this._vfs is not { } tree || this.IsFilterText)
                 return;
 
             var searchedText = this._txtPath.Text;
@@ -220,6 +249,16 @@ public partial class Explorer {
                     default,
                     TaskContinuationOptions.DenyChildAttach,
                     TaskScheduler.FromCurrentSynchronizationContext());
+        }
+
+        /// <summary>
+        /// Leaves the name filter mode, and shows the path of the current folder in the address bar.
+        /// </summary>
+        public void ClearFilter()
+        {
+            this._explorer._fileTreeHandler?.SetFilter(null);
+            if (this._vfs is { } tree && this._currentFolder is { } currentFolder)
+                this._txtPath.Text = tree.GetFullPath(currentFolder);
         }
 
         public bool NavigateBack()
@@ -280,10 +319,16 @@ public partial class Explorer {
             this._explorer.btnNavForward.Enabled = this._navigationHistoryPosition < this._navigationHistory.Count - 1;
             this._explorer.btnNavUp.Enabled = folder.Parent is not null;
 
-            var fullPath = this._txtPath.Text = tree.GetFullPath(folder);
+            var fullPath = tree.GetFullPath(folder);
 
-            if (this._explorer._fileListHandler is { } fileListHandler)
+            // While filtering, the address bar keeps the filter text.
+            if (this._explorer._fileTreeHandler?.IsFiltering is not true)
+                this._txtPath.Text = fullPath;
+
+            if (this._explorer._fileListHandler is { } fileListHandler) {
                 fileListHandler.CurrentFolder = folder;
+                fileListHandler.SetReferencesTargetToCurrentFolder();
+            }
 
             this._explorer.AppConfig = this.AppConfig with {
                 LastFolder = fullPath,

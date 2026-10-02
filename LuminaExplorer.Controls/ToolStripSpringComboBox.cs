@@ -9,7 +9,7 @@ public class ToolStripSpringComboBox : ToolStripComboBox {
     {
         // Use the default size if the text box is on the overflow menu
         // or is on a vertical ToolStrip.
-        if (this.IsOnOverflow || this.Owner.Orientation == Orientation.Vertical) {
+        if (this.IsOnOverflow || this.Owner is null || this.Owner.Orientation == Orientation.Vertical) {
             return this.DefaultSize;
         }
 

@@ -7,7 +7,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Lumina.Data;
 using Lumina.Data.Attributes;
+using Lumina.Data.Files;
 using Lumina.Data.Structs;
+using LuminaExplorer.Core.ExtraFormats.FileResourceImplementors.Penumbra;
 
 namespace LuminaExplorer.Core.VirtualFileSystem;
 
@@ -29,6 +31,14 @@ public interface IVirtualFileLookup : IDisposable {
     public Task<FileResource> AsFileResource(CancellationToken cancellationToken = default);
 
     public Task<T> AsFileResource<T>(CancellationToken cancellationToken = default) where T : FileResource;
+
+    /// <summary>
+    /// Substitutes Lumina file resource types that cannot parse current game files with fixed subclasses.
+    /// </summary>
+    protected static Type ResolveFileResourceType(Type type) =>
+        type == typeof(MdlFile) ? typeof(PenumbraMdlFile)
+        : type == typeof(MtrlFile) ? typeof(PenumbraMtrlFile)
+        : type;
 
     protected static HashSet<Type> FindPossibleTypes(IVirtualFileLookup lookup, LuminaBinaryReader reader)
     {

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Lumina.Misc;
 
@@ -32,7 +33,8 @@ public sealed partial class SqpackFileSystem {
         }
     }
 
-    public uint? GetFullPathHash(IVirtualFile file) => Crc32.Get(this.GetFullPath(file).Trim('/').ToLowerInvariant());
+    public uint? GetFullPathHash(IVirtualFile file) =>
+        Crc32.Get(Encoding.UTF8.GetBytes(this.GetFullPath(file).Trim('/').ToLowerInvariant()));
 
     private static SqpackFolder[] UnsafeGetTreeFromRoot(SqpackFolder folder)
     {
@@ -92,7 +94,7 @@ public sealed partial class SqpackFileSystem {
             var folder = root;
 
             foreach (var pathComponent in pathComponents) {
-                if (pathComponent == ".")
+                if (pathComponent is "" or ".")
                     continue;
                 if (pathComponent == "..") {
                     folder = folder.Equals(root) ? root : (folder.Parent ?? root);
@@ -120,7 +122,7 @@ public sealed partial class SqpackFileSystem {
             var files = this.GetFiles(await this.AsFoldersResolved(folder));
 
             // Do we have a matching name hash?
-            var nameHash = Crc32.Get(pathComponents.Last().ToLowerInvariant());
+            var nameHash = Crc32.Get(Encoding.UTF8.GetBytes(pathComponents.Last().ToLowerInvariant()));
             using (var fileEnumerator = files.Where(x => x.NameHash == nameHash).GetEnumerator()) {
                 if (fileEnumerator.MoveNext()) {
                     var file = fileEnumerator.Current;

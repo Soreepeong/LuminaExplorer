@@ -53,7 +53,7 @@ public partial class MultiBitmapViewerControl {
         if (next == int.MaxValue)
             this._timer.Enabled = false;
         else
-            this._timer.Interval = next;
+            this._timer.Interval = Math.Max(1, next);
     }
 
     private bool TimerOnTickProcessPanning()

@@ -76,8 +76,8 @@ public class StreamIStreamWrapper : Stream, ICloneable, IStream {
 
         GC.SuppressFinalize(this);
         var disposeValueTask = this._refCounter.Release(out var leaveOpen) == 0 && !leaveOpen
-            ? ValueTask.CompletedTask
-            : this.BaseStream.DisposeAsync();
+            ? this.BaseStream.DisposeAsync()
+            : ValueTask.CompletedTask;
         this.BaseStream = null!;
         this._refCounter = null;
         return disposeValueTask;
@@ -195,7 +195,7 @@ public class StreamIStreamWrapper : Stream, ICloneable, IStream {
         }
 
         if (pcbRead != 0)
-            *(long*) pcbRead = offset;
+            *(uint*) pcbRead = (uint) offset;
     }
 
     public void Revert() => throw new NotImplementedException();
@@ -250,7 +250,7 @@ public class StreamIStreamWrapper : Stream, ICloneable, IStream {
     {
         this.BaseStream.Write(pv, 0, cb);
         if (pcbWritten != 0)
-            *(long*) pcbWritten = cb;
+            *(uint*) pcbWritten = (uint) cb;
     }
 
     #endregion

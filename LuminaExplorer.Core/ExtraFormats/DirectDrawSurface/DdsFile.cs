@@ -32,7 +32,6 @@ public class DdsFile {
             try {
                 this._data = new byte[stream.Length];
                 stream.ReadExactly(this._data);
-                stream.Dispose();
             } catch (NotSupportedException) {
                 using var ms = new MemoryStream();
                 stream.CopyTo(ms);

@@ -14,6 +14,7 @@ using System.Windows.Forms;
 using BrightIdeasSoftware;
 using JetBrains.Annotations;
 using Lumina.Data.Structs;
+using LuminaExplorer.App.Thumbnails;
 using LuminaExplorer.App.Utils;
 using LuminaExplorer.Core.Util;
 using LuminaExplorer.Core.VirtualFileSystem;
@@ -34,12 +35,18 @@ public partial class Explorer {
         private List<VirtualObject> _objects = new();
         private CancellationTokenSource _sorterCancel = new();
         private Task _sortTask = Task.CompletedTask;
+        private string? _pendingSelectionName;
+
+        /// <summary>Resolves the text to display for a folder, given its name and full path.</summary>
+        public Func<string, string, string>? FolderDisplayNameResolver { get; set; }
 
         public ExplorerListViewDataSource(VirtualObjectListView volv, IVirtualFileSystem vfs, int numPreviewerThreads)
             : base(volv)
         {
             this._vfs = vfs;
-            this._previewCache = new(numPreviewerThreads);
+            this._previewCache = new(vfs, numPreviewerThreads) {
+                DpiScale = volv.DeviceDpi / 96f,
+            };
             this._previewCache.ImageLoaded += this.PreviewImageLoaded;
         }
 
@@ -59,13 +66,18 @@ public partial class Explorer {
                 if (this._previewCache.Threads == value)
                     return;
 
-                var newPreviewCache = new VirtualObjectImageLoader(value) {
+                var newPreviewCache = new VirtualObjectImageLoader(this._vfs, value) {
+                    DpiScale = this._previewCache.DpiScale,
                     Capacity = this._previewCache.Capacity,
                     CropThresholdAspectRatioRatio = this._previewCache.CropThresholdAspectRatioRatio,
                     InterpolationMode = this._previewCache.InterpolationMode,
+                    Width = this._previewCache.Width,
+                    Height = this._previewCache.Height,
                 };
+                this._previewCache.ImageLoaded -= this.PreviewImageLoaded;
                 this._previewCache.Dispose();
                 this._previewCache = newPreviewCache;
+                this._previewCache.ImageLoaded += this.PreviewImageLoaded;
             }
         }
 
@@ -93,7 +105,12 @@ public partial class Explorer {
                     return;
 
                 this._currentFolder = value;
+
+                // Thumbnails of the previous folder are not needed anymore.
+                this._previewCache.CancelAll();
+
                 if (this._currentFolder is null) {
+                    this._fileNameResolver = null;
                     this.listView.SetObjects(Array.Empty<object>());
                     return;
                 }
@@ -117,6 +134,7 @@ public partial class Explorer {
                                     .Concat(
                                         this._vfs.GetFiles(this._currentFolder)
                                             .Select(x => new VirtualObject(this._vfs, x))));
+                            this.TrySelectPending(false);
                         },
                         default,
                         TaskContinuationOptions.DenyChildAttach,
@@ -130,9 +148,10 @@ public partial class Explorer {
                 if (this._previewSize == value)
                     return;
 
+                this._previewCache.DpiScale = this.listView.DeviceDpi / 96f;
                 this._previewCache.Width = this._previewCache.Height = this._previewSize = value;
 
-                var largeImageListSize = this._previewSize == 0 ? 32 : this._previewSize;
+                var largeImageListSize = this._previewSize == 0 ? this.listView.LogicalToDeviceUnits(32) : this._previewSize;
                 this.listView.LargeImageList!.ImageSize = new(largeImageListSize, largeImageListSize);
                 this.listView.Invalidate();
             }
@@ -218,6 +237,7 @@ public partial class Explorer {
                             foreach (var si in newSelectedIndices) this.listView.SelectedIndices.Add(si);
                             this.listView.FocusedObject = focusedObject;
                             this.listView.Invalidate();
+                            this.TrySelectPending(true);
                         },
                         default,
                         TaskContinuationOptions.DenyChildAttach,
@@ -234,7 +254,9 @@ public partial class Explorer {
         {
             this._sorterCancel.Cancel();
             this._sortTask.Wait();
-            this._objects.InsertRange(index, modelObjects.Cast<VirtualObject>());
+            var objects = modelObjects.Cast<VirtualObject>().ToArray();
+            this.ApplyFolderDisplayNames(objects);
+            this._objects.InsertRange(index, objects);
         }
 
         public override void RemoveObjects(ICollection modelObjects)
@@ -263,6 +285,20 @@ public partial class Explorer {
 
             this._objects.Clear();
             this._objects.AddRange(collection.Cast<VirtualObject>());
+            this.ApplyFolderDisplayNames(this._objects);
+        }
+
+        public void RefreshFolderDisplayNames() => this.ApplyFolderDisplayNames(this._objects);
+
+        private void ApplyFolderDisplayNames(IEnumerable<VirtualObject> objects)
+        {
+            if (this.FolderDisplayNameResolver is not { } resolver)
+                return;
+
+            foreach (var o in objects) {
+                if (o.IsFolder)
+                    o.DisplayName = resolver(o.Name, o.FullPath);
+            }
         }
 
         public override void UpdateObject(int index, object modelObject)
@@ -279,6 +315,35 @@ public partial class Explorer {
 
         public VirtualObject this[int n] => this._objects[n];
 
+        /// <summary>
+        /// Selects the file with the given name once the current folder has been loaded and sorted.
+        /// </summary>
+        public void SelectFileAfterLoad(string name)
+        {
+            this._pendingSelectionName = name;
+            if (this._fileNameResolver is null && this._sortTask.IsCompleted)
+                this.TrySelectPending(true);
+        }
+
+        private void TrySelectPending(bool clear)
+        {
+            if (this._pendingSelectionName is not { } name)
+                return;
+
+            var index = this._objects.FindIndex(
+                x => !x.IsFolder && string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (index == -1)
+                return;
+
+            if (clear)
+                this._pendingSelectionName = null;
+
+            this.listView.SelectedIndices.Clear();
+            this.listView.SelectedIndices.Add(index);
+            this.listView.FocusedItem = this.listView.Items[index];
+            this.listView.EnsureVisible(index);
+        }
+
         public IEnumerator<VirtualObject> GetEnumerator() => this._objects.GetEnumerator();
 
         IEnumerator IEnumerable.GetEnumerator() => this._objects.GetEnumerator();
@@ -288,8 +353,8 @@ public partial class Explorer {
         public bool TryGetThumbnail(
             VirtualObject virtualObject,
             [MaybeNullWhen(false)] out Bitmap bitmap,
-            out bool isAssociationIcon) =>
-            this._previewCache.TryGetBitmap(virtualObject, out bitmap, out isAssociationIcon);
+            out ThumbnailKind kind) =>
+            this._previewCache.TryGetBitmap(virtualObject, out bitmap, out kind);
 
         private void PreviewImageLoaded(VirtualObject arg1, IVirtualFile arg2, Bitmap arg3) =>
             this.listView.BeginInvoke(() => this.listView.RefreshObject(arg1));
@@ -345,7 +410,7 @@ public partial class Explorer {
             this.ReleaseUnmanagedResources();
         }
 
-        public bool IsFolder => this._lookup is null;
+        public bool IsFolder => this._file is null;
 
         public IVirtualFile File => this._file ?? throw new InvalidOperationException();
 
@@ -370,6 +435,14 @@ public partial class Explorer {
         public string Name {
             get => this._name;
             set => this.SetField(ref this._name, value);
+        }
+
+        private string? _displayName;
+
+        /// <summary>Text to show in the name column; defaults to <see cref="Name"/>.</summary>
+        public string DisplayName {
+            get => this._displayName ?? this._name;
+            set => this.SetField(ref this._displayName, value);
         }
 
         public string PackTypeString =>

@@ -394,6 +394,9 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
                         // Wrap in a .NET-friendly Stream and call provided code to fill it
                         using var stream = new IStreamWrapper(iStream);
                         streamData(stream);
+
+                        // Rewind, so that readers that do not seek first read the whole stream.
+                        iStream.Seek(0, 0 /* STREAM_SEEK_SET */, IntPtr.Zero);
                     }
 
                     // Return an IntPtr for the IStream
@@ -422,6 +425,12 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
             var FILEDESCRIPTOR = new NativeMethods.FILEDESCRIPTOR {
                 cFileName = fileDescriptor.Name,
             };
+            // Directories let the paste target create empty folders, and the folders of the files in order.
+            if (fileDescriptor.IsDirectory) {
+                FILEDESCRIPTOR.dwFlags |= NativeMethods.FD_ATTRIBUTES;
+                FILEDESCRIPTOR.dwFileAttributes = NativeMethods.FILE_ATTRIBUTE_DIRECTORY;
+            }
+
             // Set optional timestamp
             if (fileDescriptor.ChangeTimeUtc.HasValue) {
                 FILEDESCRIPTOR.dwFlags |= NativeMethods.FD_CREATETIME | NativeMethods.FD_WRITESTIME;
@@ -435,7 +444,7 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
             }
 
             // Set optional length
-            if (fileDescriptor.Length.HasValue) {
+            if (fileDescriptor.Length.HasValue && !fileDescriptor.IsDirectory) {
                 FILEDESCRIPTOR.dwFlags |= NativeMethods.FD_FILESIZE;
                 FILEDESCRIPTOR.nFileSizeLow = (uint) (fileDescriptor.Length & 0xffffffff);
                 FILEDESCRIPTOR.nFileSizeHigh = (uint) (fileDescriptor.Length >> 32);
@@ -499,18 +508,23 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
             // Read the value and return it
             var result = dataObject.GetData();
             if (NativeMethods.Succeeded(result.Item2)) {
-                var ptr = NativeMethods.GlobalLock(result.Item1);
-                if (IntPtr.Zero != ptr) {
-                    try {
-                        var length = NativeMethods.GlobalSize(ptr).ToInt32();
-                        if (4 == length) {
-                            var data = new byte[length];
-                            Marshal.Copy(ptr, data, 0, length);
-                            return (DragDropEffects) (BitConverter.ToUInt32(data, 0));
+                try {
+                    var ptr = NativeMethods.GlobalLock(result.Item1);
+                    if (IntPtr.Zero != ptr) {
+                        try {
+                            var length = NativeMethods.GlobalSize(ptr).ToInt32();
+                            if (4 == length) {
+                                var data = new byte[length];
+                                Marshal.Copy(ptr, data, 0, length);
+                                return (DragDropEffects) (BitConverter.ToUInt32(data, 0));
+                            }
+                        } finally {
+                            NativeMethods.GlobalUnlock(result.Item1);
                         }
-                    } finally {
-                        NativeMethods.GlobalUnlock(result.Item1);
                     }
+                } finally {
+                    // GetData allocates a new block every time; it is ours to free.
+                    Marshal.FreeHGlobal(result.Item1);
                 }
             }
         }
@@ -631,6 +645,12 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
         /// Gets or sets an Action that returns the contents of the file.
         /// </summary>
         public Action<Stream>? StreamContents { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether this entry is a directory. <see cref="Name"/> of the entries may
+        /// contain backslashes to place them in directories.
+        /// </summary>
+        public bool IsDirectory { get; set; }
     }
 
     /// <summary>
@@ -794,10 +814,12 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
         public const int DV_E_FORMATETC = -2147221404;
         public const int DV_E_TYMED = -2147221399;
         public const int E_FAIL = -2147467259;
+        public const uint FD_ATTRIBUTES = 0x00000004;
         public const uint FD_CREATETIME = 0x00000008;
         public const uint FD_WRITESTIME = 0x00000020;
         public const uint FD_FILESIZE = 0x00000040;
         public const int OLE_E_ADVISENOTSUPPORTED = -2147221501;
+        public const uint FILE_ATTRIBUTE_DIRECTORY = 0x00000010;
         public const int S_OK = 0;
         public const int S_FALSE = 1;
         public const int VARIANT_FALSE = 0;
@@ -831,7 +853,7 @@ public sealed class VirtualFileDataObject : System.Runtime.InteropServices.ComTy
             public readonly int sizelcy;
             public readonly int pointlx;
             public readonly int pointly;
-            public readonly uint dwFileAttributes;
+            public uint dwFileAttributes;
             public FILETIME ftCreationTime;
             public readonly FILETIME ftLastAccessTime;
             public FILETIME ftLastWriteTime;
